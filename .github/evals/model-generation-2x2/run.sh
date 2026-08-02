@@ -19,6 +19,19 @@ TIMEOUT="${TIMEOUT:-600}"
 MODELS=(claude-opus-4-8 claude-opus-5)
 ARMS=(A0 A1)
 
+# macOS에는 GNU timeout 이 없다(coreutils 미설치). 이식 가능한 워치독으로 대체한다.
+# 최초 실행 16콜이 status=127 로 전멸한 원인이 이것이었다 — runs-discarded-no-timeout/ 참고.
+run_with_timeout() { # $1=초  나머지=명령
+  local secs="$1"; shift
+  "$@" &
+  local pid=$!
+  ( sleep "$secs"; kill -9 "$pid" 2>/dev/null ) &
+  local watch=$!
+  wait "$pid" 2>/dev/null; local rc=$?
+  kill -9 "$watch" 2>/dev/null; wait "$watch" 2>/dev/null
+  return $rc
+}
+
 # 동일 프롬프트 — 양쪽 arm에 그대로 준다 (PROTOCOL: 프롬프트 규약)
 fixture_text() {
   case "$1" in
@@ -59,7 +72,7 @@ for model in "${MODELS[@]}"; do
         fi
 
         started=$(date +%s)
-        ( cd "$wd" && timeout "$TIMEOUT" claude -p "$(fixture_text "$f")" \
+        ( cd "$wd" && run_with_timeout "$TIMEOUT" claude -p "$(fixture_text "$f")" \
             --model "$model" "${args[@]}" \
             --allowedTools "Read Write Edit Glob Grep" \
             > "$out/stdout.log" 2> "$out/stderr.log" )

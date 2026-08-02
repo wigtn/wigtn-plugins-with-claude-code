@@ -6,7 +6,7 @@
 
 **一个插件。12 个智能体。从创意到生产。**
 
-![Version](https://img.shields.io/badge/v0.1.14-Unified_Plugin-FF6B6B?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.1.15-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
 ![Commands](https://img.shields.io/badge/5-Commands-38B2AC?style=for-the-badge)
 ![Skills](https://img.shields.io/badge/6-Skills-00D4AA?style=for-the-badge)

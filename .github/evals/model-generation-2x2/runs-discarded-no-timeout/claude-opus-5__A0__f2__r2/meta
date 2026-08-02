@@ -1,0 +1,6 @@
+model=claude-opus-5
+arm=A0
+fixture=2
+rep=2
+status=127
+seconds=0

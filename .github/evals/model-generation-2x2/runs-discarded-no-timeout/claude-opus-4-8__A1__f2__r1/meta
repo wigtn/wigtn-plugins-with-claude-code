@@ -1,0 +1,6 @@
+model=claude-opus-4-8
+arm=A1
+fixture=2
+rep=1
+status=127
+seconds=0

@@ -4,7 +4,7 @@
 
 A unified Claude Code plugin enabling AI-powered Vibe Coding: idea to production with minimal friction.
 
-**Version**: 0.1.14
+**Version**: 0.1.15
 **License**: Apache-2.0
 **Repository**: https://github.com/wigtn/wigtn-plugins
 
@@ -16,7 +16,7 @@ wigtn-plugins/
 ├── plugins/
 │   └── wigtn-plugins/         # Unified plugin: 12 agents, 5 commands, 6 skills, 20 design styles
 │       ├── .claude-plugin/   # Plugin metadata
-│       ├── agents/           # 13 agent definitions
+│       ├── agents/           # 12 agent definitions
 │       ├── commands/         # 5 commands (/prd, /screen-spec, /implement, /auto-commit, /review-pr)
 │       ├── skills/           # 6 skills (code-review-levels, design-system-reference, handdrawn-diagram, screen-spec, team-memory-protocol, wigtn-ppt)
 │       └── hooks/            # Hooks configuration
@@ -80,7 +80,7 @@ description: Brief description of the skill
 disable-model-invocation: true    # Optional: for heavy skills (600+ lines)
 allowed-tools: Read, Write, Edit  # Optional: restrict available tools
 context: fork                     # Optional: run in isolated subagent
-context-agent-type: general-purpose  # Optional: agent type for fork
+agent: general-purpose            # Optional: agent type for fork
 ---
 ```
 
@@ -95,10 +95,6 @@ argument-hint: "<feature name>"   # Optional: autocomplete hint for $ARGUMENTS
 ### Hooks
 
 Hooks are defined in `plugins/wigtn-plugins/hooks/hooks.json` and follow the Claude Code hooks schema.
-
-### Agent Teams
-
-Coordinators support both instruction-based orchestration (default) and native Agent Teams mode when `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` is detected.
 
 ## Key Paths
 
