@@ -1,0 +1,50 @@
+{
+  "task": "webhook-delivery",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Fully implements signature verification, dedupe/conflict handling, and retry schedule with minimal standard-library code. Visible and hidden tests pass."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Meets all requested behavior. The use of dict.get is acceptable under the bytes payload contract, and signature/retry behavior is correct. Visible and hidden tests pass."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Meets the requirements cleanly, including anchored signature parsing, constant-time digest comparison, duplicate detection, conflict rejection, and retry delays. Visible and hidden tests pass."
+    },
+    {
+      "label": "D",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Correctly implements the requested behavior. The regex lacks an explicit end anchor but uses fullmatch, so malformed suffixes are still rejected. Visible and hidden tests pass."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "C", "D", "B"]
+}

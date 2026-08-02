@@ -1,0 +1,61 @@
+{
+  "fixture": "create-mobile-expense",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Strong, implementation-ready PRD. It covers all brief requirements, separates assumptions from open decisions, provides enforceable state, authorization, offline sync, duplicate, upload failure, concurrency, accessibility, security, observability, and acceptance criteria. Slightly verbose, but the detail is mostly useful."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 3,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "FR-010 / OD-004",
+          "finding": "FR-010 mandates blocking duplicate-looking submissions, while OD-004 says whether to block or warn is still open.",
+          "impact": "This creates product and implementation rework risk and could incorrectly prevent legitimate expenses until the duplicate policy is resolved."
+        }
+      ],
+      "summary": "Well-structured and highly traceable, with strong delivery phasing and acceptance criteria. The main defect is making duplicate blocking a Must while simultaneously treating the policy as unresolved."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 3,
+      "concision": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "FR-009",
+          "finding": "Potential business duplicate handling is only a Should.",
+          "impact": "The brief explicitly requires duplicate submission handling; making this optional leaves a material risk of duplicate reimbursement or late scope rework."
+        },
+        {
+          "location": "OD-002 / FR-024 / concurrent approval handling",
+          "finding": "The document defaults to prohibiting edits in pending approval while still requiring approval-time concurrent modification handling.",
+          "impact": "The edit policy is internally unclear, which can lead to incompatible state transitions, tests, and UX for the approval conflict scenario required by the brief."
+        },
+        {
+          "location": "문서 검증기: 파일을 생성하지 않았으므로 실행하지 않음",
+          "finding": "Includes harness-like meta commentary unrelated to the product specification.",
+          "impact": "This is not product-delivery content and reduces PRD cleanliness and applicability."
+        }
+      ],
+      "summary": "C covers the broad surface area and has useful security, offline, and accessibility detail, but several requirements are weaker or internally unsettled. It is implementable after cleanup, but less reliable than A or B."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C"]
+}

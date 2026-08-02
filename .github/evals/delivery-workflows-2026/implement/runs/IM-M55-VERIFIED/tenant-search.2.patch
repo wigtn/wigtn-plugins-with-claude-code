@@ -1,0 +1,102 @@
+diff --git a/search/cursor.py b/search/cursor.py
+index 3662433..fb09331 100644
+--- a/search/cursor.py
++++ b/search/cursor.py
+@@ -1,5 +1,56 @@
++import base64
++import hashlib
++import hmac
++import json
++
++
++_CURSOR_KEY = b"tenant-search-cursor-v1"
++
++
++def _urlsafe_b64encode(data: bytes) -> str:
++    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
++
++
++def _urlsafe_b64decode(value: str) -> bytes:
++    padding = "=" * (-len(value) % 4)
++    decoded = base64.urlsafe_b64decode((value + padding).encode("ascii"))
++    if _urlsafe_b64encode(decoded) != value:
++        raise ValueError("invalid cursor")
++    return decoded
++
++
++def _sign(payload: bytes) -> str:
++    return _urlsafe_b64encode(hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest())
++
++
+ def encode_cursor(tenant_id: str, created_at: int, record_id: str) -> str:
+-    raise NotImplementedError
++    payload = json.dumps(
++        {"tenant_id": tenant_id, "created_at": created_at, "id": record_id},
++        separators=(",", ":"),
++        sort_keys=True,
++    ).encode("utf-8")
++    return f"{_urlsafe_b64encode(payload)}.{_sign(payload)}"
++
+ 
+ def decode_cursor(value: str, tenant_id: str):
+-    raise NotImplementedError
++    if not isinstance(value, str):
++        raise ValueError("invalid cursor")
++
++    try:
++        encoded_payload, signature = value.split(".", 1)
++        payload = _urlsafe_b64decode(encoded_payload)
++    except Exception as exc:
++        raise ValueError("invalid cursor") from exc
++
++    if not hmac.compare_digest(signature, _sign(payload)):
++        raise ValueError("invalid cursor")
++
++    try:
++        data = json.loads(payload.decode("utf-8"))
++    except Exception as exc:
++        raise ValueError("invalid cursor") from exc
++
++    if data.get("tenant_id") != tenant_id or "created_at" not in data or "id" not in data:
++        raise ValueError("invalid cursor")
++
++    return data["created_at"], data["id"]
+diff --git a/search/service.py b/search/service.py
+index f8a1da0..a6bb88c 100644
+--- a/search/service.py
++++ b/search/service.py
+@@ -1,4 +1,33 @@
+ from .cursor import encode_cursor, decode_cursor
+ 
+ def search(records, tenant_id, query, limit, cursor=None):
+-    raise NotImplementedError
++    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
++        raise ValueError("limit must be an integer from 1 to 50")
++
++    folded_query = query.casefold()
++    cursor_key = decode_cursor(cursor, tenant_id) if cursor is not None else None
++
++    matches = [
++        record
++        for record in records
++        if record.get("tenant_id") == tenant_id
++        and folded_query in record.get("name", "").casefold()
++    ]
++    ordered = sorted(matches, key=lambda record: (-record["created_at"], record["id"]))
++
++    if cursor_key is not None:
++        cursor_created_at, cursor_id = cursor_key
++        ordered = [
++            record
++            for record in ordered
++            if record["created_at"] < cursor_created_at
++            or (record["created_at"] == cursor_created_at and record["id"] > cursor_id)
++        ]
++
++    page = ordered[:limit]
++    next_cursor = None
++    if len(ordered) > limit:
++        last = page[-1]
++        next_cursor = encode_cursor(tenant_id, last["created_at"], last["id"])
++
++    return page, next_cursor

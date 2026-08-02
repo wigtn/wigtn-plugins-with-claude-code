@@ -1,0 +1,9 @@
+arm=M55-CURRENT
+fixture=review-clean
+repeat=1
+model=gpt-5.5
+reasoning_effort=medium
+started_epoch=1785084038
+finished_epoch=1785084065
+duration_seconds=27
+exit_code=0

@@ -1,0 +1,274 @@
+# PRD Analysis Report
+
+## 분석 대상
+- **문서**: `.github/evals/fixtures/prd-defective.md` — "사내 문서 공유 (defective fixture)"
+- **분석일**: 2026-07-26
+- **선언 Type**: `feature` → 표준 3분류(product-feature | internal-backend | refactor)에 없는 모호값이므로 **fail-safe로 `product-feature`(strict) 판정**. 인증·개인정보·외부 노출 API가 모두 존재하므로 보안 Critical 기준을 정상 발화시킨다.
+- **Scale Grade**: Startup
+- **실행 모드**: 순차 (섹션 6개·FR 7개로 병렬 게이팅 미달) — 단, 4개 렌즈(Completeness / Feasibility / Security / Consistency) 전부 적용 + Phase 2.5 Completeness Critic 1패스 수행.
+
+## 요약
+
+| 카테고리 | 발견 | Critical | Major | Minor |
+|----------|------|----------|-------|-------|
+| 완전성 (Completeness) | 7 | 3 | 3 | 1 |
+| 실현가능성 (Feasibility) | 4 | 0 | 3 | 1 |
+| 보안 (Security) | 7 | 3 | 3 | 1 |
+| 일관성 (Consistency) | 5 | 1 | 1 | 3 |
+| **총계** | **23** | **7** | **10** | **6** |
+
+## Quality Gate 판정
+
+❌ **BLOCKED** — Critical 7건. `/screen-spec` · `/implement` 진행 불가. Critical 전량 해소 후 재리뷰 필요.
+
+특히 F1·F2는 `/screen-spec`의 **필수 입력**이 통째로 없는 상태라, PRD를 고치지 않으면 파이프라인 다음 단계가 물리적으로 시작되지 않는다.
+
+## 외부 근거 검증 (Phase 1.5 — 실행됨)
+
+게이팅 통과 사유: 외부 의존 주장 존재(Next.js 16, S3 호환 스토리지, 50MB 업로드) **그리고** Scale Grade = Startup(≥ Startup) + 3rd-party 연동 1건.
+
+| Claim (PRD 섹션) | Verdict | Source |
+|------------------|---------|--------|
+| Next.js 16 App Router 사용 가능 (§5.1) | **confirmed** — 16.x는 2025-10 정식 릴리즈, App Router 안정 | nextjs.org/blog/next-16 |
+| 최대 50MB 파일을 `POST /api/documents`로 업로드 (FR-001 §3 + §5.2) | **contradicted (조건부)** — 서버리스 함수 요청 본문 상한 4.5MB, 초과 시 `413 FUNCTION_PAYLOAD_TOO_LARGE` | vercel.com/docs/functions/limitations |
+| S3 호환 스토리지 사용 (§5.1) | unverifiable — 벤더·리전·접근 방식 미명시로 검증 대상 자체가 특정 불가 | — |
+
+**contradicted 항목 3표 적대 재검증**: 2/3 유지, 1표 강등. 배포 플랫폼이 PRD에 명시되지 않아 "Next.js = 서버리스 배포"는 추정이며, Node 자체 호스팅이면 제약이 사라진다. 따라서 **Critical이 아닌 Major(F11)로 확정**하되, 배포 타깃이 Vercel/서버리스로 확정되는 순간 Critical로 승격된다고 표기한다.
+
+## 상세 분석
+
+### Critical (즉시 수정 필요)
+
+#### F1. §5.4.1 Page State Matrix 누락 — Completeness
+- **위치**: §5.4 Pages (§5.4.1 부재)
+- **문제**: §5.4에 `Has FE Components: Yes` 페이지가 3개(`/documents`, `/documents/[id]`, `/s/[token]`) 있는데, 각 페이지의 상태 정의(Empty / Loading / Error / Partial / Success / 권한 없음 / 토큰 만료)가 전혀 없다.
+- **영향**: `/screen-spec`이 IA·Wireframe·Handoff를 생성할 입력이 없어 단계 자체가 막힌다. 강행하면 상태 처리를 구현자가 임의로 발명해 3개 화면이 서로 다른 에러 UX를 갖게 된다.
+- **개선안**: §5.4.1에 페이지×상태 매트릭스를 추가한다. 최소한 `/s/[token]`의 **토큰 만료 / 토큰 폐기됨 / 문서 삭제됨** 3상태는 반드시 포함해야 한다(F4와 연동).
+
+#### F2. §5.5 User Flow Mermaid 누락 — Completeness
+- **위치**: §5 전체 (§5.5 부재)
+- **문제**: FE 페이지 3개가 있는데 사용자 흐름 다이어그램이 없다. 특히 "업로드 → 공유 링크 생성 → 링크 수신자 열람"이라는 이 제품의 핵심 경로가 문서상 어디에도 그려져 있지 않다.
+- **영향**: F1과 동일하게 `/screen-spec` 필수 입력 결손. 또한 링크 수신자(guest)가 인증 벽을 어디서 만나는지가 미정이라 F3의 모순이 발견되지 않은 채 구현으로 흘러간다.
+- **개선안**: §5.5에 3개 역할(member/admin/guest) 기준 Mermaid flow를 추가하고, 각 분기의 종착 상태를 §5.4.1 상태와 1:1로 맞춘다.
+
+#### F3. FR-003 ↔ FR-007 정면 모순 (구현 불가) — Consistency
+- **위치**: §3 FR-003, FR-007
+- **문제**: FR-003은 "공유 링크 수신자는 **로그인 없이** 문서를 열람할 수 있다"(P0), FR-007은 "**모든 문서 조회 요청은 인증을 거쳐야 한다**"(P0). 두 P0가 동시에 참일 수 없다. §2.3의 `guest` 역할도 전자를 전제하고 있어 어느 쪽이 진짜 정책인지 판단 불가.
+- **영향**: 인가 미들웨어 설계가 시작되지 않는다. 구현자가 임의로 한쪽을 택하면 (a) 공유 기능이 죽거나 (b) 인증 게이트에 구멍이 뚫린다. 이 모순은 "구현 불가능한 요구사항" 기준에 직접 해당한다.
+- **개선안**: FR-007을 "**세션 인증 또는 유효한 공유 토큰** 중 하나를 반드시 거쳐야 한다"로 재정의하고, 토큰 경로가 인증의 예외가 아니라 **별도의 1급 인증 수단**임을 §4.2에 명시한다. 그 위에서 토큰 경로의 권한 스코프(해당 문서 1건 읽기 전용, 목록·검색·삭제 불가)를 못박는다.
+
+#### F4. 공유 토큰 정책 전무 — Security
+- **위치**: §5.2 `POST /api/documents/{id}/share`, FR-003, §4.2
+- **문제**: 링크가 인증을 대체하는 유일한 비밀인데 토큰의 **엔트로피·형식·만료·폐기(revoke)·재발급·스코프·1회성 여부**가 하나도 정의되지 않았다. 폐기 API는 §5.2에 존재조차 하지 않는다.
+- **영향**: §1.2가 내건 "외부 유출 방지" 목표가 정면으로 무너진다. 링크가 한 번 외부로 나가면 **영구히 유효**하고 회수 수단이 없다. 순차 ID나 짧은 토큰이 쓰이면 열거 공격으로 사내 문서 전량이 노출된다.
+- **개선안**: 토큰은 CSPRNG 128비트 이상, URL-safe 인코딩. 기본 만료(예: 7일) + 생성 시 사용자 지정. `DELETE /api/documents/{id}/share/{tokenId}` 폐기 API 추가. 문서 삭제 시 토큰 연쇄 무효화. 토큰 조회는 상수 시간 비교.
+
+#### F5. Rate Limiting 미정의 — Security
+- **위치**: §4.2 Security 전체
+- **문제**: §4.2가 "HTTPS 적용 / 확장자 검사" 두 줄뿐이며 어떤 엔드포인트에도 속도 제한이 없다. 노출 표면은 인증 없는 `/s/[token]` 열람, 업로드, 검색 3곳.
+- **영향**: (a) 공유 토큰 **브루트포스**가 무제한 — F4의 토큰 약점과 결합하면 실제 유출 경로가 된다. (b) 50MB 업로드 무제한 반복으로 스토리지 비용·용량 고갈. (c) 부분 일치 검색(F21) 반복 호출로 DB 고갈.
+- **개선안**: 엔드포인트별 한도를 §4.2에 표로 명시한다. 최소: 토큰 열람 IP당 분당 10회 + 연속 실패 시 지수 백오프, 업로드 사용자당 시간당 N건/총 용량, 검색 사용자당 분당 30회.
+
+#### F6. FR-004/FR-005 삭제 인가 규칙 미정의 (IDOR) — Security
+- **위치**: §3 FR-004, FR-005 / §5.2 `DELETE /api/documents/{id}`
+- **문제**: "자기 문서 삭제"(FR-004)와 "관리자 임의 삭제"(FR-005)가 **동일한 단일 엔드포인트**에 매핑되어 있는데, 소유권 검사와 역할 검사를 어디서 어떻게 수행하는지 규정이 없다. 관리자 판별 근거(§2.3의 `admin` role key)가 어떤 저장소·클레임에서 오는지도 미정.
+- **영향**: 전형적인 IDOR. 인가 검사가 빠지면 임의 사용자가 `{id}`만 바꿔 타인의 문서를 삭제할 수 있고, 이는 복구 불가능한 **데이터 무결성 손실**이다. 감사 로그도 없어(F16) 사후 추적조차 안 된다.
+- **개선안**: 삭제 인가 규칙을 명시적으로 기술한다 — `owner_id == session.user.id` **또는** `role == admin`, 둘 다 아니면 404(존재 여부 노출 방지). 관리자 삭제는 soft delete + 감사 로그 필수. 공유 토큰 경로에는 삭제 권한이 절대 부여되지 않음을 못박는다.
+
+#### F7. Goal "최신본 명확"에 대응하는 요구사항 부재 — Completeness
+- **위치**: §1.1 Problem Statement, §1.2 Goals ↔ §3 FR 전체
+- **문제**: 문제 정의의 핵심("최신본이 어느 것인지 알 수 없다")과 목표 2번("최신본이 무엇인지 항상 명확")에 대응하는 FR이 **하나도 없다**. FR-002의 "최신순 정렬"은 업로드 시각 정렬일 뿐, 같은 문서의 버전 관계를 표현하지 못한다. 버전 관리는 §1.3 Non-Goals에도 없어 "의도적 제외"도 아니다.
+- **영향**: 3대 목표 중 하나가 통째로 미구현 상태로 출시된다. 사용자는 `제안서_final_v2_진짜최종.pdf`가 여전히 목록에 나란히 쌓이는 것을 보게 되고, 제품이 원래 풀려던 문제가 그대로 남는다. "핵심 기능 누락" 기준에 해당.
+- **개선안**: 둘 중 하나를 택해 문서화한다 — (a) FR 추가: 문서 버전 체인(동일 문서에 새 리비전 업로드, 최신 리비전 배지, 이전 버전 열람), 공유 링크가 "항상 최신"인지 "고정 리비전"인지 명시. (b) 범위 축소 시 §1.2에서 해당 목표를 내리고 §1.3 Non-Goals로 이동.
+
+### Major (구현 전 수정 권장)
+
+#### F8. §5.3 Data Model 부재 (섹션 결번) — Completeness
+- **위치**: §5.2 → §5.4 사이 (§5.3 없음)
+- **문제**: 데이터 모델이 없다. `documents`, `share_tokens`, 소유자 관계, 스토리지 객체 키, 인덱스, 삭제 시맨틱(soft/hard)이 전부 미정의.
+- **영향**: F6(소유권 검사)·F4(토큰 수명)·F17(삭제 시 실제 객체 제거) 모두 이 스키마에 의존하는데 근거가 없어, 팀별 병렬 구현 시 서로 다른 모델을 가정하게 된다.
+- **개선안**: §5.3에 테이블 정의 + 관계 + 인덱스 + 삭제 정책을 추가한다. 최소한 `documents(id, owner_id, storage_key, mime, size, created_at, deleted_at)`, `share_tokens(id, document_id, token_hash, expires_at, revoked_at, created_by)`.
+
+#### F9. 성능 요구가 측정 불가 — Completeness
+- **위치**: §4.1 Performance
+- **문제**: "업로드는 사용자가 기다릴 만한 수준이어야 한다" — 검증 불가능한 문장이며, Startup 등급에서 기대되는 SLO/SLA(p95 응답, 동시 업로드, 가용성)가 전무하다. 목록·검색·열람 성능 요구는 아예 없다.
+- **영향**: 완료 판정 기준이 없어 성능 회귀를 아무도 잡을 수 없고, 인수 시 주관적 논쟁이 발생한다.
+- **개선안**: 수치화한다. 예: 10MB 업로드 p95 ≤ 5s, 목록 p95 ≤ 300ms(100건), 검색 p95 ≤ 500ms, 월 가용성 99.5%.
+
+#### F10. Acceptance Criteria 커버리지 결손 — Completeness
+- **위치**: §2.2
+- **문제**: 시나리오 2개(업로드·링크 공유)뿐. FR 7개 중 5개(FR-004~007, 그리고 FR-003의 인증 경계)가 미커버이며, **실패·거부 경로 시나리오가 0개**다. "권한 없는 삭제 시도", "만료 토큰 접근", "50MB 초과 업로드", "비관리자의 타인 문서 삭제" 등이 전부 없다.
+- **영향**: 테스트가 해피패스만 덮는다. F3·F6 같은 인가 결함은 정확히 이 미작성 시나리오 영역에서 터진다.
+- **개선안**: FR ↔ 시나리오 매핑 표를 만들고, 인가·한도·만료 각각에 대한 **거부 시나리오**를 최소 1개씩 추가한다.
+
+#### F11. 50MB 업로드 ↔ 서버리스 본문 상한 충돌 — Feasibility (external grounding)
+- **위치**: FR-001 (§3) ↔ §5.1 스택 ↔ §5.2 `POST /api/documents`
+- **문제**: 파일 본문을 애플리케이션 라우트로 직접 POST하는 설계인데, Next.js를 서버리스로 배포하면 요청 본문 상한이 4.5MB이고 초과 시 `413 FUNCTION_PAYLOAD_TOO_LARGE`로 실패한다. 50MB는 이 경로로 물리적으로 통과하지 못한다.
+- **영향**: P0 요구가 배포 직후 실패한다. 발견 시점이 구현 후라면 업로드 경로·클라이언트·스토리지 접근 방식을 전부 재설계해야 한다.
+- **개선안**: 배포 타깃을 §5.1에 명시하고, 서버리스라면 **presigned URL 직접 업로드**(또는 청크/스트리밍)로 §5.2를 재설계한다 — `POST /api/documents/upload-url`로 presigned URL 발급 → 클라이언트가 스토리지에 직접 PUT → `POST /api/documents`로 메타데이터 커밋. 자체 호스팅 Node라면 제약이 없으므로 그 사실을 PRD에 근거로 남긴다.
+- **주의**: 배포 타깃이 서버리스로 확정되면 이 항목은 **Critical로 승격**된다.
+
+#### F12. 문서 미리보기 렌더 경로 미정의 — Feasibility
+- **위치**: §5.4 "문서 상세 — 미리보기 + 공유" ↔ §3 FR 전체
+- **문제**: 페이지 설명에만 "미리보기"가 등장하고 대응 FR이 없다. 게다가 **DOCX는 브라우저가 네이티브로 렌더하지 못한다** — 변환 파이프라인(예: → PDF/이미지), 변환 지연, 실패 시 폴백, 변환물 저장 위치가 전부 미정.
+- **영향**: 구현 단계에서 예상 밖의 큰 하위 시스템(변환 워커·큐·캐시)이 튀어나와 일정이 붕괴하거나, DOCX 미리보기가 조용히 빠진 채 출시된다.
+- **개선안**: 미리보기를 FR로 승격하고 포맷별 지원 범위를 명시한다. 최소안: PDF만 인라인 미리보기, DOCX는 다운로드 폴백. 확장안 선택 시 변환 파이프라인을 §5에 별도 설계로 추가.
+
+#### F13. 파일 전달 방식(presigned vs 프록시) 미정의 — Feasibility
+- **위치**: §5.1 "S3 호환 스토리지" ↔ §5.2 `GET /api/documents/{id}`
+- **문제**: 실제 바이트를 사용자에게 어떻게 전달하는지가 없다. presigned GET URL을 발급하는지, 애플리케이션이 프록시 스트리밍하는지에 따라 **권한 모델 전체가 달라진다**.
+- **영향**: presigned URL은 발급 후 만료 전까지 인가와 무관하게 유효하므로, F4의 토큰 폐기가 무의미해질 수 있다(폐기해도 이미 발급된 스토리지 URL은 살아있음). 프록시는 F11의 응답 본문 상한에 다시 걸린다. 어느 쪽이든 지금 설계로는 결정 불가.
+- **개선안**: 전달 방식을 §5에 확정하고, presigned를 택하면 **URL 수명 ≤ 수 분**으로 짧게 잡아 폐기 지연을 한정한다. 버킷은 퍼블릭 접근 전면 차단을 명시.
+
+#### F14. 파일 검증이 확장자 검사뿐 — Security
+- **위치**: §4.2
+- **문제**: "업로드 파일 확장자 검사"만 있다. 확장자는 클라이언트가 자유롭게 조작 가능하며, MIME 스니핑·매직바이트 검증·악성코드 스캔·`Content-Disposition`/`Content-Type` 강제·CSP가 전부 없다.
+- **영향**: `evil.html`을 `report.pdf`로 올려 저장형 XSS를 유발하거나, 사내 유통 경로로 멀웨어를 배포할 수 있다. 자체 도메인에서 렌더되면 세션 탈취로 이어진다.
+- **개선안**: 매직바이트 기반 실제 타입 검증 + 허용 목록 강제, 다운로드 시 `Content-Disposition: attachment`와 고정 `Content-Type`, 가능하면 별도 샌드박스 도메인 서빙, CSP 헤더 명시. AV 스캔 도입 여부를 결정해 기록.
+
+#### F15. 감사·접근 로그 부재 — Security
+- **위치**: §4.2, §3 FR 전체
+- **문제**: 누가 언제 어떤 문서를 열람·공유·삭제했는지 남기는 요구가 없다. 특히 인증 없는 `/s/[token]` 경로는 **접근 주체를 사후에 특정할 방법이 전혀 없다**.
+- **영향**: §1.2 "외부 유출 방지" 목표를 검증·대응할 수단이 없다. 유출 사고 시 범위 파악이 불가능하고, F6의 부당 삭제도 추적 불가.
+- **개선안**: 감사 로그를 FR로 추가한다 — 대상 이벤트(업로드/열람/토큰생성/토큰폐기/삭제), 기록 필드(actor 또는 token id, IP, UA, 시각), 보존 기간.
+
+#### F16. 개인정보·데이터 보존·암호화 정책 부재 — Security
+- **위치**: §4.2
+- **문제**: 사내 문서는 개인정보를 담을 개연성이 높은데 저장 시 암호화(at-rest), 보존/파기 주기, 접근 권한 최소화, 퇴사자 문서 처리, 규제(GDPR/개인정보보호법) 대응이 전혀 없다. 삭제(FR-004/005) 시 **스토리지 객체가 실제로 지워지는지**도 미정의.
+- **영향**: "삭제했다"고 표시되지만 S3 객체가 남아 presigned URL로 계속 접근되는 전형적 결함이 발생한다. 정보주체 삭제 요구에 응답할 수 없다.
+- **개선안**: §4.2에 at-rest 암호화(SSE), 삭제 시 DB 레코드 + 스토리지 객체 + 활성 토큰 3자 동시 무효화, 보존/파기 주기, 퇴사자 소유 문서 승계 규칙을 명시.
+
+#### F17. API 표 ↔ FR/페이지 불일치 — Consistency
+- **위치**: §5.2 ↔ §3 ↔ §5.4
+- **문제**: 세 곳이 서로 다른 시스템을 기술한다. (a) FR-006 검색에 대응하는 엔드포인트·쿼리 파라미터가 §5.2에 없다. (b) `/s/[token]` 페이지가 호출할 토큰 기반 조회 API가 없다 — `GET /api/documents/{id}`는 인증 경로라 재사용 불가. (c) 공유 링크 폐기 API가 없다(F4). (d) 업로드 URL 발급 API가 없다(F11).
+- **영향**: FE가 붙일 계약이 없어 §5.4의 3개 페이지 중 최소 1개(`/s/[token]`)는 구현 착수 자체가 불가하다.
+- **개선안**: §5.2를 FR·페이지와 3자 대조해 재작성하고, 각 엔드포인트에 **필요 인증 수단(session / share-token / admin)** 열을 추가한다.
+
+### Minor (개선 제안)
+
+#### F18. §2.1과 §2.3의 역할 목록 불일치 — Consistency
+- **위치**: §2.1 ↔ §2.3
+- **문제**: §2.3은 `member`/`admin`/`guest` 3개 역할을 정의하는데 §2.1 Primary User에는 사내 구성원·관리자 2개만 있다. 링크 수신자가 1급 사용자인지 부수 액터인지 불명확.
+- **개선안**: §2.1에 guest를 추가하거나, §2.3에서 guest를 "인증 주체가 아닌 접근 모드"로 재분류한다(F3 해소 방향과 일치시킬 것).
+
+#### F19. 섹션 번호 결번 — Consistency
+- **위치**: §5.2 → §5.4
+- **문제**: §5.3이 비어 있다. 단순 오타일 수도 있으나 F8(데이터 모델 누락)의 흔적일 가능성이 높다.
+- **개선안**: §5.3을 Data Model로 채운다.
+
+#### F20. Phase ↔ FR 매핑 부재 — Consistency
+- **위치**: §6
+- **문제**: 3개 Phase에 FR ID가 매핑되어 있지 않다. 특히 P0인 FR-007(인증)이 어느 Phase에 속하는지 불명이며, Phase 1(업로드·목록)에 인증이 없다면 그 시점의 시스템은 완전 개방 상태가 된다.
+- **개선안**: 각 Phase에 FR ID 목록을 붙이고, 인증·인가는 Phase 1에 선행 배치한다.
+
+#### F21. 부분 일치 검색의 인덱스 비효율 — Feasibility
+- **위치**: FR-006, §5.1 PostgreSQL
+- **문제**: "제목 부분 일치"는 `LIKE '%키워드%'`로 구현되기 쉬운데 B-tree 인덱스를 타지 못해 풀스캔이 된다. Startup 등급 초기 볼륨에서는 문제없으나 성능 요구(F9)와 함께 명시가 필요.
+- **개선안**: `pg_trgm` GIN 인덱스 사용을 §5에 기록하거나, 초기에는 풀스캔 허용임을 명시하고 임계 건수를 정한다.
+
+#### F22. 엣지 케이스 처리 미정의 — Completeness (Phase 2.5 Critic 도출)
+- **위치**: §3, §5.4
+- **문제**: 50MB 초과 시 UX, 동일 파일명 중복 업로드, 업로드 중단·재시도, 지원하지 않는 확장자, 빈 목록 초기 상태, 검색 결과 0건 처리가 전부 미정의.
+- **개선안**: §5.4.1 상태 매트릭스(F1) 작성 시 함께 채운다.
+
+#### F23. 공유 페이지의 색인·Referrer 유출 — Security
+- **위치**: §5.4 `/s/[token]`
+- **문제**: 토큰이 URL 경로에 노출되는 구조인데 `noindex`, `Referrer-Policy`, 브라우저 히스토리·프록시 로그 유출에 대한 언급이 없다.
+- **개선안**: `/s/*`에 `X-Robots-Tag: noindex`, `Referrer-Policy: no-referrer` 적용을 §4.2에 명시. 토큰을 fragment 또는 교환 후 세션 쿠키로 옮기는 방식도 검토.
+
+## Phase 2.5 — Completeness Critic 결과
+
+4개 렌즈 종료 후 "무엇이 안 보였나"만 되물은 결과, 아래가 어느 렌즈에도 걸리지 않았고 정식 finding으로 편입했다.
+
+- **검증 없이 깔린 전제**: "스토리지는 항상 성공한다" — 업로드 부분 실패·고아 객체(메타데이터 커밋 실패 시 스토리지에만 남는 파일) 정리 전략 부재 → F8/F16에 반영.
+- **미조회 섹션**: §6 Implementation Phases를 어느 렌즈도 FR과 대조하지 않았음 → F20.
+- **4렌즈 사각지대**: 운영/롤백(마이그레이션 되돌리기), 비용(50MB × 사용자 수 스토리지 비용 상한), 접근성(3개 화면 a11y 요구 전무). 비용·운영은 F5/F9에 부분 흡수했고, **접근성 요구는 PRD 전체에 단 한 줄도 없다** — 별도 finding으로 올리지는 않았으나 §5.4.1 작성 시 키보드 내비게이션·스크린리더 레이블을 포함할 것을 권고한다.
+
+## 누락된 요구사항
+
+| ID | 요구사항 | 권장 우선순위 |
+|----|---------|--------------|
+| NEW-1 | 공유 토큰 만료·폐기·재발급 (`DELETE /api/documents/{id}/share/{tokenId}`) | P0 |
+| NEW-2 | 엔드포인트별 Rate Limiting 정책 | P0 |
+| NEW-3 | 삭제 인가 규칙 명세 (소유자 또는 admin, 그 외 404) | P0 |
+| NEW-4 | 문서 버전/최신본 표기 (또는 Non-Goal로 명시적 강등) | P0 |
+| NEW-5 | 감사 로그 (열람·공유·삭제 이벤트) | P1 |
+| NEW-6 | 업로드 URL 발급 API (presigned) | P1 |
+| NEW-7 | 파일 실제 타입 검증(매직바이트) + 다운로드 헤더 강제 | P1 |
+| NEW-8 | 검색 API 계약 (`GET /api/documents?q=`) | P1 |
+| NEW-9 | 삭제 시 스토리지 객체·활성 토큰 연쇄 무효화 | P1 |
+| NEW-10 | 미리보기 지원 포맷 범위 및 폴백 | P2 |
+| NEW-11 | 접근성(a11y) 최소 요구 | P2 |
+
+## 리스크 매트릭스
+
+| 리스크 | 발생 확률 | 영향도 | 대응 방안 |
+|--------|----------|--------|----------|
+| 공유 링크 유출·영구 유효로 사내 문서 외부 노출 | 높음 | 치명적 | F4 — 토큰 엔트로피·만료·폐기 확정 (NEW-1) |
+| 토큰 브루트포스로 문서 열거 | 중간 | 치명적 | F5 — 열람 경로 rate limit + 실패 백오프 (NEW-2) |
+| IDOR로 타인 문서 삭제 (복구 불가) | 중간 | 높음 | F6 — 인가 규칙 명세 + soft delete + 감사 로그 |
+| FR-003/007 모순으로 인가 설계 착수 불가 | 확실 | 높음 | F3 — 인증 수단 2종 체계로 재정의 |
+| `/screen-spec` 단계 진입 불가 | 확실 | 높음 | F1·F2 — §5.4.1·§5.5 작성 |
+| 50MB 업로드가 배포 환경에서 413 실패 | 중간(플랫폼 의존) | 높음 | F11 — presigned 직접 업로드로 전환 |
+| DOCX 미리보기가 예상 밖 대형 하위 시스템으로 확대 | 중간 | 중간 | F12 — 지원 범위 축소 확정 |
+| 삭제해도 스토리지 객체 잔존 → 규제 대응 실패 | 중간 | 높음 | F16 — 연쇄 삭제 정책 명시 (NEW-9) |
+| 목표 "최신본 명확" 미달성 상태로 출시 | 높음 | 중간 | F7 — 버전 FR 추가 또는 Non-Goal 강등 |
+
+## 권장 조치
+
+### 즉시 조치 (Critical — 이것부터 하지 않으면 다음 단계 없음)
+1. **F3** FR-003/FR-007 모순 해소 — 인증 수단을 "세션 또는 공유 토큰" 2종 체계로 재정의. 나머지 보안 항목이 전부 이 결정 위에 얹히므로 **가장 먼저** 처리한다.
+2. **F4 + F5 + F6** 보안 3종 — 토큰 수명주기, rate limiting, 삭제 인가 규칙을 §4.2에 표로 명시.
+3. **F7** "최신본 명확" 목표에 대한 결정 — 버전 FR 추가 또는 Non-Goal 강등 중 택일.
+4. **F1 + F2** §5.4.1 Page State Matrix, §5.5 User Flow Mermaid 작성. F3 결정이 끝난 뒤 해야 guest 흐름을 올바르게 그릴 수 있다.
+
+### 구현 전 조치 (Major)
+5. **F8** §5.3 Data Model 작성 (F4·F6·F16의 공통 기반).
+6. **F11 + F13** 배포 타깃 확정 → 업로드/다운로드 전달 방식 재설계.
+7. **F17** §5.2 API 표를 FR·페이지와 3자 대조해 재작성, 인증 수단 열 추가.
+8. **F9 + F10** 수치 SLO, FR↔시나리오 매핑 및 거부 경로 시나리오 추가.
+9. **F12** 미리보기 지원 범위 확정, **F14/F15/F16** 파일 검증·감사 로그·데이터 보존 정책 §4.2 보강.
+
+### 가능하면 조치 (Minor)
+10. F18~F23 — 역할 목록 정합, 섹션 결번, Phase↔FR 매핑, 검색 인덱스 전략, 엣지 케이스, `/s/*` 헤더 정책. 대부분 F1·F8 작업 중 함께 처리 가능하다.
+
+---
+
+## 다음 단계
+
+현재 **BLOCKED**. Critical 7건 해소 후 재리뷰가 필요하다.
+
+재리뷰 통과 시: §5.4에 `Has FE Components: Yes` 페이지가 3개이므로 → `/screen-spec 사내-문서-공유` (IA / Flow / Spec / Wireframe / Handoff 5종 생성) → `/implement`.
+
+Sources (external grounding):
+- [Vercel Functions Limits](https://vercel.com/docs/functions/limitations)
+- [How do I bypass the 4.5MB body size limit of Vercel Serverless Functions?](https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions)
+- [Next.js 16](https://nextjs.org/blog/next-16)
+
+```json
+[
+  {"id":"F1","category":"Completeness","severity":"critical","prd_section":"§5.4.1","description":"FE 페이지 3개(/documents, /documents/[id], /s/[token])가 §5.4에 정의되어 있으나 Page State Matrix(§5.4.1)가 전혀 없다","reason":"§5.4.1은 /screen-spec의 필수 입력이라 FE 페이지가 있는데 누락되면 파이프라인 다음 단계가 막히고, 특히 /s/[token]의 토큰 만료·폐기·문서 삭제 상태가 미정의로 남는다"},
+  {"id":"F2","category":"Completeness","severity":"critical","prd_section":"§5.5","description":"FE 페이지가 존재하는데 User Flow Mermaid(§5.5)가 없어 업로드→공유 링크 생성→수신자 열람 핵심 경로가 문서화되지 않았다","reason":"§5.5는 /screen-spec 필수 입력이며, guest가 인증 벽을 어디서 만나는지 미정이라 FR-003/FR-007 모순이 구현까지 흘러간다"},
+  {"id":"F3","category":"Consistency","severity":"critical","prd_section":"§3 FR-003, FR-007","description":"FR-003(공유 링크 수신자는 로그인 없이 열람)과 FR-007(모든 문서 조회 요청은 인증 필수)이 둘 다 P0로 정면 충돌한다","reason":"두 P0가 동시에 참일 수 없어 인가 미들웨어 설계가 착수 불가하며, 구현자가 임의로 한쪽을 택하면 공유 기능이 죽거나 인증에 구멍이 생긴다"},
+  {"id":"F4","category":"Security","severity":"critical","prd_section":"§5.2, §3 FR-003, §4.2","description":"공유 토큰의 엔트로피·형식·만료·폐기(revoke)·재발급·스코프가 하나도 정의되지 않았고 폐기 API가 §5.2에 존재하지 않는다","reason":"링크가 인증을 대체하는 유일한 비밀인데 회수 수단이 없어 한 번 유출되면 영구 유효하며, §1.2의 '외부 유출 방지' 목표가 정면으로 무너진다"},
+  {"id":"F5","category":"Security","severity":"critical","prd_section":"§4.2","description":"Rate Limiting이 어떤 엔드포인트에도 정의되지 않았다(§4.2는 HTTPS·확장자 검사 2줄뿐)","reason":"인증 없는 /s/[token] 경로에 대한 토큰 브루트포스가 무제한이라 F4의 토큰 약점과 결합해 실제 유출 경로가 되고, 50MB 업로드 반복으로 스토리지 고갈도 가능하다"},
+  {"id":"F6","category":"Security","severity":"critical","prd_section":"§3 FR-004, FR-005 / §5.2","description":"자기 문서 삭제(FR-004)와 관리자 임의 삭제(FR-005)가 동일한 DELETE /api/documents/{id}에 매핑되었는데 소유권·역할 인가 검사 규칙이 없다","reason":"전형적 IDOR로 임의 사용자가 {id}만 바꿔 타인 문서를 삭제할 수 있고 복구 불가능한 데이터 무결성 손실이며, 감사 로그도 없어 사후 추적조차 불가하다"},
+  {"id":"F7","category":"Completeness","severity":"critical","prd_section":"§1.2 ↔ §3","description":"목표 '최신본이 무엇인지 항상 명확'에 대응하는 FR이 하나도 없고 버전 관리가 Non-Goals(§1.3)에도 없다","reason":"3대 목표 중 하나가 통째로 미구현 상태로 출시되어 PRD가 풀려던 원래 문제가 그대로 남는 핵심 기능 누락이다(FR-002 최신순 정렬은 버전 관계를 표현하지 못함)"},
+  {"id":"F8","category":"Completeness","severity":"major","prd_section":"§5.3 (결번)","description":"Data Model 섹션이 통째로 없어 documents/share_tokens 스키마, 소유자 관계, 스토리지 키, 삭제 시맨틱이 미정의","reason":"F4(토큰 수명)·F6(소유권 검사)·F16(삭제 시 객체 제거)이 모두 이 스키마에 의존하는데 근거가 없어 병렬 구현 시 팀마다 다른 모델을 가정한다"},
+  {"id":"F9","category":"Completeness","severity":"major","prd_section":"§4.1","description":"성능 요구가 '사용자가 기다릴 만한 수준'이라는 검증 불가 문장뿐이고 SLO/SLA, 목록·검색·열람 성능 요구가 없다","reason":"완료 판정 기준이 없어 성능 회귀를 탐지할 수 없고 인수 시 주관적 논쟁이 발생한다"},
+  {"id":"F10","category":"Completeness","severity":"major","prd_section":"§2.2","description":"Acceptance Criteria가 시나리오 2개뿐으로 FR-004~007이 미커버이고 실패·거부 경로 시나리오가 0개다","reason":"테스트가 해피패스만 덮게 되는데 F3·F6 같은 인가 결함은 정확히 이 미작성 거부 시나리오 영역에서 발생한다"},
+  {"id":"F11","category":"Feasibility","severity":"major","prd_section":"§3 FR-001 ↔ §5.1 ↔ §5.2","description":"최대 50MB 파일을 POST /api/documents로 직접 업로드하는 설계인데 서버리스 배포 시 요청 본문 상한 4.5MB에 걸려 413 FUNCTION_PAYLOAD_TOO_LARGE로 실패한다","reason":"external grounding에서 contradicted로 확인된 P0 요구의 구현 불가 리스크. 배포 타깃이 PRD에 미명시라 조건부 Major이며 Vercel/서버리스 확정 시 Critical로 승격된다"},
+  {"id":"F12","category":"Feasibility","severity":"major","prd_section":"§5.4 ↔ §3","description":"§5.4 문서 상세에만 '미리보기'가 등장하고 대응 FR이 없으며, DOCX는 브라우저 네이티브 렌더가 불가한데 변환 파이프라인·폴백이 미정의","reason":"구현 단계에서 변환 워커·큐·캐시라는 예상 밖 대형 하위 시스템이 튀어나와 일정이 붕괴하거나 DOCX 미리보기가 조용히 누락된다"},
+  {"id":"F13","category":"Feasibility","severity":"major","prd_section":"§5.1 ↔ §5.2","description":"S3 호환 스토리지의 파일 전달 방식(presigned GET URL vs 애플리케이션 프록시 스트리밍)이 정의되지 않았다","reason":"presigned면 발급 후 만료 전까지 인가와 무관하게 유효해 F4의 토큰 폐기가 무력화되고, 프록시면 F11의 응답 본문 상한에 다시 걸려 권한 모델 결정 자체가 불가하다"},
+  {"id":"F14","category":"Security","severity":"major","prd_section":"§4.2","description":"파일 검증이 '확장자 검사'뿐이며 매직바이트 검증·MIME 강제·Content-Disposition·CSP·악성코드 스캔이 없다","reason":"확장자는 클라이언트가 조작 가능하므로 evil.html을 report.pdf로 올려 저장형 XSS를 유발하거나 사내 유통 경로로 멀웨어를 배포할 수 있다"},
+  {"id":"F15","category":"Security","severity":"major","prd_section":"§4.2, §3","description":"열람·공유·삭제에 대한 감사 로그 요구가 없고, 인증 없는 /s/[token] 경로는 접근 주체를 사후 특정할 방법이 전혀 없다","reason":"§1.2 '외부 유출 방지' 목표를 검증·대응할 수단이 없어 유출 사고 시 범위 파악이 불가능하고 F6의 부당 삭제도 추적 불가하다"},
+  {"id":"F16","category":"Security","severity":"major","prd_section":"§4.2","description":"at-rest 암호화, 데이터 보존·파기 주기, 개인정보 규제 대응, 퇴사자 문서 처리가 없고 삭제 시 스토리지 객체가 실제로 제거되는지 미정의","reason":"'삭제됨'으로 표시되어도 S3 객체가 남아 presigned URL로 계속 접근되는 결함이 발생하며 정보주체의 삭제 요구에 응답할 수 없다"},
+  {"id":"F17","category":"Consistency","severity":"major","prd_section":"§5.2 ↔ §3 ↔ §5.4","description":"API 표에 FR-006 검색 엔드포인트, /s/[token]용 토큰 기반 조회 API, 공유 링크 폐기 API, 업로드 URL 발급 API가 모두 없다","reason":"FE가 붙일 계약이 없어 §5.4의 3개 페이지 중 /s/[token]은 구현 착수 자체가 불가하다(GET /api/documents/{id}는 인증 경로라 재사용 불가)"},
+  {"id":"F18","category":"Consistency","severity":"minor","prd_section":"§2.1 ↔ §2.3","description":"§2.3은 member/admin/guest 3개 역할을 정의하지만 §2.1 Primary User에는 2개만 기술되어 guest의 지위가 불명확하다","reason":"링크 수신자가 1급 사용자인지 부수 액터인지에 따라 F3의 인증 체계 재정의 방향이 달라진다"},
+  {"id":"F19","category":"Consistency","severity":"minor","prd_section":"§5.3","description":"§5.2 다음이 §5.4로 건너뛰어 §5.3이 결번이다","reason":"단순 오타일 수 있으나 F8(Data Model 누락)의 흔적일 가능성이 높아 검토가 필요하다"},
+  {"id":"F20","category":"Consistency","severity":"minor","prd_section":"§6","description":"Implementation Phases에 FR ID 매핑이 없고 특히 P0인 FR-007(인증)이 어느 Phase에 속하는지 불명이다","reason":"Phase 1(업로드·목록)에 인증이 포함되지 않으면 그 시점의 시스템이 완전 개방 상태로 동작한다"},
+  {"id":"F21","category":"Feasibility","severity":"minor","prd_section":"§3 FR-006 ↔ §5.1","description":"제목 부분 일치 검색은 LIKE '%키워드%'로 구현되기 쉬운데 B-tree 인덱스를 타지 못해 풀스캔이 된다","reason":"Startup 초기 볼륨에서는 수용 가능하나 F9의 성능 요구와 함께 pg_trgm GIN 인덱스 여부 또는 허용 임계 건수를 명시해야 한다"},
+  {"id":"F22","category":"Completeness","severity":"minor","prd_section":"§3, §5.4","description":"50MB 초과 업로드, 동일 파일명 중복, 업로드 중단·재시도, 미지원 확장자, 빈 목록, 검색 결과 0건 처리가 미정의","reason":"Phase 2.5 Completeness Critic에서 도출된 엣지 케이스 공백으로 §5.4.1 상태 매트릭스 작성 시 함께 채워야 한다"},
+  {"id":"F23","category":"Security","severity":"minor","prd_section":"§5.4 /s/[token]","description":"토큰이 URL 경로에 노출되는데 noindex, Referrer-Policy, 히스토리·프록시 로그 유출 대응이 언급되지 않았다","reason":"검색엔진 색인이나 Referrer 헤더를 통해 공유 토큰이 제3자에게 전달될 수 있어 F4의 토큰 보호가 우회된다"}
+]
+```

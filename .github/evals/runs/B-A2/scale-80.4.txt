@@ -1,0 +1,219 @@
+# Code Review — scale-80 fixture
+
+Scope: `.github/evals/fixtures/scale-80/src/` — `contracts.ts`, `infra.ts`, and 80 modules under `modules/`.
+
+## Method
+
+The 80 modules are near-identical CRUD boilerplate over a **safe baseline**: `getX` performs a
+parameterized point read and enforces `row.owner_id !== session.userId && session.role !== "admin"`;
+`listX`/`countX` scope by `session.userId` and cap with `Math.min(limit, MAX_PAGE_SIZE)`; `renameX`
+updates with `WHERE id = ? AND owner_id = ?`. That baseline honors every rule in `contracts.ts`
+(integer Money, LIMIT on lists, server-side ownership check, parameterized SQL).
+
+I diffed each module against that baseline and concentrated on the functions that deviate. All real
+findings live in a handful of files; the rest are faithful copies with no independent defects. Below,
+each finding cites the contract it breaks (from `contracts.ts`) and the concrete failure.
+
+## Contract reference (contracts.ts)
+
+- **Money (line 6)**: 금액은 정수 최소단위. 부동소수 금지. 나눗셈은 반올림 후 정수 복원.
+- **MAX_PAGE_SIZE (line 10)**: 모든 목록 조회는 LIMIT. 상한 없는 SELECT 금지.
+- **ExternalEvent (line 13–19)**: 같은 `eventId` 최대 5회 재전송. 이벤트 처리는 **멱등**해야 한다.
+- **Session / 접근 제어 (line 21–24)**: 소유자 리소스의 조회·수정·삭제는 서버에서 소유자/admin 검증.
+  클라이언트가 보낸 ownerId·role 을 신뢰하지 않는다.
+
+---
+
+## Findings
+
+### CRITICAL
+
+**1. asset3.ts:31 — client-supplied role drives the admin gate (privilege escalation)**
+`updateAsset3Price(id, body: { price, role })` authorizes with `if (body.role !== "admin")`. The role
+comes from the request body, not from a server-verified `Session`. Any caller sends `{ price, role:
+"admin" }` and writes an arbitrary price to any asset id (the UPDATE has no `owner_id` scope either).
+Directly violates contracts.ts:21–24 ("클라이언트가 보낸 ... 을 신뢰하지 않는다"). Every other mutation
+in the fixture takes `session: Session`; this one is the outlier.
+Fix: take `session: Session`, check `session.role === "admin"` server-side; never read role from body.
+
+**2. invoice.ts:25 — SQL injection in searchInvoice**
+`` `... WHERE title LIKE '%${q}%' ORDER BY id DESC` `` interpolates the raw user string `q` into SQL.
+Input `q = "'; DROP TABLE invoices; --"` (or a `UNION SELECT`) executes. Every other query in the
+codebase is parameterized (`?` placeholders); this is the one that concatenates. It also has no
+`LIMIT` (contracts.ts:10) and no session scoping.
+Fix: parameterize — `WHERE title LIKE ?` with `['%'+q+'%']`, add `LIMIT`, scope by session.
+
+**3. review.ts:23,26 — hardcoded webhook secret + insecure signature check**
+`REVIEW_WEBHOOK_SECRET = "whsec_7d2f9a1c4e8b6031"` is a live-looking secret committed in source, and
+`verifyReviewSig` returns `sig === SECRET` — it compares the caller-supplied signature directly to the
+secret (so the "signature" IS the plaintext secret) using a non-constant-time `===`. This is not an
+HMAC of the body; any client that knows/leaks the constant is authenticated, and the comparison leaks
+timing. Secret disclosure + broken verification.
+Fix: load secret from env/secret store, rotate the leaked value, compute HMAC over `body`, compare with
+a constant-time equal.
+
+### MAJOR
+
+**4. asset1.ts:23 — deleteAsset1 trusts a client-supplied ownerId**
+`deleteAsset1(id, ownerId)` deletes `WHERE id = ? AND owner_id = ?` using an `ownerId` argument instead
+of `session.userId`. Contracts.ts:23 explicitly forbids trusting a client ownerId. A caller who knows a
+victim's asset id and userId deletes the victim's row; nothing binds the delete to the authenticated
+principal. Every sibling mutation uses `session.userId` — this signature is the deviation. (No `blob`
+cleanup either, so the stored object is orphaned.)
+Fix: `deleteAsset1(id, session)`, scope by `session.userId` (or allow admin), remove associated blob.
+
+**5. invoice1.ts:39 — claimInvoice1 has a check-then-act race (TOCTOU)**
+Reads `claimed_by`, branches, then `UPDATE ... SET claimed_by = ?` with no guard. Two concurrent
+requests both read NULL and both write — the second silently overwrites the first, so two users
+"successfully" claim the same invoice. The claim is not atomic.
+Fix: make the write conditional — `UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS
+NULL` and treat `affectedRows === 0` as already-claimed.
+
+**6. invoice2.ts:31 — invoice2Fee returns a fractional Money**
+`return (amount * 25) / 1000;` yields a non-integer (e.g. `amount = 100` → `2.5`). `Money` is an integer
+minor unit and division must round back to integer (contracts.ts:3–6). Fees are persisted/summed, so
+this drifts and corrupts totals.
+Fix: `return Math.round((amount * 25) / 1000);` (pick and document the rounding policy).
+
+**7. review3.ts:24 — review3Total does float Money math with no rounding**
+`(base * taxBp) / 10000` and `(base * discountBp) / 10000` produce fractional values that flow straight
+into the returned `Money` (`base - discount + tax`). Violates the integer-Money / rounding contract;
+e.g. `base=100, taxBp=1` → `tax=0.01`. Money amounts become non-integer.
+Fix: round each component to an integer before combining, e.g. `Math.round((base*taxBp)/10000)`.
+
+**8. invoice3.ts:27 — pool connection leak on the early-return path**
+`reindexInvoice3s` acquires `conn = await pool.acquire()`, and on `if (!r.length) return { ok: false,
+missing: id }` returns **without** `pool.release(conn)`. A single missing id leaks the connection every
+call; under load the pool is exhausted and the service wedges. `release` only runs on the success path.
+Fix: wrap in `try { ... } finally { await pool.release(conn); }`.
+
+**9. review1.ts:40 — external event handler is not idempotent (contract violation)**
+`onReview1Event` blindly `INSERT`s a ledger row per call and ignores `evt.eventId`. Contracts.ts:12–19
+says providers retry the same `eventId` up to 5×, so this writes up to 5 duplicate ledger rows for one
+event. The "이벤트 처리는 반드시 멱등해야 한다" rule is broken.
+Fix: dedupe on `eventId` — unique constraint + `INSERT ... ON CONFLICT DO NOTHING`, or check-and-skip
+keyed by `eventId`.
+
+**10. review2.ts:33 — blob deleted before DB commit; no existence check**
+`archiveReview2` reads `rows[0].blob_key` (throws if the id doesn't exist — swallowed by the catch as a
+generic `archive_failed`), then `blob.remove(...)` **before** the `UPDATE ... archived = 1`. If the
+UPDATE fails after the blob is removed, the blob is permanently gone while the record still shows
+un-archived — irreversible data loss / inconsistency. Order and error handling are both wrong.
+Fix: verify `rows[0]` exists; set `archived = 1` first (or within a transaction), and only remove the
+blob after the DB state is durable.
+
+**11. asset.ts:30 — listAssetsWithOwner: N+1 query and no access scoping**
+`SELECT id, owner_id FROM assets LIMIT 100` then a per-row `SELECT ... FROM users WHERE id = ?` inside a
+loop — 1 + N round trips (up to 101 queries). It also takes no `Session` and is not scoped by owner, so
+it returns ownership data for **all** users' assets. The rest of the module is per-owner scoped; this
+function leaks cross-tenant data and scales linearly in round trips.
+Fix: single JOIN (`SELECT a.id, a.owner_id, u.name FROM assets a JOIN users u ON u.id = a.owner_id`),
+add owner/admin scoping and a real `Session` gate.
+
+**12. asset2.ts:39 — exportAsset2s: unbounded `SELECT *` with no LIMIT and no auth**
+`SELECT * FROM assets2 WHERE created_at BETWEEN ? AND ?` has no `LIMIT` (violates contracts.ts:10, "상한
+없는 SELECT 금지") and no `Session`/owner scoping, so a wide date range can pull the entire table across
+all owners into memory. Both a resource/DoS risk and a cross-tenant data exposure.
+Fix: add a bounded `LIMIT` (pagination), select explicit columns, and scope by owner/admin via session.
+
+---
+
+## Rollup (deterministic gate)
+
+- critical: 3 (asset3.ts:31, invoice.ts:25, review.ts:23/26)
+- major: 9 (asset1.ts:23, invoice1.ts:39, invoice2.ts:31, review3.ts:24, invoice3.ts:27,
+  review1.ts:40, review2.ts:33, asset.ts:30, asset2.ts:39)
+- minor: 0
+
+**Verdict: FAIL** — critical ≥ 1 (high confidence). Commit blocked. The three criticals are
+independent authored deviations from the safe baseline (client-trusted role, string-interpolated SQL,
+hardcoded/plaintext-compared webhook secret); each must be fixed before this can pass.
+
+```json
+[
+  {
+    "file": "src/modules/asset3.ts",
+    "line": 31,
+    "severity": "critical",
+    "reason": "updateAsset3Price authorizes with body.role ('if (body.role !== \"admin\")'), a client-supplied value, instead of a server-verified Session. Any caller passes {role:\"admin\"} to write an arbitrary price to any asset id (UPDATE also lacks owner_id scoping). Violates contracts.ts:21-24 — do not trust client-sent role.",
+    "suggestion": "Take session: Session and check session.role === 'admin' server-side; never read role from the request body. Scope the UPDATE by owner where applicable."
+  },
+  {
+    "file": "src/modules/invoice.ts",
+    "line": 25,
+    "severity": "critical",
+    "reason": "searchInvoice interpolates the raw user string q into SQL via LIKE '%${q}%', enabling SQL injection (e.g. q with a UNION/DROP payload). It is the only query in the fixture that concatenates instead of parameterizing; it also has no LIMIT (contracts.ts:10) and no session scoping.",
+    "suggestion": "Parameterize: WHERE title LIKE ? with ['%'+q+'%']; add a LIMIT and scope results by session."
+  },
+  {
+    "file": "src/modules/review.ts",
+    "line": 23,
+    "severity": "critical",
+    "reason": "A live-looking webhook secret is hardcoded in source (REVIEW_WEBHOOK_SECRET='whsec_...') and verifyReviewSig returns sig === SECRET — it compares the caller-supplied signature directly against the plaintext secret using non-constant-time ===, not an HMAC over the body. Secret disclosure plus broken/timing-leaky verification.",
+    "suggestion": "Load the secret from env/secret store and rotate the leaked value; compute an HMAC over the request body and compare with a constant-time equality function."
+  },
+  {
+    "file": "src/modules/asset1.ts",
+    "line": 23,
+    "severity": "major",
+    "reason": "deleteAsset1(id, ownerId) deletes WHERE id=? AND owner_id=? using a client-supplied ownerId argument instead of session.userId, violating contracts.ts:23. A caller who knows a victim's asset id and userId can delete the victim's row; nothing binds the delete to the authenticated principal. The associated blob is also never removed.",
+    "suggestion": "Change signature to deleteAsset1(id, session), scope by session.userId (or allow admin), and remove the associated blob on delete."
+  },
+  {
+    "file": "src/modules/invoice1.ts",
+    "line": 39,
+    "severity": "major",
+    "reason": "claimInvoice1 reads claimed_by then UPDATEs with no guard — a check-then-act (TOCTOU) race. Two concurrent requests both read NULL and both write; the second overwrites the first, so two users each 'successfully' claim the same invoice.",
+    "suggestion": "Make the write atomic: UPDATE invoices1 SET claimed_by=? WHERE id=? AND claimed_by IS NULL, and treat affectedRows===0 as already_claimed."
+  },
+  {
+    "file": "src/modules/invoice2.ts",
+    "line": 31,
+    "severity": "major",
+    "reason": "invoice2Fee returns (amount*25)/1000, a fractional value (amount=100 -> 2.5). Money is an integer minor unit and division must round back to an integer (contracts.ts:3-6); fees are persisted and summed, so this drifts and corrupts totals.",
+    "suggestion": "Return Math.round((amount*25)/1000) (or the agreed rounding policy) so Money stays integer."
+  },
+  {
+    "file": "src/modules/review3.ts",
+    "line": 24,
+    "severity": "major",
+    "reason": "review3Total computes (base*taxBp)/10000 and (base*discountBp)/10000 as floats with no rounding and folds them into the returned Money (base - discount + tax). Violates the integer-Money/rounding contract (contracts.ts:3-6); e.g. base=100, taxBp=1 yields tax=0.01.",
+    "suggestion": "Round each component to an integer before combining, e.g. Math.round((base*taxBp)/10000)."
+  },
+  {
+    "file": "src/modules/invoice3.ts",
+    "line": 27,
+    "severity": "major",
+    "reason": "reindexInvoice3s acquires a pool connection then, on the early return 'if (!r.length) return {ok:false, missing:id}', returns without pool.release(conn). release runs only on the success path, so any missing id leaks a connection every call and eventually exhausts the pool.",
+    "suggestion": "Wrap the loop in try { ... } finally { await pool.release(conn); } so the connection is always returned."
+  },
+  {
+    "file": "src/modules/review1.ts",
+    "line": 40,
+    "severity": "major",
+    "reason": "onReview1Event unconditionally INSERTs a ledger row per call and ignores evt.eventId. Contracts.ts:12-19 states providers retry the same eventId up to 5x and handlers must be idempotent, so this writes up to 5 duplicate ledger rows per event.",
+    "suggestion": "Dedupe on eventId — unique constraint plus INSERT ... ON CONFLICT DO NOTHING, or check-and-skip keyed by evt.eventId."
+  },
+  {
+    "file": "src/modules/review2.ts",
+    "line": 33,
+    "severity": "major",
+    "reason": "archiveReview2 reads rows[0].blob_key (throws and is swallowed as generic archive_failed if the id is missing) and calls blob.remove BEFORE the UPDATE ... archived=1. If the UPDATE fails after the blob is removed, the blob is permanently gone while the record still shows un-archived — irreversible data loss/inconsistency.",
+    "suggestion": "Verify rows[0] exists; set archived=1 first (or run both in a transaction) and only remove the blob after the DB state is durable."
+  },
+  {
+    "file": "src/modules/asset.ts",
+    "line": 30,
+    "severity": "major",
+    "reason": "listAssetsWithOwner runs SELECT id, owner_id FROM assets LIMIT 100 then a per-row user lookup inside the loop (1+N, up to 101 round trips). It takes no Session and is not owner-scoped, so it returns ownership data for all users' assets — cross-tenant leak plus linear round-trip cost.",
+    "suggestion": "Replace with a single JOIN (assets JOIN users ON users.id = assets.owner_id) and add owner/admin scoping via a Session parameter."
+  },
+  {
+    "file": "src/modules/asset2.ts",
+    "line": 39,
+    "severity": "major",
+    "reason": "exportAsset2s runs SELECT * FROM assets2 WHERE created_at BETWEEN ? AND ? with no LIMIT (violates contracts.ts:10) and no Session/owner scoping. A wide date range pulls the entire table across all owners into memory — resource/DoS risk and cross-tenant data exposure.",
+    "suggestion": "Add a bounded LIMIT with pagination, select explicit columns, and scope by owner/admin via session."
+  }
+]
+```

@@ -1,0 +1,78 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..e99bcb4 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,72 @@
++from collections.abc import Mapping
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = frozenset({"endpoint", "timeout_seconds"})
++_V2_FIELDS = frozenset({"version", "delivery"})
++_V2_DELIVERY_FIELDS = frozenset({"endpoint", "timeout_ms", "enabled"})
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str) or endpoint != endpoint.strip():
++        raise ValueError("endpoint must be an https URL")
++
++    try:
++        parsed = urlsplit(endpoint)
++        hostname = parsed.hostname
++        parsed.port
++    except ValueError as exc:
++        raise ValueError("endpoint must be an https URL") from exc
++
++    if parsed.scheme != "https" or not parsed.netloc or hostname is None:
++        raise ValueError("endpoint must be an https URL")
++
++
++def _validate_timeout(timeout_ms):
++    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
++        raise ValueError("timeout must be an integer")
++    if not 100 <= timeout_ms <= 30000:
++        raise ValueError("timeout must be between 100 and 30000 ms")
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Convert a supported delivery configuration to its canonical form."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = frozenset(raw)
++    if fields == _V1_FIELDS:
++        endpoint = raw["endpoint"]
++        timeout_seconds = raw["timeout_seconds"]
++        if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int):
++            raise ValueError("timeout_seconds must be an integer")
++
++        timeout_ms = timeout_seconds * 1000
++        enabled = True
++    elif fields == _V2_FIELDS:
++        version = raw["version"]
++        delivery = raw["delivery"]
++        if isinstance(version, bool) or not isinstance(version, int) or version != 2:
++            raise ValueError("version must be 2")
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if frozenset(delivery) != _V2_DELIVERY_FIELDS:
++            raise ValueError("delivery fields are invalid")
++
++        endpoint = delivery["endpoint"]
++        timeout_ms = delivery["timeout_ms"]
++        enabled = delivery["enabled"]
++        if not isinstance(enabled, bool):
++            raise ValueError("enabled must be a boolean")
++    else:
++        raise ValueError("config fields do not match the v1 or v2 schema")
++
++    _validate_endpoint(endpoint)
++    _validate_timeout(timeout_ms)
++    return CanonicalConfig(
++        endpoint=endpoint,
++        timeout_ms=timeout_ms,
++        enabled=enabled,
++    )

@@ -1,0 +1,7 @@
+arm=M55-V2
+fixture=review-missing-pages
+repeat=3
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=79
+exit_code=0

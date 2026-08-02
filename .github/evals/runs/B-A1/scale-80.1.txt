@@ -1,0 +1,235 @@
+# Code Review Report — fixtures/scale-80
+
+## Target
+- **Root**: `/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/fixtures/scale-80/src/`
+- **Scope**: `contracts.ts`, `infra.ts`, `modules/*.ts` (80 modules, 2,372 lines total)
+- **Review level**: Level 3 (Deep) — contract-grounded, whole-corpus coverage
+
+## Method / Coverage
+
+`contracts.ts` declares four global invariants that every module must honor:
+
+| # | Invariant | Source |
+|---|-----------|--------|
+| I1 | Money is an **integer** minor unit; float forbidden; division must define a rounding policy and return to integer | contracts.ts:3-6 |
+| I2 | Every list query must be **LIMIT**-bounded (`MAX_PAGE_SIZE = 100`); unbounded SELECT forbidden | contracts.ts:8-10 |
+| I3 | External events are **retried up to 5× with the same `eventId`**; handlers must be idempotent | contracts.ts:12-19 |
+| I4 | Owner/admin access must be verified **server-side**; a client-supplied `ownerId` must never be trusted | contracts.ts:21-24 |
+
+Coverage was made exhaustive rather than sampled. The 80 modules are template-generated: I verified that lines 1-19 of all 80 files are byte-identical modulo identifier renaming (single normalized hash bucket, 80/80), that all 80 carry the owner check `row.owner_id !== session.userId && session.role !== "admin"`, and that all 80 list queries are both owner-scoped and `LIMIT ?`-bounded. The shared baseline is therefore clean, and every genuine defect lives in the per-module divergent tail (lines 20+), all of which was read in full.
+
+**Deliberately not reported (checked and dismissed):**
+- `countX()` uses `SELECT COUNT(*)` with no LIMIT in ~50 modules. This is **not** an I2 violation — an aggregate without GROUP BY returns exactly one row. Flagging it would be a false positive.
+- `getX()` returns `null` for both "not found" and "forbidden". This is a deliberate and correct anti-enumeration pattern, not a defect.
+
+---
+
+## Gate Decision (findings rollup — decisive)
+
+| Severity | Count | Gate effect |
+|----------|-------|-------------|
+| Critical (high/med confidence) | 11 | ≥1 → **FAIL**, commit blocked |
+| Major | 8 | — |
+| Minor | 2 | — |
+
+- **Status**: **FAIL**
+- **Rule applied**: `critical ≥ 1 (high/med confidence)` → FAIL
+- **Security criticals present**: F1, F2, F4, F5, F6, F8, F9 → zero-tolerance, no score-cap override available
+- **Action**: `code-formatter` cannot repair any of these. All 11 criticals are logic, authorization, or contract violations requiring manual fixes. Commit must remain blocked until F1-F11 are resolved.
+
+### Reference score (non-decisive)
+
+| Category | Score | Basis |
+|----------|-------|-------|
+| Readability | 16/20 | Baseline is clean and consistent; tails are terse but legible |
+| Maintainability | 9/20 | 80 near-identical modules; every fix must be applied 80× |
+| Performance | 13/20 | N+1 loop, unbounded exports, connection leak |
+| Testability | 8/20 | Zero tests; hard-coded module-level infra imports, no injection seam |
+| Best Practices | 6/20 | SQL injection, hard-coded secret, forged signature check, float money |
+| **Total (reference only)** | **52/100** | **F** |
+
+Score and rollup agree here, but per protocol the rollup governs regardless.
+
+---
+
+## Findings
+
+### Critical
+
+**F1 — SQL injection in `searchInvoice` · `modules/invoice.ts:25`**
+The query interpolates the caller-controlled `q` directly into the SQL string:
+```ts
+`SELECT id, title FROM invoices WHERE title LIKE '%${q}%' ORDER BY id DESC`
+```
+This is the only query in the entire 80-module corpus that does not use bound parameters — every sibling uses `?` placeholders. A `q` of `%' UNION SELECT password, 1 FROM users -- ` exfiltrates arbitrary tables. Fix: bind the pattern — `` `... WHERE title LIKE ? ...` `` with `['%' + q + '%']`.
+*Confidence: high.*
+
+**F2 — `searchInvoice` performs no authorization at all · `modules/invoice.ts:23`**
+The function takes no `Session` parameter and applies no `owner_id` filter, so any caller retrieves invoice titles belonging to every user. This violates I4 (contracts.ts:21-24). All 79 sibling read paths take a `Session` and scope by owner; this one silently does not. Fix: accept `session: Session` and add `AND owner_id = ?` (with an admin bypass matching the `getX` convention).
+*Confidence: high.*
+
+**F3 — Hard-coded webhook secret committed to source · `modules/review.ts:23`**
+```ts
+const REVIEW_WEBHOOK_SECRET = "whsec_7d2f9a1c4e8b6031";
+```
+Secret material in version control is compromised by definition — it leaks to every clone, fork, and CI log, and cannot be rotated without a code deploy. Fix: read from the environment/secret manager, and rotate this value since it must be treated as already disclosed.
+*Confidence: high.*
+
+**F4 — `verifyReviewSig` is not a signature check · `modules/review.ts:25-26`**
+```ts
+export function verifyReviewSig(sig: string, body: string): boolean {
+  return sig === REVIEW_WEBHOOK_SECRET;
+}
+```
+Three compounding failures: (a) `body` is accepted and never read, so the function validates nothing about the payload — an attacker who presents the correct static string can submit **any** body; (b) the "signature" is the bare secret rather than an HMAC, so every legitimate request transmits the secret itself, disclosing it to any observer or log; (c) `===` on secret material is not constant-time, leaking bytes to a timing oracle. Fix: compute `HMAC-SHA256(secret, body)` and compare with `crypto.timingSafeEqual`.
+*Confidence: high.*
+
+**F5 — Privilege escalation via client-supplied role · `modules/asset3.ts:30-32`**
+```ts
+export async function updateAsset3Price(id: string, body: { price: Money; role: string }) {
+  if (body.role !== "admin") return { ok: false, error: "forbidden" };
+  await db.raw(`UPDATE assets3 SET price = ? WHERE id = ?`, [body.price, id]);
+```
+The authorization decision reads `role` out of the request **body**. Any client sets `role: "admin"` and rewrites the price of any asset. This is the exact failure I4 forbids: authorization must derive from the server-side `Session`, never from client input. The `UPDATE` additionally has no `owner_id` predicate, so even a genuine non-admin owner check is absent. Fix: take `session: Session`, branch on `session.role`, and scope the UPDATE by `owner_id`.
+*Confidence: high.*
+
+**F6 — Non-idempotent external event handler · `modules/review1.ts:39-44`**
+```ts
+export async function onReview1Event(evt: ExternalEvent) {
+  await db.raw(`INSERT INTO reviews1_ledger (kind, payload) VALUES (?, ?)`, ...);
+```
+`evt.eventId` is never read. I3 (contracts.ts:12-14) states the provider redelivers the same `eventId` up to 5 times until it observes a 2xx, so a single logical event writes up to 5 duplicate **ledger** rows. On a financial ledger this is silent, compounding data corruption that no downstream reconciliation can distinguish from genuine activity. Fix: store `event_id` with a UNIQUE constraint and `INSERT ... ON CONFLICT DO NOTHING`, or check-and-skip inside a transaction.
+*Confidence: high.*
+
+**F7 — Fractional Money returned by `invoice2Fee` · `modules/invoice2.ts:30-31`**
+```ts
+export function invoice2Fee(amount: Money): Money {
+  return (amount * 25) / 1000;
+}
+```
+The declared return type is `Money`, which I1 defines as an integer minor unit with floats explicitly forbidden. A 2.5% fee on `amount = 999` yields `24.975`. The fractional value then flows into ledgers and further arithmetic, accumulating drift and breaking reconciliation. No rounding policy is stated, as I1 requires. Fix: pick and document a policy, e.g. `Math.round((amount * 25) / 1000)`.
+*Confidence: high.*
+
+**F8 — Fractional Money returned by `review3Total` · `modules/review3.ts:23-26`**
+```ts
+const tax = (base * taxBp) / 10000;
+const discount = (base * discountBp) / 10000;
+return base - discount + tax;
+```
+Same I1 violation as F7, twice: `base = 1999, taxBp = 1000` gives `tax = 199.9`, and the fractional intermediates propagate into the returned `Money`. Separately, tax is computed on the **pre-discount** base while the discount is subtracted afterward — in most jurisdictions tax applies to the discounted amount, so the total is likely overstated even after rounding is fixed. Fix: round each component to an integer at the point of division, and confirm the intended tax base.
+*Confidence: high (rounding), medium (tax-base ordering — depends on unstated business rules).*
+
+**F9 — `exportAsset2s` exports the full table with no authorization · `modules/asset2.ts:39-43`**
+```ts
+`SELECT * FROM assets2 WHERE created_at BETWEEN ? AND ?`
+```
+No `Session`, no `owner_id` predicate, and `SELECT *` rather than an explicit column list. Any caller passing a wide date range receives every column of every user's assets, including columns the module's other queries deliberately never expose. Violates I4. Fix: require a `Session`, scope by owner, and enumerate columns explicitly.
+*Confidence: high.*
+
+**F10 — `deleteAsset1` trusts a caller-supplied `ownerId` · `modules/asset1.ts:23-24`**
+```ts
+export async function deleteAsset1(id: string, ownerId: string) {
+  await db.raw(`DELETE FROM assets1 WHERE id = ? AND owner_id = ?`, [id, ownerId]);
+```
+This is the only mutating function in the corpus that takes an `ownerId` string instead of a `Session`; all 79 siblings take `session: Session` and derive the owner server-side. I4 names this failure explicitly: "클라이언트가 보낸 ownerId 를 신뢰하지 않는다." The signature invites a request-supplied value straight into the authorization predicate. Secondarily, there is no admin path, so admins cannot delete. Fix: take `session: Session` and use `session.userId`, with a `session.role === "admin"` bypass.
+*Confidence: medium — the DELETE remains owner-scoped, so exploitability depends on what the (absent) caller passes. The signature is a contract violation regardless of caller.*
+
+**F11 — Check-then-act race in `claimInvoice1` · `modules/invoice1.ts:39-43`**
+```ts
+const rows = await db.raw(`SELECT claimed_by FROM invoices1 WHERE id = ?`, [id]);
+if (rows[0]?.claimed_by) return { ok: false, reason: "already_claimed" };
+await db.raw(`UPDATE invoices1 SET claimed_by = ? WHERE id = ?`, [userId, id]);
+```
+The read and the write are separate statements with no transaction and no lock. Two concurrent requests both observe `claimed_by` empty, both proceed, and the second silently overwrites the first — the first user is told they succeeded while the invoice belongs to someone else. The unconditional `WHERE id = ?` also lets a later call steal an already-claimed invoice outright. Fix: make it atomic — `UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL`, then treat `affectedRows === 0` as `already_claimed`.
+*Confidence: high.*
+
+### Major
+
+**F12 — Unbounded search result set · `modules/invoice.ts:24-26`**
+`searchInvoice` has no `LIMIT`, violating I2 (contracts.ts:8-10). A broad `q` loads the entire matching set into memory. Fix: append `LIMIT ?` bounded by `MAX_PAGE_SIZE`, consistent with every `listX` in the corpus.
+
+**F13 — Unbounded export result set · `modules/asset2.ts:40-42`**
+Same I2 violation as F12: `exportAsset2s` applies no `LIMIT`, so a wide `from`/`to` range materializes the whole table. Fix: paginate, or stream with an explicit server-side cursor if a genuine bulk export is intended.
+
+**F14 — Connection leak on the early-return path · `modules/invoice3.ts:23-31`**
+```ts
+const conn = await pool.acquire();
+for (const id of ids) {
+  const r = await conn.query(...);
+  if (!r.length) return { ok: false, missing: id };   // ← leaks conn
+  await search.index(id, r[0].body);
+}
+await pool.release(conn);
+```
+The early return at line 27 skips `pool.release`, and any throw from `conn.query` or `search.index` leaks identically since there is no `finally`. One missing id per call permanently consumes a pool slot; repeated calls exhaust the pool and stall every database consumer in the process. Fix: wrap the body in `try { ... } finally { await pool.release(conn); }`.
+
+**F15 — Irreversible ordering and swallowed error in `archiveReview2` · `modules/review2.ts:30-38`**
+```ts
+const rows = await db.raw(`SELECT blob_key FROM reviews2 WHERE id = ?`, [id]);
+try {
+  await blob.remove(rows[0].blob_key);
+  await db.raw(`UPDATE reviews2 SET archived = 1 WHERE id = ?`, [id]);
+```
+Three defects: (a) the **irreversible** blob deletion happens before the recoverable DB update, so if the `UPDATE` fails the blob is permanently gone while the row still reads unarchived — the record now points at a nonexistent object and no retry can restore it; (b) `rows[0].blob_key` is unguarded, so a missing id throws `TypeError` that the surrounding `catch` disguises as a legitimate `archive_failed`; (c) the caught `e` is discarded without logging, erasing the only diagnostic for a data-loss path. Fix: mark archived first and delete the blob afterward (or drive deletion from a retryable job), guard `rows[0]`, and log `e`.
+
+**F16 — N+1 query loop · `modules/asset.ts:30-37`**
+`listAssetsWithOwner` fetches up to 100 assets, then issues one `users` query per row inside the loop — 101 sequential round trips where one suffices. Fix: a single `JOIN`, or collect `owner_id`s and issue one `WHERE id IN (?)` batch.
+
+**F17 — `listAssetsWithOwner` has no authorization · `modules/asset.ts:30-31`**
+The function takes no `Session` and applies no owner filter, returning every asset's `owner_id` joined to user names — a cross-tenant ownership map. Same I4 class as F2 and F9, though narrower in the columns exposed. Fix: require a `Session` and scope by owner, or restrict to `session.role === "admin"` if this is genuinely an admin view.
+
+**F18 — Pagination bound rejects only the upper end · all 80 modules, line 16**
+```ts
+const capped = Math.min(limit, MAX_PAGE_SIZE);
+```
+`Math.min` caps the ceiling but passes negatives, zero, non-integers, and `NaN` straight through to `LIMIT ?`. `limit = -1` produces a driver error; `limit = NaN` binds `NaN`; `limit = 1.5` is a non-integer bind. Present in all 80 files, so one fix must be replicated 80× (see F19). Fix: `Math.max(1, Math.min(Math.floor(limit) || 50, MAX_PAGE_SIZE))`.
+
+**F19 — 80 near-duplicate modules with no shared abstraction · `modules/*.ts`**
+Lines 1-19 are byte-identical across all 80 files modulo identifiers, and the `countX`/`renameX` tails repeat verbatim ~50× and ~25× respectively. Every systemic fix — F18's clamp, the owner-check convention, a query-builder change — must be applied 80 times, and each application is an opportunity to introduce exactly the kind of one-off divergence that produced F1, F5, F10, and F11. This duplication is the structural root cause of most findings above. Fix: extract a generic repository factory parameterized by table and entity name; the per-module tails become the only bespoke code.
+
+### Minor
+
+**F20 — All query results are untyped `any` · `infra.ts:2`**
+`db.raw` is declared `Promise<any>`, so every row access across the corpus (`rows[0]?.c`, `rows[0].blob_key`, `res.affectedRows`) is unchecked by the compiler. F15's `rows[0].blob_key` crash would have been caught at compile time under a typed signature. Fix: make `db.raw` generic — `raw<T>(sql: string, params?: unknown[]): Promise<T[]>`.
+
+**F21 — No tests anywhere in the fixture**
+The tree contains only `contracts.ts`, `infra.ts`, and `modules/`. None of the four contract invariants has an executable check, which is why 11 critical violations survive in-tree. The infra stubs are module-level singletons with no injection seam, so testing requires module mocking. Fix: inject infra dependencies, then add contract-level tests — integer-Money assertions, a LIMIT presence check, a duplicate-`eventId` idempotency test, and per-endpoint authorization tests.
+
+---
+
+## Recommendations
+
+1. **Block the commit.** All 11 criticals are manual fixes; no formatter or linter autofix applies.
+2. **Fix the security set first** — F1, F3, F4, F5, F2/F9/F17, F10. These are exploitable today and independent of one another.
+3. **Then the correctness set** — F6 (ledger corruption), F7/F8 (money drift), F11 (double-claim), F15 (data loss). These corrupt data silently, so elapsed time before the fix increases cleanup cost.
+4. **Then resource and contract hygiene** — F14, F12/F13, F18.
+5. **Address F19 last but deliberately.** Collapsing the 80 modules into a parameterized repository is the only change that stops this defect class from recurring; doing it before the fixes above would merely propagate the bugs into the abstraction.
+6. **Add the four contract tests from F21** as the regression net, so I1-I4 are enforced by CI rather than by review.
+
+---
+
+```json
+[
+  {"id":"F1","file":"modules/invoice.ts","line":25,"severity":"critical","reason":"searchInvoice interpolates caller-controlled `q` directly into the SQL string (`LIKE '%${q}%'`) — the only unparameterized query in the corpus. Allows arbitrary SQL injection and cross-table exfiltration.","suggestion":"Use a bound parameter: `... WHERE title LIKE ? ...` with `['%' + q + '%']`."},
+  {"id":"F2","file":"modules/invoice.ts","line":23,"severity":"critical","reason":"searchInvoice takes no Session and applies no owner_id filter, returning every user's invoice titles. Violates contracts.ts:21-24 (server-side owner/admin verification).","suggestion":"Accept `session: Session` and add `AND owner_id = ?`, with an admin bypass matching the getX convention."},
+  {"id":"F3","file":"modules/review.ts","line":23,"severity":"critical","reason":"Webhook secret `whsec_7d2f9a1c4e8b6031` is hard-coded in source, so it leaks to every clone, fork and CI log and cannot be rotated without a deploy.","suggestion":"Load from environment/secret manager and rotate the value, which must be treated as already disclosed."},
+  {"id":"F4","file":"modules/review.ts","line":26,"severity":"critical","reason":"verifyReviewSig returns `sig === REVIEW_WEBHOOK_SECRET`: `body` is never read so no payload is authenticated, the 'signature' is the bare secret (disclosing it on every request), and `===` on secret material is not constant-time.","suggestion":"Compute HMAC-SHA256(secret, body) and compare with crypto.timingSafeEqual."},
+  {"id":"F5","file":"modules/asset3.ts","line":31,"severity":"critical","reason":"updateAsset3Price reads the authorization role from the client request body (`body.role !== \"admin\"`), so any caller sets role:\"admin\" and rewrites any asset's price. The UPDATE also lacks an owner_id predicate. Directly violates contracts.ts:21-24.","suggestion":"Take `session: Session`, branch on `session.role`, and scope the UPDATE by owner_id."},
+  {"id":"F6","file":"modules/review1.ts","line":40,"severity":"critical","reason":"onReview1Event ignores evt.eventId and unconditionally INSERTs a ledger row. contracts.ts:12-14 guarantees up to 5 redeliveries of the same eventId, so one logical event writes up to 5 duplicate financial ledger rows.","suggestion":"Persist event_id with a UNIQUE constraint and use INSERT ... ON CONFLICT DO NOTHING, or check-and-skip within a transaction."},
+  {"id":"F7","file":"modules/invoice2.ts","line":31,"severity":"critical","reason":"invoice2Fee returns `(amount * 25) / 1000` typed as Money, producing fractional values (amount=999 -> 24.975). Violates the integer-minor-unit contract at contracts.ts:3-6, which also requires a stated rounding policy.","suggestion":"Apply and document a rounding policy, e.g. `Math.round((amount * 25) / 1000)`."},
+  {"id":"F8","file":"modules/review3.ts","line":24,"severity":"critical","reason":"review3Total divides by 10000 without rounding, so tax and discount are fractional (base=1999, taxBp=1000 -> 199.9) and propagate into the returned Money, violating contracts.ts:3-6. Tax is also computed on the pre-discount base while the discount is subtracted after, likely overstating the total.","suggestion":"Round each component to an integer at the point of division, and confirm whether tax should apply to the discounted amount."},
+  {"id":"F9","file":"modules/asset2.ts","line":41,"severity":"critical","reason":"exportAsset2s runs `SELECT *` with no Session and no owner_id predicate, so any caller with a wide date range receives every column of every user's assets, including columns other queries deliberately never expose. Violates contracts.ts:21-24.","suggestion":"Require a Session, scope by owner_id, and enumerate columns explicitly instead of SELECT *."},
+  {"id":"F10","file":"modules/asset1.ts","line":23,"severity":"critical","reason":"deleteAsset1 takes a caller-supplied `ownerId: string` and feeds it straight into the authorization predicate — the only mutating function in the corpus not taking a Session. contracts.ts:23 explicitly forbids trusting a client-sent ownerId. Also provides no admin path.","suggestion":"Take `session: Session`, use session.userId, and add a `session.role === \"admin\"` bypass."},
+  {"id":"F11","file":"modules/invoice1.ts","line":40,"severity":"critical","reason":"claimInvoice1 performs a SELECT-then-UPDATE with no transaction or lock, so two concurrent callers both see claimed_by empty and both proceed; the second silently overwrites the first, which was told it succeeded. The unconditional `WHERE id = ?` also lets a later call steal an already-claimed invoice.","suggestion":"Make it atomic: `UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL`, then treat affectedRows === 0 as already_claimed."},
+  {"id":"F12","file":"modules/invoice.ts","line":25,"severity":"major","reason":"searchInvoice has no LIMIT, violating contracts.ts:8-10 (MAX_PAGE_SIZE); a broad query loads the entire matching set into memory.","suggestion":"Append `LIMIT ?` bounded by MAX_PAGE_SIZE, consistent with every listX in the corpus."},
+  {"id":"F13","file":"modules/asset2.ts","line":41,"severity":"major","reason":"exportAsset2s has no LIMIT, violating contracts.ts:8-10; a wide from/to range materializes the whole table.","suggestion":"Paginate against MAX_PAGE_SIZE, or stream with an explicit server-side cursor if bulk export is genuinely intended."},
+  {"id":"F14","file":"modules/invoice3.ts","line":27,"severity":"major","reason":"reindexInvoice3s returns early on a missing id without calling pool.release, and has no finally block, so any throw from conn.query or search.index leaks too. Each leak permanently consumes a pool slot until exhaustion stalls all database consumers.","suggestion":"Wrap the loop in `try { ... } finally { await pool.release(conn); }`."},
+  {"id":"F15","file":"modules/review2.ts","line":33,"severity":"major","reason":"archiveReview2 deletes the blob (irreversible) before the DB update (recoverable), so a failed UPDATE leaves the blob permanently gone while the row reads unarchived. `rows[0].blob_key` is also unguarded, and the resulting TypeError is disguised by the catch as a legitimate archive_failed; the caught error is discarded without logging.","suggestion":"Mark archived first and delete the blob afterward (or via a retryable job), guard rows[0], and log the caught error."},
+  {"id":"F16","file":"modules/asset.ts","line":34,"severity":"major","reason":"listAssetsWithOwner issues one users query per asset row inside the loop — 101 sequential round trips where one suffices.","suggestion":"Use a single JOIN, or collect owner_ids and issue one `WHERE id IN (?)` batch query."},
+  {"id":"F17","file":"modules/asset.ts","line":31,"severity":"major","reason":"listAssetsWithOwner takes no Session and applies no owner filter, returning every asset's owner_id joined to user names — a cross-tenant ownership map. Same contracts.ts:21-24 class as F2/F9 but narrower in exposed columns.","suggestion":"Require a Session and scope by owner, or gate on `session.role === \"admin\"` if this is an admin-only view."},
+  {"id":"F18","file":"modules/asset.ts","line":16,"severity":"major","reason":"`Math.min(limit, MAX_PAGE_SIZE)` caps only the ceiling, passing negatives, zero, non-integers and NaN through to `LIMIT ?` (limit=-1 errors at the driver, NaN binds NaN). Present identically in all 80 modules at line 16.","suggestion":"Clamp both ends: `Math.max(1, Math.min(Math.floor(limit) || 50, MAX_PAGE_SIZE))`, ideally in one shared helper."},
+  {"id":"F19","file":"modules/asset.ts","line":1,"severity":"major","reason":"All 80 modules share a byte-identical lines 1-19 baseline modulo identifiers, with countX/renameX repeated verbatim ~50x/~25x. Every systemic fix must be applied 80 times, and each application is a chance to introduce the one-off divergence that produced F1, F5, F10 and F11.","suggestion":"Extract a repository factory parameterized by table and entity name so only the bespoke tails remain per module; apply after the correctness fixes, not before."},
+  {"id":"F20","file":"infra.ts","line":2,"severity":"minor","reason":"db.raw is typed `Promise<any>`, so every row access across the corpus (rows[0]?.c, rows[0].blob_key, res.affectedRows) is unchecked. F15's crash would have been a compile error under a typed signature.","suggestion":"Make it generic: `raw<T>(sql: string, params?: unknown[]): Promise<T[]>`."},
+  {"id":"F21","file":"contracts.ts","line":1,"severity":"minor","reason":"No tests exist anywhere in the tree, so none of the four contract invariants (integer Money, LIMIT bound, event idempotency, server-side ownership) has an executable check — which is how 11 critical violations survived in-tree. Module-level infra singletons leave no injection seam.","suggestion":"Inject infra dependencies, then add one contract test per invariant: integer-Money assertions, LIMIT presence, duplicate-eventId idempotency, and per-endpoint authorization."}
+]
+```

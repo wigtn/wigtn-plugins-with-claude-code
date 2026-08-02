@@ -1,0 +1,212 @@
+코드 리뷰 — fixtures/scale-80/src (contracts.ts, infra.ts, modules/ 80개)
+
+========================================================================
+0. 리뷰 범위와 방법
+========================================================================
+- 대상: contracts.ts(전역 공유 계약), infra.ts(인프라 스텁), modules/ 80개 파일 전량(2372 LOC).
+- 방법: 80개 모듈은 get{X}/list{X}s/count{X}s/rename{X} 4종 보일러플레이트가 반복되는 구조다.
+  보일러플레이트는 contracts.ts 규약(소유자 검증, LIMIT 상한)을 정확히 지키고 있어 정상으로 판정했고,
+  **보일러플레이트에서 벗어난 함수만** 이상 신호로 보고 전수 대조했다.
+  그 결과 12개 파일에서 12개의 일탈 함수를 찾았고, 전부 결함이었다.
+- 위반 기준선은 contracts.ts에 명시된 3가지 계약이다:
+  (1) Money = 정수 최소단위, 부동소수 금지
+  (2) 모든 목록 조회에 LIMIT 필수 (MAX_PAGE_SIZE = 100)
+  (3) ExternalEvent 처리는 멱등 필수 (같은 eventId 최대 5회 재전송)
+  (4) 소유자/admin 검증은 서버에서, 클라이언트가 보낸 ownerId 불신
+
+요약 집계: critical 6 / major 6 / minor 3
+
+========================================================================
+1. CRITICAL — 즉시 차단해야 하는 결함
+========================================================================
+
+[F1] modules/invoice.ts:23 — SQL Injection (문자열 보간) + LIMIT 없음
+    searchInvoice(q)가 사용자 입력 q를 템플릿 리터럴로 직접 쿼리에 삽입한다.
+        `SELECT id, title FROM invoices WHERE title LIKE '%${q}%' ORDER BY id DESC`
+    같은 파일의 다른 함수들은 전부 `?` 바인딩을 쓰는데 이 함수만 보간을 쓴다.
+    q = `%' OR 1=1 --` 로 전체 행 덤프, UNION SELECT로 타 테이블 탈취까지 가능하다.
+    부가로 (a) LIMIT이 없어 계약 (2) 위반, (b) session 파라미터가 없어 계약 (4) 위반 —
+    즉 인증 없이 누구나 전체 invoices를 읽는다. 세 결함이 한 함수에 겹쳐 있다.
+    수정: 파라미터 바인딩 + LIMIT + session 소유자 스코프.
+        db.raw(`SELECT id, title FROM invoices WHERE owner_id = ? AND title LIKE ?
+                ORDER BY id DESC LIMIT ?`, [session.userId, `%${q}%`, MAX_PAGE_SIZE])
+    (LIKE 와일드카드 자체도 q 내 %/_ 를 이스케이프해야 한다.)
+
+[F2] modules/asset3.ts:30 — 권한 상승: 역할(role)을 요청 바디에서 읽음
+    updateAsset3Price(id, body: { price: Money; role: string })가 `body.role !== "admin"`으로
+    인가를 판단한다. role은 클라이언트가 보내는 값이므로 `{"role":"admin"}` 한 줄로 우회된다.
+    계약 (4)("클라이언트가 보낸 값을 신뢰하지 않는다")의 정면 위반이고, 대상이 **가격 필드**라
+    임의 사용자가 아무 asset의 가격을 0으로 바꿀 수 있다. 소유자 검증도 없다(WHERE id = ? 뿐).
+    수정: 시그니처를 (id, price: Money, session: Session)로 바꾸고 `session.role !== "admin"`으로
+    판단. 가격이 Money이므로 Number.isInteger(price) && price >= 0 검증도 추가.
+
+[F3] modules/asset1.ts:23 — IDOR: 소유자 ID를 호출자가 주입
+    deleteAsset1(id, ownerId)이 클라이언트가 준 ownerId를 그대로 DELETE의 WHERE에 넣는다.
+    형태상 "소유자 조건이 있으니 안전"해 보이지만, 그 조건값 자체를 공격자가 정하므로
+    피해자의 ownerId를 넣으면 남의 asset을 삭제할 수 있다. 계약 (4) 위반.
+    같은 파일 getAsset1은 session 기반 검증을 제대로 하고 있어 대비된다.
+    또한 삭제 결과(affectedRows)를 확인하지 않고 무조건 `{ ok: true }`를 반환해,
+    권한 없는 삭제 시도와 성공을 구분할 수 없다.
+    수정: (id: string, session: Session)로 바꾸고 [id, session.userId] 바인딩,
+    admin 예외는 서버에서 session.role로 처리. affectedRows > 0으로 ok 판정.
+
+[F4] modules/review.ts:23 — 웹훅 시크릿 하드코딩 + 서명 검증 부재
+    `const REVIEW_WEBHOOK_SECRET = "whsec_7d2f9a1c4e8b6031";`가 소스에 박혀 있고,
+    verifyReviewSig(sig, body)는 `sig === REVIEW_WEBHOOK_SECRET` 단순 비교다. 문제 3중:
+      (a) 시크릿이 리포지토리에 평문 노출 — 저장소 접근자 전원에게 유출, 로테이션 불가.
+      (b) 실제 서명 검증이 아님. body를 전혀 쓰지 않으므로(파라미터 미사용) 시크릿만 알면
+          **임의의 페이로드**를 유효한 것으로 통과시킨다. HMAC이 아니라 정적 토큰 비교다.
+      (c) 타이밍 세이프 비교가 아님(===) — 원격 타이밍 공격으로 시크릿 추출 가능.
+    수정: 시크릿은 env(process.env.REVIEW_WEBHOOK_SECRET)로 이동 + 노출된 값 즉시 폐기·로테이션.
+    검증은 crypto.createHmac('sha256', secret).update(body) 결과를 crypto.timingSafeEqual로 비교.
+    타임스탬프 허용창(replay 방지)도 함께 검증.
+
+[F5] modules/review1.ts:39 — 외부 이벤트 멱등성 위반 (계약 (3) 정면 위반)
+    onReview1Event(evt)가 evt.eventId를 **전혀 사용하지 않고** 원장 테이블에 INSERT만 한다.
+    contracts.ts는 "프로바이더가 2xx를 받을 때까지 같은 eventId로 최대 5회 재전송한다,
+    처리는 반드시 멱등해야 한다"고 못박고 있다. 즉 이 코드는 설계상 재전송 시
+    reviews1_ledger에 최대 5중 중복 행을 남긴다. 대상이 ledger(원장)라 금액·집계가
+    조용히 부풀고, 사후 복구가 어렵다(중복 판별 키가 저장되지 않았으므로 사후 dedup 불가).
+    수정: eventId를 컬럼으로 저장하고 UNIQUE 제약 + INSERT ... ON CONFLICT DO NOTHING
+    (또는 INSERT IGNORE). 삽입 0행이면 이미 처리된 것으로 보고 2xx 반환.
+        INSERT INTO reviews1_ledger (event_id, kind, payload) VALUES (?,?,?)
+        ON CONFLICT (event_id) DO NOTHING
+
+[F6] modules/asset2.ts:39 — 인증 없는 전체 테이블 덤프 + LIMIT 없음
+    exportAsset2s(from, to)는 session 파라미터가 없고, `SELECT *`로 모든 컬럼을
+    (owner_id 등 목록 API가 의도적으로 감춘 필드 포함) 무제한 반환한다.
+    계약 (2)("상한 없는 SELECT 금지")와 계약 (4)(소유자 검증) 동시 위반.
+    from/to를 넓게 잡으면 전 사용자 데이터가 한 번에 나오고, 동시에 메모리/DB 부하로
+    가용성 사고(대량 스캔)로도 이어진다.
+    수정: session 인자 추가 후 owner_id = ? 스코프(또는 admin 전용), 컬럼 명시,
+    LIMIT ? + 커서 페이지네이션. 대량 내보내기가 요건이면 스트리밍/비동기 잡으로 분리.
+
+========================================================================
+2. MAJOR — 정확성·안정성 결함
+========================================================================
+
+[F7] modules/invoice2.ts:30 — Money 계약 위반: 수수료 계산이 부동소수를 반환
+    `return (amount * 25) / 1000;` — Money는 "정수 최소단위, 소수점 금지"인데
+    1000으로 나눈 결과가 대부분 소수다. amount=1234 → 30.85. 이 값이 다시 합산·저장되면
+    반올림 시점이 호출자마다 달라져 원장 불일치가 누적된다. 계약 (1) 위반이며,
+    contracts.ts가 요구한 "반올림 정책을 정하고 정수로 되돌린다"가 빠져 있다.
+    수정: 반올림 정책을 명시하고 정수로 환원. 예) `Math.round((amount * 25) / 1000)`
+    또는 은행가 반올림/버림 정책을 팀 표준으로 고정. 큰 금액은 BigInt 고려.
+
+[F8] modules/review3.ts:23 — Money 계약 위반: 세금/할인 basis-point 계산이 부동소수
+    tax = (base * taxBp) / 10000, discount = (base * discountBp) / 10000 모두 소수를 만들고
+    `base - discount + tax`를 Money로 반환한다(F7과 동일한 계약 (1) 위반).
+    추가로 **연산 순서 문제**가 있다: 할인/세금을 각각 반올림하지 않고 합산하면
+    "할인 후 과세"인지 "과세 후 할인"인지 정책이 코드에 드러나지 않아 회계 검증이 불가능하다.
+    또 discountBp > 10000이면 음수 총액이 나오는데 검증이 없다.
+    수정: 각 단계에서 Math.round로 정수 환원 + 순서를 명시(예: taxable = base - round(discount);
+    total = taxable + round(taxable * taxBp / 10000)), discountBp/taxBp 범위(0..10000) 검증.
+
+[F9] modules/invoice3.ts:23 — 커넥션 풀 누수 (early return / 예외 경로)
+    reindexInvoice3s에서 `const conn = await pool.acquire()` 이후,
+    line 27 `if (!r.length) return { ok: false, missing: id };`가 **release 없이 반환**한다.
+    conn.query나 search.index가 throw해도 마찬가지로 release되지 않는다.
+    누락 ID가 섞인 입력이 반복되면 풀이 고갈되어 서비스 전체가 멈춘다(장애 반경이 이 모듈에
+    국한되지 않음). 부가로 ids 길이 상한이 없어 대량 입력 시 장시간 커넥션 점유.
+    수정: try/finally로 감싸 finally에서 pool.release(conn). 실패 시 부분 진행 상태를
+    어떻게 다룰지(전체 롤백 vs 계속 진행 후 실패 목록 반환)도 명시. ids 상한 추가.
+        const conn = await pool.acquire();
+        try { ... } finally { await pool.release(conn); }
+
+[F10] modules/invoice1.ts:39 — TOCTOU 경쟁 조건: 이중 클레임 가능
+    claimInvoice1은 SELECT claimed_by로 확인한 뒤 UPDATE 한다. 두 요청이 동시에 SELECT를
+    통과하면 둘 다 UPDATE에 성공하고, 나중 것이 앞선 클레임을 덮어써 **두 사용자 모두
+    "성공" 응답**을 받는다. 확인과 갱신이 원자적이지 않다.
+    추가로 userId를 Session이 아닌 raw 문자열로 받아, 호출자가 임의 사용자 명의로
+    클레임할 수 있다(F3와 동일 계열의 계약 (4) 위반).
+    수정: 조건부 UPDATE 한 문장으로 원자화하고 affectedRows로 판정.
+        UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL
+    파라미터는 session.userId 사용. (또는 SELECT ... FOR UPDATE + 트랜잭션.)
+
+[F11] modules/review2.ts:30 — 미보호 인덱싱(즉시 throw) + 되돌릴 수 없는 삭제 선행
+    (a) `const rows = await db.raw(...)`가 **try 블록 밖**이고, 바로 다음 줄에서
+        `rows[0].blob_key`를 참조한다. 존재하지 않는 id면 rows[0]이 undefined라
+        TypeError가 catch에 걸리지 않고 호출자로 튀어 500이 된다. 다른 모듈들이
+        `rows[0]?.c ?? 0` / `if (!row) return null`로 방어하는 것과 대조된다.
+    (b) 순서가 위험하다: blob을 **먼저 삭제**하고 DB UPDATE를 나중에 한다. UPDATE가 실패하면
+        blob은 이미 사라졌는데 레코드는 archived=0 — 복구 불가능한 고아 상태가 되고,
+        재시도해도 blob.remove가 다시 실패하며 영구 실패로 굳는다.
+    (c) catch가 원인 e를 버리고 문자열만 반환해 운영 중 원인 추적이 불가능하다.
+    수정: rows[0] 존재 검사를 try 안 또는 앞에서 명시적으로 수행(없으면 not_found 반환),
+    "DB 마킹 → blob 삭제" 순서로 뒤집고 blob 삭제 실패는 재시도 큐/GC 잡에 위임,
+    catch에서 e를 로깅.
+
+[F12] modules/asset.ts:30 — N+1 쿼리 + 인증 부재 + 하드코딩 LIMIT
+    listAssetsWithOwner()는 asset 100건을 읽은 뒤 루프에서 건당 users 조회를 날린다 —
+    최대 101회 왕복. 게다가 순차 await라 지연이 선형 누적된다.
+    또한 session 인자가 없어 **모든 사용자의 asset과 소유자 정보를 무인증 반환**한다(계약 (4) 위반).
+    `LIMIT 100`이 MAX_PAGE_SIZE 상수를 쓰지 않고 하드코딩되어 상수 변경 시 표류한다.
+    수정: 단일 JOIN으로 치환(SELECT a.id, a.owner_id, u.name FROM assets a
+    LEFT JOIN users u ON u.id = a.owner_id WHERE a.owner_id = ? LIMIT ?),
+    session 인자 추가, LIMIT은 MAX_PAGE_SIZE 사용.
+
+========================================================================
+3. MINOR — 위생·유지보수
+========================================================================
+
+[F13] 전 모듈(대표: modules/asset.ts:1-2) — 미사용 import 80개 파일 반복
+    모든 모듈이 `{ db, blob, pool, search }`와 `{ Money, Session, ExternalEvent, MAX_PAGE_SIZE }`를
+    일괄 import하지만 실제로 blob은 review2.ts, pool/search는 invoice3.ts, ExternalEvent는
+    review1.ts, Money는 invoice2/invoice3/review3/asset3에서만 쓰인다. 나머지 70여 파일에서 사장(死藏).
+    noUnusedLocals / eslint no-unused-vars가 꺼져 있다는 신호이기도 하다. 미사용 심볼이 기본값이
+    되면 "이 파일이 blob을 쓰나?"를 grep으로 판단할 수 없어, F11 같은 결함의 탐지 비용이 올라간다.
+    수정: 파일별 실사용 심볼만 import. tsconfig에 noUnusedLocals 활성화 + lint 게이트.
+
+[F14] 전 모듈(대표: modules/asset.ts:5-28) — 동일 CRUD 4종의 80배 복제
+    get/list/count/rename 네 함수가 테이블명만 바꿔 80개 파일에 그대로 복제돼 있다.
+    실질적 위험은 중복 자체가 아니라 **일탈의 은폐**다. 이번에 찾은 12개 결함은 전부
+    "복제 패턴에서 벗어난 함수"였고, 정상 코드가 2000줄 넘게 깔려 있어 육안 리뷰로는 묻힌다.
+    또 소유자 검증 로직이 80곳에 흩어져 있어 정책이 바뀌면 80곳을 고쳐야 하고,
+    한 곳만 놓쳐도 F3 같은 구멍이 된다.
+    수정: 제네릭 리포지토리 팩토리(createOwnedRepo(table))로 4종을 1곳에 모으고,
+    모듈은 고유 로직만 갖게 한다. 인가 검사는 단일 헬퍼(assertOwnerOrAdmin)로 수렴시켜
+    "검증 누락"이 타입/린트로 잡히게 만든다.
+
+[F15] infra.ts:2 — db.raw가 Promise<any>를 반환해 호출부 타입 안전성이 0
+    반환이 any라 `rows[0].blob_key`(F11), `res.affectedRows`, `rows[0]?.c` 전부
+    컴파일러 검증을 받지 못한다. F11의 미보호 인덱싱이 타입 체크를 그냥 통과한 이유다.
+    수정: 제네릭 시그니처 `raw<T>(sql: string, params?: unknown[]): Promise<T[]>`로 바꾸고
+    호출부에서 행 타입을 명시. 최소한 `Promise<unknown[]>`로만 바꿔도 F11류는 컴파일 단계에서 막힌다.
+
+========================================================================
+4. 게이트 판정
+========================================================================
+critical 6건(F1~F6) → **FAIL**. 그중 F1(SQLi), F2(권한 상승), F4(시크릿 하드코딩 +
+서명 미검증)는 Security Critical로 zero-tolerance 대상이다.
+F4의 노출된 시크릿은 코드 수정만으로 끝나지 않는다 — 값 자체를 폐기·로테이션해야 한다.
+
+우선순위 제안:
+  1) F4 시크릿 로테이션 + HMAC 검증 (유출은 이미 발생한 상태)
+  2) F1 / F2 / F3 / F6 — 인증·인가 및 주입 (외부 노출 표면)
+  3) F5 멱등성 — 원장 오염은 시간이 갈수록 복구 비용이 커진다
+  4) F9 풀 누수 — 장애 반경이 전체 서비스
+  5) 나머지 major, 이후 F14 리팩터링으로 재발 방지
+
+========================================================================
+5. 구조화 결과 (JSON)
+========================================================================
+
+```json
+[
+  {"id":"F1","file":"modules/invoice.ts","line":23,"severity":"critical","reason":"searchInvoice가 사용자 입력 q를 템플릿 리터럴로 SQL에 직접 보간해 SQL Injection이 가능하다. 같은 파일의 다른 쿼리는 모두 ? 바인딩을 쓴다. 추가로 LIMIT이 없어 contracts.ts의 '상한 없는 SELECT 금지' 계약을 어기고, session 인자가 없어 인증 없이 전체 invoices를 읽는다.","suggestion":"파라미터 바인딩으로 전환하고 소유자 스코프와 LIMIT을 추가한다: db.raw(`SELECT id, title FROM invoices WHERE owner_id = ? AND title LIKE ? ORDER BY id DESC LIMIT ?`, [session.userId, `%${q}%`, MAX_PAGE_SIZE]). q 내 %/_ 와일드카드도 이스케이프한다."},
+  {"id":"F2","file":"modules/asset3.ts","line":30,"severity":"critical","reason":"updateAsset3Price가 인가 판단을 요청 바디의 body.role로 한다. 클라이언트가 {\"role\":\"admin\"}을 보내면 그대로 통과해 임의 사용자가 아무 asset의 가격을 변경할 수 있다. contracts.ts의 '클라이언트가 보낸 값을 신뢰하지 않는다' 계약 위반이며 소유자 검증도 없다.","suggestion":"시그니처를 (id: string, price: Money, session: Session)으로 바꾸고 session.role !== 'admin'으로 판단한다. Money 계약에 맞게 Number.isInteger(price) && price >= 0 검증도 추가한다."},
+  {"id":"F3","file":"modules/asset1.ts","line":23,"severity":"critical","reason":"deleteAsset1이 클라이언트가 준 ownerId를 그대로 DELETE의 WHERE 조건값으로 쓴다. 조건 자체를 공격자가 정하므로 피해자의 ownerId를 넣어 남의 리소스를 삭제할 수 있다(IDOR). 같은 파일 getAsset1은 session 기반 검증을 제대로 하고 있어 일탈이 명확하다. 삭제 결과도 확인하지 않고 무조건 ok:true를 반환한다.","suggestion":"(id: string, session: Session) 시그니처로 바꾸고 [id, session.userId]로 바인딩하며 admin 예외는 서버의 session.role로 처리한다. affectedRows > 0으로 ok를 판정한다."},
+  {"id":"F4","file":"modules/review.ts","line":23,"severity":"critical","reason":"웹훅 시크릿 'whsec_7d2f9a1c4e8b6031'이 소스에 평문 하드코딩되어 있고, verifyReviewSig는 body를 전혀 사용하지 않은 채 sig === SECRET 정적 비교만 한다. 실제 서명 검증이 아니므로 시크릿을 아는 자는 임의 페이로드를 통과시킬 수 있고, === 비교라 타이밍 공격에도 노출된다.","suggestion":"시크릿을 환경변수로 옮기고 노출된 값을 즉시 폐기·로테이션한다. 검증은 crypto.createHmac('sha256', secret).update(body)의 다이제스트를 crypto.timingSafeEqual로 비교하고, 타임스탬프 허용창을 두어 replay를 막는다."},
+  {"id":"F5","file":"modules/review1.ts","line":39,"severity":"critical","reason":"onReview1Event가 evt.eventId를 전혀 사용하지 않고 원장 테이블에 INSERT만 한다. contracts.ts는 프로바이더가 같은 eventId로 최대 5회 재전송하며 처리는 반드시 멱등해야 한다고 명시하므로, 설계상 ledger에 최대 5중 중복 행이 쌓인다. eventId를 저장하지 않아 사후 dedup도 불가능하다.","suggestion":"event_id 컬럼을 추가해 UNIQUE 제약을 걸고 INSERT ... ON CONFLICT (event_id) DO NOTHING으로 삽입한다. 삽입 행이 0이면 이미 처리된 이벤트로 보고 2xx를 반환한다."},
+  {"id":"F6","file":"modules/asset2.ts","line":39,"severity":"critical","reason":"exportAsset2s가 session 인자 없이 SELECT *로 기간 내 전체 행을 무제한 반환한다. 목록 API가 감추는 owner_id 등 모든 컬럼이 인증 없이 노출되며, contracts.ts의 LIMIT 필수 계약과 소유자 검증 계약을 동시에 위반한다. 넓은 기간 입력 시 대량 스캔으로 가용성 사고로도 이어진다.","suggestion":"session 인자를 추가해 owner_id = ? 로 스코프하거나 admin 전용으로 제한하고, 컬럼을 명시한 뒤 LIMIT ?와 커서 페이지네이션을 적용한다. 대량 내보내기가 요건이면 스트리밍/비동기 잡으로 분리한다."},
+  {"id":"F7","file":"modules/invoice2.ts","line":30,"severity":"major","reason":"invoice2Fee가 (amount * 25) / 1000으로 부동소수를 반환한다. contracts.ts는 Money를 정수 최소단위로만 표현하고 나눗셈 시 반올림 정책을 정해 정수로 되돌리라고 규정한다. 소수 수수료가 합산·저장되면 호출자마다 반올림 시점이 달라져 원장 불일치가 누적된다.","suggestion":"반올림 정책을 명시하고 정수로 환원한다: Math.round((amount * 25) / 1000). 팀 표준 반올림 규칙(반올림/버림/은행가)을 한 곳에 정의해 재사용하고, 큰 금액에는 BigInt를 고려한다."},
+  {"id":"F8","file":"modules/review3.ts","line":23,"severity":"major","reason":"review3Total의 tax와 discount가 각각 /10000 부동소수 연산이고 정수 환원 없이 합산되어 Money 정수 계약을 위반한다. 또 할인과 과세의 적용 순서가 코드에 드러나지 않아 회계 검증이 불가능하고, discountBp > 10000이면 총액이 음수가 되는데 검증이 없다.","suggestion":"단계별로 Math.round 환원하고 순서를 명시한다(예: taxable = base - Math.round(base * discountBp / 10000); total = taxable + Math.round(taxable * taxBp / 10000)). discountBp/taxBp의 0..10000 범위 검증을 추가한다."},
+  {"id":"F9","file":"modules/invoice3.ts","line":23,"severity":"major","reason":"reindexInvoice3s가 pool.acquire() 이후 line 27의 early return(!r.length)에서 release 없이 반환하고, conn.query나 search.index가 throw해도 release되지 않아 커넥션이 누수된다. 누락 ID가 섞인 입력이 반복되면 풀이 고갈되어 이 모듈을 넘어 서비스 전체가 멈춘다. ids 길이 상한도 없다.","suggestion":"try/finally로 감싸 finally에서 await pool.release(conn)을 보장한다. 부분 실패 시 전체 롤백인지 실패 목록 반환인지 정책을 명시하고, ids 길이 상한을 둔다."},
+  {"id":"F10","file":"modules/invoice1.ts","line":39,"severity":"major","reason":"claimInvoice1이 SELECT로 claimed_by를 확인한 뒤 UPDATE하는 비원자적 check-then-act라 TOCTOU 경쟁이 발생한다. 동시 요청 둘이 모두 SELECT를 통과하면 나중 UPDATE가 앞선 클레임을 덮어쓰고 두 사용자 모두 성공 응답을 받는다. 또 userId를 Session이 아닌 raw 문자열로 받아 타인 명의 클레임이 가능하다.","suggestion":"조건부 UPDATE 한 문장으로 원자화하고 affectedRows로 판정한다: UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL. 파라미터는 session.userId를 쓴다."},
+  {"id":"F11","file":"modules/review2.ts","line":30,"severity":"major","reason":"archiveReview2는 SELECT가 try 블록 밖이라 존재하지 않는 id에서 rows[0].blob_key가 TypeError를 던지고 catch에 걸리지 않아 500이 된다. 또 blob을 먼저 삭제하고 DB UPDATE를 나중에 해, UPDATE 실패 시 blob은 사라졌는데 archived=0인 복구 불가 고아 상태가 되고 재시도도 영구 실패한다. catch가 원인 e를 버려 추적도 불가능하다.","suggestion":"rows[0] 존재 검사를 먼저 수행해 없으면 not_found를 반환하고, 순서를 'DB 마킹 → blob 삭제'로 뒤집는다. blob 삭제 실패는 재시도 큐/GC 잡에 위임하고 catch에서 e를 로깅한다."},
+  {"id":"F12","file":"modules/asset.ts","line":30,"severity":"major","reason":"listAssetsWithOwner가 asset 100건을 읽은 뒤 루프에서 건당 users를 순차 조회해 최대 101회 왕복하는 N+1이다. 지연이 선형 누적된다. 더해 session 인자가 없어 모든 사용자의 asset과 소유자 정보를 무인증 반환하며, LIMIT 100이 MAX_PAGE_SIZE 상수를 쓰지 않고 하드코딩되어 상수 변경 시 표류한다.","suggestion":"단일 JOIN으로 치환한다: SELECT a.id, a.owner_id, u.name FROM assets a LEFT JOIN users u ON u.id = a.owner_id WHERE a.owner_id = ? LIMIT ?. session 인자를 추가하고 LIMIT에 MAX_PAGE_SIZE를 사용한다."},
+  {"id":"F13","file":"modules/asset.ts","line":1,"severity":"minor","reason":"80개 파일 전부가 { db, blob, pool, search }와 { Money, Session, ExternalEvent, MAX_PAGE_SIZE }를 일괄 import하지만 blob은 review2, pool/search는 invoice3, ExternalEvent는 review1에서만 쓰인다. 미사용 import가 기본값이 되면 특정 심볼 사용처를 grep으로 특정할 수 없어 결함 탐지 비용이 오른다. noUnusedLocals/lint가 꺼져 있다는 신호다.","suggestion":"파일별 실사용 심볼만 import하도록 정리하고, tsconfig의 noUnusedLocals와 eslint no-unused-vars를 켜 CI 게이트에 포함한다."},
+  {"id":"F14","file":"modules/asset.ts","line":5,"severity":"minor","reason":"get/list/count/rename 4종이 테이블명만 바꿔 80개 파일에 복제돼 있다. 이번에 발견한 결함 12건이 전부 '복제 패턴에서 벗어난 함수'였을 만큼 정상 코드 2000여 줄이 일탈을 은폐한다. 소유자 검증 로직도 80곳에 흩어져 있어 정책 변경 시 한 곳만 놓쳐도 F3 같은 구멍이 생긴다.","suggestion":"createOwnedRepo(table) 형태의 제네릭 리포지토리 팩토리로 4종 CRUD를 한 곳에 모으고, 각 모듈은 고유 로직만 갖게 한다. 인가 검사는 assertOwnerOrAdmin 단일 헬퍼로 수렴시켜 누락이 타입/린트에서 잡히게 한다."},
+  {"id":"F15","file":"infra.ts","line":2,"severity":"minor","reason":"db.raw가 Promise<any>를 반환해 rows[0].blob_key(F11), res.affectedRows, rows[0]?.c 등 모든 호출부가 컴파일러 검증을 받지 못한다. F11의 미보호 인덱싱이 타입 체크를 그냥 통과한 직접적 원인이다.","suggestion":"제네릭 시그니처 raw<T>(sql: string, params?: unknown[]): Promise<T[]>로 바꾸고 호출부에서 행 타입을 명시한다. 최소한 Promise<unknown[]>로만 바꿔도 F11류 결함이 컴파일 단계에서 차단된다."}
+]
+```

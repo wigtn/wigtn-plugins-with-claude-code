@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>화면정의서 — internal-document-sharing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Wireframe = grayscale + semantic state colors only. */
+    /* Brand/aesthetic styling belongs in the mockup stage, not here. */
+    :root {
+      --wf-bg: #fafafa;
+      --wf-border: #d4d4d8;
+      --wf-fg: #18181b;
+      --wf-muted: #71717a;
+    }
+    .wf-box { border: 2px dashed var(--wf-border); background: white; padding: 1rem; border-radius: 0.5rem; }
+    .wf-label { font-size: 0.75rem; color: var(--wf-muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  </style>
+</head>
+<body class="bg-neutral-50 text-neutral-900">
+
+  <header class="sticky top-0 z-50 bg-white border-b shadow-sm">
+    <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap" aria-label="화면 목록">
+      <span class="font-semibold">화면정의서 — internal-document-sharing</span>
+      <div class="flex gap-3 text-sm flex-wrap">
+        <a href="04-wireframes/login.html#screen-login" class="hover:underline">/login</a>
+        <a href="04-wireframes/home.html#screen-home" class="hover:underline">/</a>
+        <a href="04-wireframes/upload.html#screen-upload" class="hover:underline">/upload</a>
+        <a href="04-wireframes/docs-id.html#screen-docs-id" class="hover:underline">/docs/{id}</a>
+        <a href="04-wireframes/s-token.html#screen-s-token" class="hover:underline">/s/{token}</a>
+        <a href="04-wireframes/admin.html#screen-admin" class="hover:underline">/admin</a>
+        <a href="04-wireframes/admin-audit.html#screen-admin-audit" class="hover:underline">/admin/audit</a>
+      </div>
+      <span class="ml-auto text-xs text-neutral-500">Lo-fi Wireframe</span>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+
+    <section aria-labelledby="index-title">
+      <header class="mb-4">
+        <h1 id="index-title" class="text-2xl font-semibold">화면정의서 — internal-document-sharing (사내 문서 공유 서비스)</h1>
+        <p class="mt-2 text-sm text-neutral-600">
+          FE 페이지가 7개(≥6)이므로 와이어프레임을 페이지별 파일로 분할했습니다.
+          아래 카드를 클릭하면 각 화면의 와이어프레임으로 이동합니다. 각 화면 내부의 클릭 요소는 실제 앱 네비게이션을 따라 서로 연결되어 있습니다(클릭 가능한 프로토타입).
+        </p>
+      </header>
+
+      <nav aria-label="와이어프레임 페이지 목록">
+        <ul class="grid grid-cols-1 md:grid-cols-2 gap-4 list-none p-0">
+          <li class="wf-box">
+            <a href="04-wireframes/login.html#screen-login" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/login — 로그인</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">guest</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Optional (사내 이메일 도메인 화이트리스트 + Magic Link)</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-001</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/home.html#screen-home" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/ — 문서 목록</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">member, admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Required (세션 쿠키)</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-003</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/upload.html#screen-upload" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/upload — 문서 업로드</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">member, admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Required (세션 쿠키)</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-002, FR-013</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/docs-id.html#screen-docs-id" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/docs/{id} — 문서 상세</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">member, admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Required (세션 쿠키 + 서버 측 소유자 검사)</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-004, FR-005, FR-008 (+ FR-007, FR-012)</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/s-token.html#screen-s-token" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/s/{token} — 공유 열람</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">guest, member, admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">None — 토큰이 유일한 자격 (noindex, no-referrer)</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-006, FR-007, FR-012, FR-014</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/admin.html#screen-admin" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/admin — 전체 문서 관리</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Required + role=admin 검증</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-009, FR-015</dd></div>
+              <div><dt class="inline wf-label">Responsive:</dt> <dd class="inline">Desktop only (PRD §5.4)</dd></div>
+            </dl>
+          </li>
+          <li class="wf-box">
+            <a href="04-wireframes/admin-audit.html#screen-admin-audit" class="block hover:underline">
+              <h2 class="text-lg font-semibold">/admin/audit — 감사 로그</h2>
+            </a>
+            <dl class="mt-2 text-xs text-neutral-600 space-y-1">
+              <div><dt class="inline wf-label">Audience:</dt> <dd class="inline">admin</dd></div>
+              <div><dt class="inline wf-label">Auth:</dt> <dd class="inline">Required + role=admin 검증</dd></div>
+              <div><dt class="inline wf-label">Linked FRs:</dt> <dd class="inline">FR-010, FR-011</dd></div>
+              <div><dt class="inline wf-label">Responsive:</dt> <dd class="inline">Desktop only (PRD §5.4)</dd></div>
+            </dl>
+          </li>
+        </ul>
+      </nav>
+    </section>
+
+    <section aria-labelledby="legend-title">
+      <h2 id="legend-title" class="text-sm font-semibold mb-2">색상 규칙 (Lo-fi)</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+        <div class="wf-box bg-neutral-100">중립(neutral) — 레이아웃/콘텐츠 슬롯</div>
+        <div class="wf-box bg-red-50 text-red-700">red — error / 파괴적 액션</div>
+        <div class="wf-box bg-green-50 text-green-700">green — success</div>
+        <div class="wf-box bg-amber-50 text-amber-700">amber — warning / no-permission</div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-4 py-8 text-xs text-neutral-500 border-t">
+    Generated by /screen-spec · 2026-07-26 · Lo-fi Wireframe (grayscale + semantic state colors)
+  </footer>
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+arm=M55-V3
+fixture=create-mobile-expense
+repeat=5
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=87
+exit_code=0

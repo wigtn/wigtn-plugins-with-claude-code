@@ -1,0 +1,7 @@
+arm=M55-CURRENT
+fixture=review-missing-delivery
+repeat=2
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=76
+exit_code=0

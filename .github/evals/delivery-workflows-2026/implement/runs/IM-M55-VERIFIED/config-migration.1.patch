@@ -1,0 +1,79 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..7cabf3f 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,73 @@
++from collections.abc import Mapping
++from math import isfinite
++from numbers import Real
++from urllib.parse import urlparse
++
+ from .model import CanonicalConfig
+ 
++
++_V1_KEYS = {"endpoint", "timeout_seconds"}
++_V2_KEYS = {"version", "delivery"}
++_DELIVERY_KEYS = {"endpoint", "timeout_ms", "enabled"}
++
++
++def _validate_endpoint(value):
++    if not isinstance(value, str):
++        raise ValueError("endpoint must be a string")
++
++    parsed = urlparse(value)
++    if parsed.scheme != "https" or not parsed.netloc:
++        raise ValueError("endpoint must be an https URL")
++
++    return value
++
++
++def _validate_timeout_ms(value):
++    if isinstance(value, bool) or not isinstance(value, int):
++        raise ValueError("timeout_ms must be an integer")
++    if not 100 <= value <= 30000:
++        raise ValueError("timeout_ms must be between 100 and 30000")
++    return value
++
++
++def _validate_timeout_seconds(value):
++    if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(value):
++        raise ValueError("timeout_seconds must be a number")
++
++    timeout_ms = value * 1000
++    if not float(timeout_ms).is_integer():
++        raise ValueError("timeout_seconds must convert to whole milliseconds")
++
++    return _validate_timeout_ms(int(timeout_ms))
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    if not isinstance(raw, Mapping):
++        raise ValueError("configuration must be a mapping")
++
++    keys = set(raw)
++    if keys == _V1_KEYS:
++        return CanonicalConfig(
++            endpoint=_validate_endpoint(raw["endpoint"]),
++            timeout_ms=_validate_timeout_seconds(raw["timeout_seconds"]),
++            enabled=True,
++        )
++
++    if keys == _V2_KEYS:
++        if raw["version"] != 2:
++            raise ValueError("version must be 2")
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if set(delivery) != _DELIVERY_KEYS:
++            raise ValueError("delivery has unknown or missing fields")
++        if not isinstance(delivery["enabled"], bool):
++            raise ValueError("enabled must be a bool")
++
++        return CanonicalConfig(
++            endpoint=_validate_endpoint(delivery["endpoint"]),
++            timeout_ms=_validate_timeout_ms(delivery["timeout_ms"]),
++            enabled=delivery["enabled"],
++        )
++
++    raise ValueError("configuration has unknown, missing, or mixed fields")

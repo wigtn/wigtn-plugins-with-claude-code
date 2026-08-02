@@ -1,0 +1,100 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..6c0dd41 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,94 @@
++import math
++from collections.abc import Mapping
++from numbers import Real
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = {"endpoint", "timeout_seconds"}
++_V2_FIELDS = {"version", "delivery"}
++_DELIVERY_FIELDS = {"endpoint", "timeout_ms", "enabled"}
++
++
++def _field_names(value, description):
++    try:
++        return set(value)
++    except (TypeError, ValueError) as exc:
++        raise ValueError(f"{description} must have string keys") from exc
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be an https URL")
++
++    try:
++        parsed = urlsplit(endpoint)
++        hostname = parsed.hostname
++        parsed.port
++    except ValueError as exc:
++        raise ValueError("endpoint must be an https URL") from exc
++
++    if (
++        parsed.scheme.lower() != "https"
++        or hostname is None
++        or any(character.isspace() for character in endpoint)
++    ):
++        raise ValueError("endpoint must be an https URL")
++    return endpoint
++
++
++def _validate_timeout_ms(timeout_ms):
++    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
++        raise ValueError("timeout_ms must be an integer")
++    if not 100 <= timeout_ms <= 30000:
++        raise ValueError("timeout_ms must be between 100 and 30000")
++    return timeout_ms
++
++
++def _seconds_to_ms(timeout_seconds):
++    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, Real):
++        raise ValueError("timeout_seconds must be a number")
++    if not math.isfinite(timeout_seconds):
++        raise ValueError("timeout_seconds must be finite")
++
++    milliseconds = timeout_seconds * 1000
++    if milliseconds != int(milliseconds):
++        raise ValueError("timeout_seconds must resolve to whole milliseconds")
++    return _validate_timeout_ms(int(milliseconds))
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Convert a v1 or v2 delivery mapping to ``CanonicalConfig``."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = _field_names(raw, "config")
++    if fields == _V1_FIELDS:
++        endpoint = _validate_endpoint(raw["endpoint"])
++        timeout_ms = _seconds_to_ms(raw["timeout_seconds"])
++        return CanonicalConfig(endpoint=endpoint, timeout_ms=timeout_ms, enabled=True)
++
++    if fields == _V2_FIELDS:
++        version = raw["version"]
++        if isinstance(version, bool) or version != 2:
++            raise ValueError("version must be 2")
++
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if _field_names(delivery, "delivery") != _DELIVERY_FIELDS:
++            raise ValueError("delivery fields do not match the v2 schema")
++
++        endpoint = _validate_endpoint(delivery["endpoint"])
++        timeout_ms = _validate_timeout_ms(delivery["timeout_ms"])
++        enabled = delivery["enabled"]
++        if not isinstance(enabled, bool):
++            raise ValueError("enabled must be a boolean")
++        return CanonicalConfig(
++            endpoint=endpoint,
++            timeout_ms=timeout_ms,
++            enabled=enabled,
++        )
++
++    raise ValueError("config fields do not match the v1 or v2 schema")

@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Product Spec"
+  short_description: "Create, review, and deep-dive implementation-ready PRDs"
+  default_prompt: "Use $product-spec to turn this product idea into an implementation-ready PRD."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,55 @@
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..b4e79e2 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,23 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        payload_snapshot = bytes(payload)
++
++        if event_id not in self.events:
++            self.events[event_id] = payload_snapshot
++            return True
++
++        if self.events[event_id] == payload_snapshot:
++            return False
++
++        raise ValueError("event ID already exists with a different payload")
++
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {1: 0, 2: 60, 3: 300}.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..076f984 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,19 @@
++import hashlib
++import hmac
++import re
++
++
++_SIGNATURE_RE = re.compile(r"sha256=([0-9a-fA-F]{64})\Z")
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    if not isinstance(header, str):
++        return False
++
++    match = _SIGNATURE_RE.fullmatch(header)
++    if match is None:
++        return False
++
++    supplied_digest = bytes.fromhex(match.group(1))
++    expected_digest = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(expected_digest, supplied_digest)

@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Screen Spec"
+  short_description: "Create IA, flows, screen specs, wireframes, and handoff"
+  default_prompt: "Use $screen-spec to turn this PRD into five implementation-ready screen artifacts."
+policy:
+  allow_implicit_invocation: true

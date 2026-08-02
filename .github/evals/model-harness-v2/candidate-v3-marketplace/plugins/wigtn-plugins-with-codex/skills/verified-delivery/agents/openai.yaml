@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Verified Delivery"
+  short_description: "Run an explicit implementation and verification workflow"
+  default_prompt: "Use $verified-delivery to implement and verify this feature end to end."
+policy:
+  allow_implicit_invocation: false

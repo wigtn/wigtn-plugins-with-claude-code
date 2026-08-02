@@ -1,0 +1,230 @@
+코드 리뷰 — .github/evals/fixtures/hard-checkout/
+대상: types.ts, pricing.ts, cart.ts, inventory.ts, checkout.ts, webhook.ts, refund.ts, db.ts
+총 215 LOC / 8 파일. 결제·재고·환불 도메인.
+
+요약
+- critical 10건, major 8건, minor 4건.
+- 가장 위험한 축은 세 가지다. (1) checkout.ts 의 SQL 인젝션 + 하드코딩된 라이브 결제 키,
+  (2) 돈이 실제로 빠져나갔는데 주문이 남지 않거나 두 번 계상되는 결제/웹훅 경로,
+  (3) types.ts 가 프로젝트 전역 규약으로 못박은 "금액 = 정수" 불변식을 pricing/cart 가 정면으로 위반.
+- 이 상태로는 커밋 불가(FAIL). critical 전부가 실제 금전 손실 또는 데이터 유출로 직결된다.
+
+────────────────────────────────────────────────────────────────────
+CRITICAL
+────────────────────────────────────────────────────────────────────
+
+[F1] checkout.ts:11 — SQL 인젝션 (findOrdersByEmail)
+  `WHERE user_email = '${email}'` 로 사용자 입력을 SQL 문자열에 직접 보간한다.
+  같은 파일 36행에서는 `?` 파라미터 바인딩을 쓰고 있어, 이 한 곳만 예외다.
+  email 에 `' OR '1'='1` 을 넣으면 전체 주문 테이블이 유출되고, 드라이버가 다중
+  구문을 허용하면 DROP/UPDATE 까지 가능하다.
+  수정: 다른 호출부와 동일하게 파라미터 바인딩.
+    db.raw(`... WHERE user_email = ? ORDER BY created_at DESC`, [email])
+
+[F2] checkout.ts:6 — 라이브 결제 시크릿 하드코딩
+  `const PAYMENT_API_KEY = "sk_live_4f8a2c9e1b7d3a6f"` — `sk_live_` 프리픽스는
+  프로덕션 키다. 소스에 박혀 있으므로 이미 git 히스토리에 남았고, 저장소 접근
+  권한자 전원이 결제 계정을 조작할 수 있다.
+  수정: 즉시 키 폐기(rotate) → 환경변수/시크릿 매니저로 이동 →
+  히스토리에서 제거. 부팅 시 미설정이면 fail-fast.
+
+[F3] checkout.ts:34 — HTTP 실패 응답을 성공으로 처리
+  `fetch` 는 4xx/5xx 에서 reject 하지 않는다. `res.ok` 검사가 없어서 카드 거절
+  (402), 인증 실패(401), 게이트웨이 오류(5xx) 응답도 그대로 `res.json()` 후
+  38행에서 `status = 'paid'` 로 주문이 INSERT 된다. 즉 **결제되지 않은 주문이
+  결제 완료로 기록**되고 재고까지 차감된 채 배송 대상이 된다.
+  수정: `if (!res.ok) { await releaseStock(lines); return { ok:false, error:'payment_declined' } }`
+  추가하고, 응답 body 의 charge.status 도 명시적으로 확인.
+
+[F4] checkout.ts:36 — 과금 성공 후 DB INSERT 실패 시 고아 결제(돈만 빠져나감)
+  try 블록이 fetch 와 INSERT 를 함께 감싼다. 과금은 성공했는데 INSERT 가
+  실패하면 catch 로 떨어져 재고를 되돌리고 `payment_failed` 를 반환한다.
+  고객은 청구됐는데 주문 레코드도, 환불도, 보정 기록도 없다. 무음 자금 손실이며
+  회계상으로도 추적 불가하다.
+  수정: 과금 성공 시점을 경계로 분리. INSERT 실패 시에는 (a) 결제 void/refund 보상
+  트랜잭션 실행 또는 (b) outbox/재시도 큐에 기록하고 명시적 알림.
+  최소한 `payment_failed` 로 뭉뚱그리지 말 것.
+
+[F5] inventory.ts:6-16 — 재고 TOCTOU(check-then-act) 경합 → 오버셀
+  SELECT 로 읽은 값을 애플리케이션에서 빼서 `SET qty = ?` 로 덮어쓴다. 동시 요청
+  두 건이 같은 `available` 을 읽으면 나중 UPDATE 가 앞선 차감을 덮어써 재고가
+  음수 없이 초과 판매된다. 잠금(FOR UPDATE)도 트랜잭션도 없다.
+  아이러니하게 같은 파일 23행 releaseStock 은 `qty = qty + ?` 로 원자적이다 —
+  올바른 패턴이 파일 안에 이미 있다.
+  수정: 조건부 원자 UPDATE 로 교체하고 영향 행 수로 성공 판정.
+    UPDATE stock SET qty = qty - ? WHERE sku = ? AND qty >= ?
+    → affectedRows === 0 이면 품절.
+
+[F6] inventory.ts:10 — 부분 예약 롤백 없음 → 재고 영구 소실
+  라인 단위 루프 도중 3번째 SKU 가 부족하면 `return false` 로 즉시 빠져나가는데,
+  이미 차감된 1·2번째 SKU 는 되돌리지 않는다. 호출부인 checkout.ts:24-26 도
+  `!reserved` 일 때 releaseStock 을 부르지 않는다. 결과적으로 실패한 체크아웃마다
+  재고가 조금씩 증발하고, 팔 수 있는 물건이 품절로 보인다.
+  수정: 전체 예약을 단일 DB 트랜잭션으로 감싸 실패 시 롤백. 트랜잭션을 못 쓰면
+  최소한 성공한 라인 목록을 모아 early-return 전에 releaseStock 으로 보상.
+  (db.ts:6 에 `transaction` 헬퍼가 이미 있는데 아무도 쓰지 않는다.)
+
+[F7] webhook.ts:4 — 웹훅 멱등성 없음 → 원장 이중 계상
+  types.ts:34-36 이 "프로바이더는 2xx 를 받을 때까지 같은 eventId 로 최대 5회
+  재전송하며, 이미 처리한 이벤트의 재전송이 실제로 발생한다"고 규약으로 명시했다.
+  그런데 핸들러는 `evt.eventId` 를 아예 쓰지 않는다. 재전송 1회마다 ledger 에
+  capture 행이 하나씩 더 쌓여 매출이 최대 5배로 부풀고 정산이 깨진다.
+  UPDATE 는 멱등이지만 INSERT 는 아니다.
+  수정: processed_events(event_id PRIMARY KEY) 테이블에 먼저 INSERT 해 유니크
+  제약으로 중복을 걸러내고, 그 삽입과 ledger 기록을 같은 트랜잭션에 둔다.
+  이미 처리된 eventId 는 부작용 없이 2xx 반환.
+
+[F8] refund.ts:6 — 환불 금액 상한·입력 검증 없음 → 초과 환불
+  (a) `percent` 를 전혀 검증하지 않는다. 100 초과, 음수, NaN 모두 통과한다.
+      percent=500 이면 주문 금액의 5배가 환불된다(음수면 환불이 아니라 청구).
+  (b) 이미 환불된 금액을 고려하지 않는다. 50% 를 세 번 호출하면 150% 가 나간다.
+      13행은 인자로 받은 `order.refundedTotal`(호출자가 준 스냅샷)을 신뢰하므로,
+      동시 요청 두 건이 같은 값을 읽고 각자 더해 서로를 덮어쓴다.
+  (c) 결제 프로바이더 환불은 호출하지 않고 DB 에만 기록해, 원장과 실제 정산이 갈린다.
+  수정: percent 를 0<percent<=100 정수로 검증. 환불 가능액은 DB 에서 잠금과 함께
+  다시 읽어 `refundedTotal + amount <= order.total` 을 조건부 UPDATE 로 강제
+  (WHERE refunded_total = <읽은 값> 형태의 낙관적 잠금 또는 SELECT FOR UPDATE).
+
+[F9] pricing.ts:9 — 금액 정수 불변식 위반 (세액)
+  types.ts:4-7 은 "금액은 정수 최소단위(원)로만 표현한다. 부동소수를 금액에 쓰지
+  않는다. 나눗셈이 필요하면 반올림 정책을 명시하고 정수로 되돌린다"를 전역 규약으로
+  선언한다. `(subtotal * TAX_RATE_BP) / 10000` 은 반올림 없이 부동소수를 그대로
+  반환한다. subtotal=1005 → tax=100.5. 이 값이 total 에 섞이고 DB 에 저장되며
+  formatMoney 로 "100.5원"으로 노출된다. 결제 프로바이더가 소수 금액을 거절하거나
+  임의로 절사하면 원장 불일치가 누적된다.
+  수정: 반올림 정책을 정하고 정수로 환원. 예) `Math.round(subtotal * TAX_RATE_BP / 10000)`.
+  정책(버림/반올림/은행가반올림)은 한 곳에 상수로 못박아 재사용.
+
+[F10] cart.ts:11 — 금액 정수 불변식 위반 (할인액)
+  F9 와 동일 뿌리. `(subtotal * discountBp) / 10000` 도 부동소수를 만들고,
+  13행에서 subtotal - discount + tax 로 합쳐지며 이진 부동소수 오차까지 붙는다
+  (0.1+0.2 계열). PricedCart.total 은 "고객이 실제로 결제하는 금액"이므로
+  이 오차가 그대로 청구 금액이 된다.
+  수정: 할인액도 반올림 정책 적용 후 정수화. 가능하면 반올림 로직을 pricing.ts
+  한 곳(예: applyBp(amount, bp))으로 모아 두 계산이 갈라지지 않게 한다.
+
+────────────────────────────────────────────────────────────────────
+MAJOR
+────────────────────────────────────────────────────────────────────
+
+[F11] cart.ts:8 — 할인 전 금액에 과세 → 고객 과다 청구
+  7행 주석은 "세액은 정가 기준으로 산정한다"고 선언하지만, 이는 대부분의 과세
+  체계와 어긋난다. 부가세는 실제 대가(=할인 후 금액) 기준이 원칙이다.
+  10,000원 / 30% 할인이면 total 이 8,000원이어야 하는데 8,000원 대신
+  7,000+1,000=8,000... 즉 세금 1,000원이 정가 기준으로 붙어 할인 후 금액(7,000)의
+  10%인 700원보다 300원 더 걷힌다. 주석이 있다고 해서 규약이 되는 것은 아니며,
+  types.ts 에는 이런 정책이 없다.
+  수정: 세무 요구사항을 확인해 명시적 결정을 기록. 특별한 근거가 없다면
+  `computeTax(subtotal - discount)` 로 바꾸고, 정가 과세가 진짜 의도라면
+  types.ts 규약 섹션에 근거와 함께 문서화 + 테스트로 고정.
+
+[F12] checkout.ts:19 — discountBp 미검증
+  외부에서 들어온 `discountBp` 를 아무 범위 검사 없이 priceCart 에 넘긴다.
+  discountBp=10000 이면 total=tax 만 남고, 10000 초과면 total 이 음수가 되어
+  결제 API 에 음수 금액이 전달된다(프로바이더에 따라 환불처럼 동작). 쿠폰 코드가
+  실제로 그 사용자에게 유효한지 서버에서 재확인하는 로직도 없다.
+  수정: 0 <= discountBp <= 10000 정수 검증 + 쿠폰 소유/유효기간/중복사용 서버 검증.
+  total <= 0 이면 결제 호출 자체를 스킵.
+
+[F13] checkout.ts:18 — 클라이언트가 준 unitPrice 를 그대로 신뢰
+  `lines: CartLine[]` 의 unitPrice 를 카탈로그와 대조하지 않고 그대로 과금액 계산에
+  쓴다. 이 함수가 HTTP 핸들러 뒤에 바로 붙는다면 가격 변조로 1원 결제가 가능하다.
+  수정: sku 목록만 받고 단가는 서버에서 조회하거나, 넘어온 unitPrice 를 DB 가격과
+  대조해 불일치 시 거부.
+
+[F14] checkout.ts:29 — 결제 요청에 멱등키 없음 → 재시도 시 이중 과금
+  네트워크 타임아웃/사용자 더블클릭/상위 재시도에서 같은 장바구니가 두 번 과금된다.
+  types.ts 가 프로바이더의 재전송 동작을 명시할 만큼 재시도가 흔한 환경이다.
+  수정: 주문 시도 단위로 생성한 UUID 를 `Idempotency-Key` 헤더로 전송하고,
+  동일 키 재사용 시 프로바이더의 캐시된 결과를 사용.
+
+[F15] webhook.ts:16-19 — payment.failed 가 상태를 무조건 pending 으로 되돌림
+  현재 상태를 확인하지 않고 UPDATE 한다. 웹훅은 순서를 보장하지 않으므로
+  captured 이후 도착한 늦은 failed 이벤트(또는 재시도 중 섞인 순서)가 이미
+  'paid'/'refunded' 인 주문을 'pending' 으로 되돌린다. 환불 완료 주문이 결제
+  대기로 보이는 상태 오염이 발생한다.
+  수정: 상태 전이 가드를 WHERE 절에 넣는다.
+    UPDATE orders SET status='pending' WHERE id=? AND status='pending'
+  또는 이벤트 타임스탬프/시퀀스를 비교해 오래된 이벤트는 무시.
+
+[F16] webhook.ts:4 — 웹훅 서명 검증·금액 대조 없음
+  핸들러가 `PaymentEvent` 를 신뢰하고 바로 DB 를 쓴다. 이 경로에 서명(HMAC) 검증이
+  보이지 않으므로, 엔드포인트를 아는 누구나 payment.captured 를 던져 임의 주문을
+  결제 완료로 만들 수 있다. 또한 `evt.amount` 를 주문의 total 과 대조하지 않아
+  일부 금액만 결제된 이벤트도 '완납'으로 처리된다.
+  수정: raw body 기준 서명 검증을 파싱 전에 수행하고 실패 시 4xx.
+  ledger 기록 전 `evt.amount === order.total` 확인, 불일치 시 별도 알림 경로.
+
+[F17] refund.ts:8-22 — 환불 기록과 주문 갱신이 원자적이지 않음
+  refunds INSERT 와 orders UPDATE 가 별도 호출이다. 중간에 실패하면 환불 행은
+  남고 주문의 refunded_total/status 는 갱신되지 않아, 다음 환불 요청이 다시
+  전액을 환불 가능한 것으로 본다(F8 과 결합하면 초과 환불이 쉬워진다).
+  수정: db.transaction 으로 묶는다. db.ts:6 에 헬퍼가 이미 있다.
+
+[F18] checkout.ts:36 — 결제 응답 검증 없이 charge.id 저장
+  `charge` 가 any 이고 `charge.id` 존재 여부를 확인하지 않는다. 오류 응답 body
+  (예: `{error:{...}}`)면 charge_id 에 undefined 가 들어가 결제와 주문을 잇는
+  유일한 키가 끊긴다. F3 와 함께 대사(reconciliation) 불가 상태를 만든다.
+  수정: 응답 스키마를 타입으로 정의하고 파싱 검증, charge.id 없으면 실패 처리.
+
+────────────────────────────────────────────────────────────────────
+MINOR
+────────────────────────────────────────────────────────────────────
+
+[F19] refund.ts:6 — Math.floor 절사로 상인 유리 방향의 잔액 누락
+  10회 분할 환불 시 최대 9원이 고객에게 덜 지급된다. 소액이지만 원장이 딱 떨어지지
+  않는다. 마지막 환불에서 잔여분을 몰아주거나(remainder 처리) 반올림 정책을 F9/F10
+  과 동일한 규칙으로 통일할 것.
+
+[F20] pricing.ts:4 — 입력 검증 부재
+  qty 가 음수/소수여도 통과해 subtotal 이 음수가 될 수 있고, 매우 큰 qty 는
+  Number.MAX_SAFE_INTEGER 를 넘겨 정수 정밀도를 잃는다.
+  qty >= 1 정수, unitPrice >= 0 정수 검증 + 상한 확인 권장.
+
+[F21] types.ts:30 — Order.status 유니온에 실패/취소 상태 없음
+  webhook.ts 는 실패 시 'pending' 으로 되돌리는데, 이는 "아직 결제 전"과
+  "결제 시도 실패"를 구분하지 못한다. 'failed' / 'cancelled' 추가 검토.
+
+[F22] checkout.ts:42 — 성공 응답에 주문 식별자 없음
+  `{ ok: true, total }` 만 반환해 호출부가 방금 만든 주문을 참조할 수 없다.
+  영수증 조회·환불·문의 대응이 불가하므로 orderId(및 chargeId) 반환 권장.
+  아울러 refund.ts 는 환불 시 재고를 복원하지 않는다 — 의도된 정책인지 확인 필요.
+
+────────────────────────────────────────────────────────────────────
+권장 수정 순서
+────────────────────────────────────────────────────────────────────
+1. F2 키 폐기·회수 (노출은 시간이 지날수록 나빠진다) → F1 파라미터 바인딩.
+2. F3/F4/F14 결제 경로 정합성: res.ok 검사 → 멱등키 → 과금 후 실패 보상 경로.
+3. F7 웹훅 멱등성 + F16 서명 검증 (원장 신뢰도 회복).
+4. F5/F6 재고를 원자 UPDATE + 트랜잭션으로 전환 (db.transaction 활용).
+5. F8/F17 환불 상한을 DB 조건부 UPDATE 로 강제.
+6. F9/F10/F11 금액 반올림·과세 기준을 pricing.ts 한 곳으로 통일하고 테스트로 고정.
+
+게이트 판정: FAIL (critical 10건).
+
+```json
+[
+  {"id":"F1","file":"checkout.ts","line":11,"severity":"critical","reason":"findOrdersByEmail 이 사용자 입력 email 을 SQL 문자열에 직접 보간해 인젝션이 가능하다. 같은 파일 36행은 파라미터 바인딩을 쓰고 있어 이 한 곳만 예외다.","suggestion":"db.raw(`... WHERE user_email = ? ORDER BY created_at DESC`, [email]) 로 파라미터 바인딩 사용."},
+  {"id":"F2","file":"checkout.ts","line":6,"severity":"critical","reason":"프로덕션 결제 시크릿(sk_live_...)이 소스에 하드코딩되어 git 히스토리에 영구 노출된다.","suggestion":"키를 즉시 폐기·재발급하고 환경변수/시크릿 매니저로 이동, 히스토리에서 제거. 미설정 시 부팅 실패 처리."},
+  {"id":"F3","file":"checkout.ts","line":34,"severity":"critical","reason":"fetch 는 4xx/5xx 에서 reject 하지 않는데 res.ok 검사가 없다. 카드 거절 응답도 그대로 status='paid' 주문으로 INSERT 된다.","suggestion":"res.ok 및 응답 body 의 charge.status 를 검증하고, 실패 시 releaseStock 후 payment_declined 반환."},
+  {"id":"F4","file":"checkout.ts","line":36,"severity":"critical","reason":"과금 성공 후 orders INSERT 가 실패하면 catch 에서 재고만 되돌리고 payment_failed 를 반환한다. 고객은 청구됐는데 주문·환불·기록이 전부 없는 무음 자금 손실이 된다.","suggestion":"과금 성공 시점을 경계로 try 를 분리하고, INSERT 실패 시 결제 void/refund 보상 트랜잭션 또는 outbox 재시도 큐 + 알림을 수행."},
+  {"id":"F5","file":"inventory.ts","line":6,"severity":"critical","reason":"SELECT 후 애플리케이션에서 계산한 값을 SET qty = ? 로 덮어쓰는 check-then-act 경합이라 동시 요청 시 오버셀이 발생한다. 잠금·트랜잭션이 없다.","suggestion":"UPDATE stock SET qty = qty - ? WHERE sku = ? AND qty >= ? 로 원자적 조건부 갱신 후 affectedRows 로 성공 판정(같은 파일 releaseStock 패턴 재사용)."},
+  {"id":"F6","file":"inventory.ts","line":10,"severity":"critical","reason":"루프 중간 SKU 가 부족하면 이미 차감한 앞선 라인을 복원하지 않고 return false 한다. 호출부(checkout.ts:24)도 releaseStock 을 부르지 않아 실패할 때마다 재고가 영구 소실된다.","suggestion":"db.transaction 으로 전체 예약을 감싸 실패 시 롤백하거나, early-return 전에 성공한 라인을 releaseStock 으로 보상."},
+  {"id":"F7","file":"webhook.ts","line":4,"severity":"critical","reason":"types.ts:34-36 이 동일 eventId 로 최대 5회 재전송된다고 명시했는데 핸들러가 eventId 를 전혀 사용하지 않는다. 재전송마다 ledger capture 행이 중복 INSERT 되어 매출이 최대 5배로 부풀려진다.","suggestion":"processed_events(event_id PK) 에 먼저 INSERT 해 유니크 제약으로 중복을 차단하고, 그 삽입과 ledger 기록을 같은 트랜잭션에 두며 중복 이벤트는 부작용 없이 2xx 반환."},
+  {"id":"F8","file":"refund.ts","line":6,"severity":"critical","reason":"percent 범위 검증이 없고(100 초과·음수 통과) 기존 환불액 상한 체크도 없다. 인자로 받은 order.refundedTotal 스냅샷을 신뢰해 동시 환불이 서로를 덮어써 주문 금액을 초과하는 환불이 가능하다.","suggestion":"percent 를 0 초과 100 이하 정수로 검증하고, 환불 가능액을 DB 에서 잠금과 함께 재조회해 refundedTotal + amount <= order.total 을 조건부 UPDATE(낙관적 잠금)로 강제."},
+  {"id":"F9","file":"pricing.ts","line":9,"severity":"critical","reason":"types.ts:4-7 의 전역 규약(금액은 정수, 부동소수 금지, 나눗셈 시 반올림 후 정수 환원)을 위반한다. (subtotal * TAX_RATE_BP)/10000 이 소수 세액을 만들어 total·DB·표시 금액을 오염시킨다.","suggestion":"Math.round(subtotal * TAX_RATE_BP / 10000) 등 명시적 반올림 정책을 적용해 정수로 환원하고 정책을 상수로 일원화."},
+  {"id":"F10","file":"cart.ts","line":11,"severity":"critical","reason":"할인액도 (subtotal * discountBp)/10000 로 부동소수를 만들어 정수 Money 불변식을 위반한다. 13행에서 total 로 합산되며 이진 부동소수 오차까지 실제 청구 금액에 반영된다.","suggestion":"할인액에도 동일한 반올림 정책을 적용해 정수화하고, 반올림 로직을 pricing.ts 의 공용 헬퍼(applyBp)로 통합."},
+  {"id":"F11","file":"cart.ts","line":8,"severity":"major","reason":"세액을 할인 전 subtotal 기준으로 계산한 뒤 할인 후 금액에 더해 고객이 과다 청구된다. 7행 주석이 정가 과세를 주장하지만 types.ts 규약에는 그런 정책이 없고 일반적 과세 원칙(실제 대가 기준)과 어긋난다.","suggestion":"computeTax(subtotal - discount) 로 변경. 정가 과세가 실제 요구사항이라면 types.ts 규약에 근거와 함께 문서화하고 테스트로 고정."},
+  {"id":"F12","file":"checkout.ts","line":19,"severity":"major","reason":"discountBp 를 범위 검증 없이 priceCart 에 전달한다. 10000 초과 시 total 이 음수가 되어 결제 API 에 음수 금액이 전달되고, 쿠폰의 사용자별 유효성 서버 검증도 없다.","suggestion":"0 <= discountBp <= 10000 정수 검증과 쿠폰 소유·유효기간·중복사용 서버 검증을 추가하고 total <= 0 이면 결제 호출을 스킵."},
+  {"id":"F13","file":"checkout.ts","line":18,"severity":"major","reason":"호출자가 넘긴 CartLine.unitPrice 를 카탈로그와 대조하지 않고 그대로 과금액 계산에 사용한다. HTTP 핸들러 뒤에 바로 붙는 경우 가격 변조로 임의 금액 결제가 가능하다.","suggestion":"sku·qty 만 입력받고 단가는 서버에서 조회하거나, 전달된 unitPrice 를 DB 가격과 대조해 불일치 시 거부."},
+  {"id":"F14","file":"checkout.ts","line":29,"severity":"major","reason":"결제 요청에 멱등키가 없어 타임아웃 재시도나 사용자 더블클릭 시 동일 장바구니가 이중 과금된다.","suggestion":"주문 시도 단위 UUID 를 Idempotency-Key 헤더로 전송해 프로바이더 측 중복 과금을 차단."},
+  {"id":"F15","file":"webhook.ts","line":16,"severity":"major","reason":"payment.failed 처리 시 현재 상태를 확인하지 않고 무조건 pending 으로 UPDATE 한다. 웹훅 순서가 보장되지 않으므로 늦게 도착한 failed 이벤트가 이미 paid/refunded 인 주문 상태를 되돌린다.","suggestion":"WHERE id = ? AND status = 'pending' 같은 상태 전이 가드를 추가하거나 이벤트 타임스탬프/시퀀스를 비교해 오래된 이벤트를 무시."},
+  {"id":"F16","file":"webhook.ts","line":4,"severity":"major","reason":"웹훅 서명(HMAC) 검증 없이 페이로드를 신뢰해 DB 를 갱신한다. 엔드포인트를 아는 누구나 payment.captured 를 위조해 주문을 결제 완료로 만들 수 있고, evt.amount 를 주문 total 과 대조하지 않아 부분 결제도 완납 처리된다.","suggestion":"raw body 기준 서명 검증을 파싱 전에 수행하고 실패 시 4xx 반환. ledger 기록 전 evt.amount 와 주문 금액 일치를 확인하고 불일치는 별도 알림."},
+  {"id":"F17","file":"refund.ts","line":8,"severity":"major","reason":"refunds INSERT 와 orders UPDATE 가 별도 호출이라 원자적이지 않다. 중간 실패 시 환불 행만 남고 refunded_total 이 갱신되지 않아 다음 요청이 다시 전액 환불 가능하다고 판단한다.","suggestion":"db.transaction(db.ts:6 의 기존 헬퍼)으로 두 쿼리를 하나의 트랜잭션에 묶는다."},
+  {"id":"F18","file":"checkout.ts","line":39,"severity":"major","reason":"charge 응답이 any 이고 charge.id 존재 검증 없이 charge_id 로 저장된다. 오류 응답 body 인 경우 undefined 가 저장되어 결제와 주문을 잇는 유일한 키가 끊기고 대사가 불가능해진다.","suggestion":"결제 응답 스키마를 타입으로 정의해 파싱 검증하고, charge.id 가 없으면 실패로 처리."},
+  {"id":"F19","file":"refund.ts","line":6,"severity":"minor","reason":"Math.floor 절사로 분할 환불마다 잔액이 고객에게 불리하게 누락되어 원장이 딱 떨어지지 않는다.","suggestion":"마지막 환불에 잔여분을 몰아주는 remainder 처리를 하거나 반올림 정책을 F9/F10 과 동일 규칙으로 통일."},
+  {"id":"F20","file":"pricing.ts","line":4,"severity":"minor","reason":"qty·unitPrice 검증이 없어 음수 qty 로 subtotal 이 음수가 될 수 있고, 과대 qty 는 Number.MAX_SAFE_INTEGER 를 넘겨 정수 정밀도를 잃는다.","suggestion":"qty 는 1 이상 정수, unitPrice 는 0 이상 정수로 검증하고 합계 상한을 확인."},
+  {"id":"F21","file":"types.ts","line":30,"severity":"minor","reason":"Order.status 유니온에 실패/취소 상태가 없어 webhook 이 결제 실패를 pending 으로 표현한다. '아직 결제 전'과 '결제 시도 실패'가 구분되지 않는다.","suggestion":"'failed' / 'cancelled' 상태 추가를 검토하고 상태 전이 규칙을 문서화."},
+  {"id":"F22","file":"checkout.ts","line":42,"severity":"minor","reason":"성공 응답이 { ok, total } 뿐이라 방금 생성한 주문을 참조할 식별자가 없어 영수증 조회·환불·문의 대응이 불가하다.","suggestion":"orderId(및 chargeId)를 응답에 포함. 아울러 refund.ts 가 환불 시 재고를 복원하지 않는 것이 의도된 정책인지 확인."}
+]
+```

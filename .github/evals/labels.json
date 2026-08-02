@@ -1,0 +1,1307 @@
+{
+  "_comment": "심어둔 결함과 그것을 지목했다고 인정할 매칭 규칙. any_of 그룹은 모두(AND) 만족해야 검출로 친다.",
+  "prd-defective.md": {
+    "reviewer": "prd-reviewer",
+    "defects": [
+      {
+        "id": "P-D1",
+        "desc": "§5.4.1 State Matrix 섹션 자체가 없음 (FE 페이지 3개인데)",
+        "severity": "critical",
+        "match": [
+          [
+            "5.4.1",
+            "state matrix",
+            "상태 매트릭스",
+            "상태 정의"
+          ]
+        ]
+      },
+      {
+        "id": "P-D2",
+        "desc": "§5.5 User Flow(Mermaid) 섹션이 없음",
+        "severity": "critical",
+        "match": [
+          [
+            "5.5",
+            "user flow",
+            "유저 플로우",
+            "사용자 플로우",
+            "mermaid",
+            "플로우 다이어그램"
+          ]
+        ]
+      },
+      {
+        "id": "P-D3",
+        "desc": "FR-003(로그인 없이 열람) vs FR-007(모든 조회 인증 필수) 직접 모순",
+        "severity": "critical",
+        "match": [
+          [
+            "fr-003",
+            "fr-007",
+            "모순",
+            "충돌",
+            "상충",
+            "conflict",
+            "contradic"
+          ],
+          [
+            "인증",
+            "로그인",
+            "auth"
+          ]
+        ]
+      },
+      {
+        "id": "P-D4",
+        "desc": "FR-005 관리자 삭제 엔드포인트에 인가(권한 검증) 명세 없음",
+        "severity": "critical",
+        "match": [
+          [
+            "fr-005",
+            "관리자",
+            "admin",
+            "delete /api/documents"
+          ],
+          [
+            "권한",
+            "인가",
+            "authorization",
+            "authz",
+            "role",
+            "검증"
+          ]
+        ]
+      },
+      {
+        "id": "P-D5",
+        "desc": "Scale Grade Startup인데 §4.1 성능 목표가 정성적('기다릴 만한 수준')",
+        "severity": "major",
+        "match": [
+          [
+            "성능",
+            "performance",
+            "nfr",
+            "4.1",
+            "scale grade"
+          ],
+          [
+            "정량",
+            "수치",
+            "목표치",
+            "측정",
+            "p95",
+            "구체",
+            "모호",
+            "기다릴 만한"
+          ]
+        ]
+      }
+    ]
+  },
+  "code-defective.ts": {
+    "reviewer": "code-reviewer",
+    "defects": [
+      {
+        "id": "C-D1",
+        "desc": "searchDocuments: 사용자 입력을 SQL 문자열에 직접 보간 (SQL injection)",
+        "severity": "critical",
+        "match": [
+          [
+            "sql injection",
+            "sql 인젝션",
+            "인젝션",
+            "파라미터화",
+            "parameteriz",
+            "prepared statement",
+            "바인딩"
+          ]
+        ]
+      },
+      {
+        "id": "C-D2",
+        "desc": "SHARE_TOKEN_SECRET 이 소스에 하드코딩",
+        "severity": "critical",
+        "match": [
+          [
+            "하드코딩",
+            "hardcode",
+            "hard-code",
+            "share_token_secret",
+            "시크릿",
+            "secret"
+          ],
+          [
+            "환경",
+            "env",
+            "노출",
+            "커밋",
+            "소스",
+            "평문"
+          ]
+        ]
+      },
+      {
+        "id": "C-D3",
+        "desc": "listDocumentsWithOwners: 루프 안에서 쿼리 (N+1)",
+        "severity": "major",
+        "match": [
+          [
+            "n+1",
+            "n + 1",
+            "반복 쿼리",
+            "루프 내 쿼리",
+            "loop",
+            "조인",
+            "join",
+            "쿼리 100"
+          ]
+        ]
+      },
+      {
+        "id": "C-D4",
+        "desc": "deleteDocument / list / search: 세션·소유자·역할 검증이 전혀 없음",
+        "severity": "critical",
+        "match": [
+          [
+            "deletedocument",
+            "삭제",
+            "delete"
+          ],
+          [
+            "인증",
+            "인가",
+            "권한",
+            "소유자",
+            "owner",
+            "auth",
+            "세션",
+            "session"
+          ]
+        ]
+      },
+      {
+        "id": "C-D5",
+        "desc": "deleteDocument: doc[0] 존재 확인 없이 접근 → 없는 id에 크래시",
+        "severity": "major",
+        "match": [
+          [
+            "doc[0]",
+            "존재하지 않",
+            "존재 여부",
+            "null",
+            "undefined",
+            "not found",
+            "404",
+            "빈 배열"
+          ]
+        ]
+      },
+      {
+        "id": "C-D6",
+        "desc": "sign(): base64(JSON+secret)는 위조 가능. 만료(exp)도 클라이언트가 지정",
+        "severity": "critical",
+        "match": [
+          [
+            "sign",
+            "서명",
+            "토큰",
+            "token",
+            "hmac",
+            "base64"
+          ],
+          [
+            "위조",
+            "forge",
+            "취약",
+            "예측",
+            "만료",
+            "exp",
+            "클라이언트"
+          ]
+        ]
+      }
+    ]
+  },
+  "prd-clean.md": {
+    "reviewer": "prd-reviewer",
+    "defects": [],
+    "expect_clean": true
+  },
+  "code-clean.ts": {
+    "reviewer": "code-reviewer",
+    "defects": [],
+    "expect_clean": true
+  },
+  "hard-checkout": {
+    "reviewer": "code-reviewer",
+    "note": "7파일 크로스 파일 과제. H-A는 앵커(뻔함), 나머지는 판별용.",
+    "defects": [
+      {
+        "id": "H-A",
+        "desc": "[앵커] checkout.ts: SQL 문자열 보간 + PAYMENT_API_KEY 하드코딩",
+        "severity": "critical",
+        "anchor": true,
+        "match": [
+          [
+            "sql injection",
+            "인젝션",
+            "보간",
+            "하드코딩",
+            "hardcode",
+            "api_key",
+            "api key"
+          ]
+        ]
+      },
+      {
+        "id": "H-1",
+        "desc": "[크로스파일] types.ts는 Money=정수 규약인데 pricing.computeTax가 소수 반환",
+        "severity": "critical",
+        "match": [
+          [
+            "computetax",
+            "세액",
+            "tax",
+            "money"
+          ],
+          [
+            "정수",
+            "소수",
+            "부동소수",
+            "float",
+            "반올림",
+            "rounding",
+            "fractional",
+            "나눗셈",
+            "/ 10000",
+            "규약",
+            "계약"
+          ]
+        ]
+      },
+      {
+        "id": "H-2",
+        "desc": "[크로스파일] cart.ts가 할인 전 금액에 과세 → 할인분에도 세금",
+        "severity": "major",
+        "match": [
+          [
+            "할인",
+            "discount"
+          ],
+          [
+            "세금",
+            "세액",
+            "tax"
+          ],
+          [
+            "순서",
+            "before",
+            "전에",
+            "기준",
+            "이후",
+            "after",
+            "적용"
+          ]
+        ]
+      },
+      {
+        "id": "H-3a",
+        "desc": "[동시성] inventory.reserveStock의 SELECT-후-UPDATE TOCTOU → 초과판매",
+        "severity": "critical",
+        "match": [
+          [
+            "race",
+            "경쟁",
+            "동시",
+            "concurren",
+            "toctou",
+            "atomic",
+            "원자",
+            "트랜잭션",
+            "transaction",
+            "lock",
+            "잠금"
+          ],
+          [
+            "재고",
+            "stock",
+            "oversell",
+            "초과"
+          ]
+        ]
+      },
+      {
+        "id": "H-3b",
+        "desc": "[크로스파일] 여러 라인 중 하나가 실패하면 앞서 차감한 재고가 복구되지 않음",
+        "severity": "major",
+        "match": [
+          [
+            "부분",
+            "partial",
+            "일부",
+            "앞",
+            "이전",
+            "앞서",
+            "rollback",
+            "롤백",
+            "복구",
+            "release",
+            "해제",
+            "누수",
+            "leak"
+          ],
+          [
+            "재고",
+            "stock"
+          ]
+        ]
+      },
+      {
+        "id": "H-4",
+        "desc": "[크로스파일] webhook.ts에 eventId 멱등성 없음 (types.ts가 최대 5회 재전송 명시)",
+        "severity": "critical",
+        "match": [
+          [
+            "멱등",
+            "idempot",
+            "중복",
+            "duplicate",
+            "재전송",
+            "retry",
+            "eventid",
+            "event id"
+          ],
+          [
+            "webhook",
+            "웹훅",
+            "ledger",
+            "capture",
+            "결제"
+          ]
+        ]
+      },
+      {
+        "id": "H-5",
+        "desc": "[비즈니스로직] refund.ts의 Math.floor → 고객 손해 누적, 전액 환불 도달 불가",
+        "severity": "major",
+        "match": [
+          [
+            "floor",
+            "내림",
+            "버림",
+            "반올림",
+            "rounding"
+          ],
+          [
+            "환불",
+            "refund"
+          ]
+        ]
+      },
+      {
+        "id": "H-6",
+        "desc": "[크로스파일] 결제 성공 후 INSERT 실패 시 catch가 payment_failed로 처리 → 돈만 빠져나감",
+        "severity": "critical",
+        "match": [
+          [
+            "insert",
+            "db",
+            "저장",
+            "기록",
+            "주문 생성"
+          ],
+          [
+            "결제",
+            "charge",
+            "payment"
+          ],
+          [
+            "실패",
+            "catch",
+            "예외",
+            "불일치",
+            "inconsist",
+            "고아",
+            "orphan",
+            "이미 청구",
+            "charged"
+          ]
+        ]
+      }
+    ]
+  },
+  "scale-12": {
+    "reviewer": "code-reviewer",
+    "defects": [
+      {
+        "id": "S-SQLI",
+        "desc": "사용자 입력을 SQL 문자열에 직접 보간 (src/modules/invoice.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "sql injection",
+            "인젝션",
+            "보간",
+            "파라미터",
+            "바인딩",
+            "prepared"
+          ]
+        ]
+      },
+      {
+        "id": "S-SECRET",
+        "desc": "웹훅 시크릿 하드코딩 + 타이밍 비안전 비교 (src/modules/subscription.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "하드코딩",
+            "hardcode",
+            "시크릿",
+            "secret",
+            "whsec"
+          ],
+          [
+            "환경",
+            "env",
+            "노출",
+            "커밋",
+            "타이밍",
+            "timing"
+          ]
+        ]
+      },
+      {
+        "id": "S-NPLUS1",
+        "desc": "루프 안에서 쿼리 (N+1) (src/modules/shipment.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "n+1",
+            "n + 1",
+            "반복 쿼리",
+            "루프",
+            "loop",
+            "조인",
+            "join"
+          ]
+        ]
+      },
+      {
+        "id": "S-TOCTOU",
+        "desc": "check-then-act 경합 → 중복 선점 (src/modules/ticket.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "race",
+            "경쟁",
+            "동시",
+            "concurren",
+            "toctou",
+            "원자",
+            "atomic",
+            "트랜잭션",
+            "transaction",
+            "lock"
+          ]
+        ]
+      },
+      {
+        "id": "S-IDEM",
+        "desc": "[크로스파일] contracts.ts가 최대 5회 재전송 명시인데 eventId 미사용 (src/modules/campaign.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "멱등",
+            "idempot",
+            "중복",
+            "duplicate",
+            "eventid",
+            "재전송",
+            "retry"
+          ]
+        ]
+      },
+      {
+        "id": "S-AUTHZ",
+        "desc": "[크로스파일] 클라이언트가 보낸 ownerId를 신뢰 (contracts.ts 위반) (src/modules/payout.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "owner",
+            "소유자",
+            "세션",
+            "session",
+            "신뢰",
+            "클라이언트",
+            "권한",
+            "인가",
+            "authz"
+          ]
+        ]
+      },
+      {
+        "id": "S-FLOAT",
+        "desc": "[크로스파일] Money 정수 규약 위반 (소수 반환) (src/modules/review.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "정수",
+            "소수",
+            "부동소수",
+            "float",
+            "반올림",
+            "rounding",
+            "money"
+          ]
+        ]
+      },
+      {
+        "id": "S-CATCH",
+        "desc": "되돌릴 수 없는 blob 삭제 후 DB 실패 → 데이터 불일치 (src/modules/coupon.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "blob",
+            "삭제",
+            "되돌",
+            "불일치",
+            "orphan",
+            "고아",
+            "순서",
+            "트랜잭션",
+            "보상"
+          ]
+        ]
+      },
+      {
+        "id": "S-UNBOUND",
+        "desc": "[크로스파일] LIMIT 없는 SELECT * (contracts.ts MAX_PAGE_SIZE 위반) (src/modules/warehouse.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "limit",
+            "상한",
+            "페이지",
+            "pagination",
+            "unbounded",
+            "전체",
+            "메모리",
+            "oom"
+          ]
+        ]
+      },
+      {
+        "id": "S-LEAK",
+        "desc": "early return 시 커넥션 미반환 (풀 고갈) (src/modules/vendor.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "release",
+            "반환",
+            "누수",
+            "leak",
+            "커넥션",
+            "connection",
+            "pool",
+            "finally"
+          ]
+        ]
+      },
+      {
+        "id": "S-ORDER",
+        "desc": "할인 전 금액에 과세 → 과다 청구 (src/modules/contract.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "할인",
+            "discount"
+          ],
+          [
+            "세금",
+            "세액",
+            "tax"
+          ],
+          [
+            "순서",
+            "기준",
+            "전",
+            "후",
+            "before",
+            "after"
+          ]
+        ]
+      },
+      {
+        "id": "S-TRUSTC",
+        "desc": "[크로스파일] 권한을 요청 body의 role로 판정 (contracts.ts 위반) (src/modules/shift.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "role",
+            "권한",
+            "body",
+            "클라이언트",
+            "요청",
+            "위조",
+            "신뢰",
+            "세션",
+            "session"
+          ]
+        ]
+      }
+    ]
+  },
+  "scale-40": {
+    "reviewer": "code-reviewer",
+    "defects": [
+      {
+        "id": "S-SQLI",
+        "desc": "사용자 입력을 SQL 문자열에 직접 보간 (src/modules/invoice.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "sql injection",
+            "인젝션",
+            "보간",
+            "파라미터",
+            "바인딩",
+            "prepared"
+          ]
+        ]
+      },
+      {
+        "id": "S-SECRET",
+        "desc": "웹훅 시크릿 하드코딩 + 타이밍 비안전 비교 (src/modules/ticket.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "하드코딩",
+            "hardcode",
+            "시크릿",
+            "secret",
+            "whsec"
+          ],
+          [
+            "환경",
+            "env",
+            "노출",
+            "커밋",
+            "타이밍",
+            "timing"
+          ]
+        ]
+      },
+      {
+        "id": "S-NPLUS1",
+        "desc": "루프 안에서 쿼리 (N+1) (src/modules/review.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "n+1",
+            "n + 1",
+            "반복 쿼리",
+            "루프",
+            "loop",
+            "조인",
+            "join"
+          ]
+        ]
+      },
+      {
+        "id": "S-TOCTOU",
+        "desc": "check-then-act 경합 → 중복 선점 (src/modules/contract.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "race",
+            "경쟁",
+            "동시",
+            "concurren",
+            "toctou",
+            "원자",
+            "atomic",
+            "트랜잭션",
+            "transaction",
+            "lock"
+          ]
+        ]
+      },
+      {
+        "id": "S-IDEM",
+        "desc": "[크로스파일] contracts.ts가 최대 5회 재전송 명시인데 eventId 미사용 (src/modules/asset.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "멱등",
+            "idempot",
+            "중복",
+            "duplicate",
+            "eventid",
+            "재전송",
+            "retry"
+          ]
+        ]
+      },
+      {
+        "id": "S-AUTHZ",
+        "desc": "[크로스파일] 클라이언트가 보낸 ownerId를 신뢰 (contracts.ts 위반) (src/modules/dispute.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "owner",
+            "소유자",
+            "세션",
+            "session",
+            "신뢰",
+            "클라이언트",
+            "권한",
+            "인가",
+            "authz"
+          ]
+        ]
+      },
+      {
+        "id": "S-FLOAT",
+        "desc": "[크로스파일] Money 정수 규약 위반 (소수 반환) (src/modules/invoice1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "정수",
+            "소수",
+            "부동소수",
+            "float",
+            "반올림",
+            "rounding",
+            "money"
+          ]
+        ]
+      },
+      {
+        "id": "S-CATCH",
+        "desc": "되돌릴 수 없는 blob 삭제 후 DB 실패 → 데이터 불일치 (src/modules/ticket1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "blob",
+            "삭제",
+            "되돌",
+            "불일치",
+            "orphan",
+            "고아",
+            "순서",
+            "트랜잭션",
+            "보상"
+          ]
+        ]
+      },
+      {
+        "id": "S-UNBOUND",
+        "desc": "[크로스파일] LIMIT 없는 SELECT * (contracts.ts MAX_PAGE_SIZE 위반) (src/modules/review1.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "limit",
+            "상한",
+            "페이지",
+            "pagination",
+            "unbounded",
+            "전체",
+            "메모리",
+            "oom"
+          ]
+        ]
+      },
+      {
+        "id": "S-LEAK",
+        "desc": "early return 시 커넥션 미반환 (풀 고갈) (src/modules/contract1.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "release",
+            "반환",
+            "누수",
+            "leak",
+            "커넥션",
+            "connection",
+            "pool",
+            "finally"
+          ]
+        ]
+      },
+      {
+        "id": "S-ORDER",
+        "desc": "할인 전 금액에 과세 → 과다 청구 (src/modules/asset1.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "할인",
+            "discount"
+          ],
+          [
+            "세금",
+            "세액",
+            "tax"
+          ],
+          [
+            "순서",
+            "기준",
+            "전",
+            "후",
+            "before",
+            "after"
+          ]
+        ]
+      },
+      {
+        "id": "S-TRUSTC",
+        "desc": "[크로스파일] 권한을 요청 body의 role로 판정 (contracts.ts 위반) (src/modules/dispute1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "role",
+            "권한",
+            "body",
+            "클라이언트",
+            "요청",
+            "위조",
+            "신뢰",
+            "세션",
+            "session"
+          ]
+        ]
+      }
+    ]
+  },
+  "scale-80": {
+    "reviewer": "code-reviewer",
+    "defects": [
+      {
+        "id": "S-SQLI",
+        "desc": "사용자 입력을 SQL 문자열에 직접 보간 (src/modules/invoice.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "sql injection",
+            "인젝션",
+            "보간",
+            "파라미터",
+            "바인딩",
+            "prepared"
+          ]
+        ]
+      },
+      {
+        "id": "S-SECRET",
+        "desc": "웹훅 시크릿 하드코딩 + 타이밍 비안전 비교 (src/modules/review.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "하드코딩",
+            "hardcode",
+            "시크릿",
+            "secret",
+            "whsec"
+          ],
+          [
+            "환경",
+            "env",
+            "노출",
+            "커밋",
+            "타이밍",
+            "timing"
+          ]
+        ]
+      },
+      {
+        "id": "S-NPLUS1",
+        "desc": "루프 안에서 쿼리 (N+1) (src/modules/asset.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "n+1",
+            "n + 1",
+            "반복 쿼리",
+            "루프",
+            "loop",
+            "조인",
+            "join"
+          ]
+        ]
+      },
+      {
+        "id": "S-TOCTOU",
+        "desc": "check-then-act 경합 → 중복 선점 (src/modules/invoice1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "race",
+            "경쟁",
+            "동시",
+            "concurren",
+            "toctou",
+            "원자",
+            "atomic",
+            "트랜잭션",
+            "transaction",
+            "lock"
+          ]
+        ]
+      },
+      {
+        "id": "S-IDEM",
+        "desc": "[크로스파일] contracts.ts가 최대 5회 재전송 명시인데 eventId 미사용 (src/modules/review1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "멱등",
+            "idempot",
+            "중복",
+            "duplicate",
+            "eventid",
+            "재전송",
+            "retry"
+          ]
+        ]
+      },
+      {
+        "id": "S-AUTHZ",
+        "desc": "[크로스파일] 클라이언트가 보낸 ownerId를 신뢰 (contracts.ts 위반) (src/modules/asset1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "owner",
+            "소유자",
+            "세션",
+            "session",
+            "신뢰",
+            "클라이언트",
+            "권한",
+            "인가",
+            "authz"
+          ]
+        ]
+      },
+      {
+        "id": "S-FLOAT",
+        "desc": "[크로스파일] Money 정수 규약 위반 (소수 반환) (src/modules/invoice2.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "정수",
+            "소수",
+            "부동소수",
+            "float",
+            "반올림",
+            "rounding",
+            "money"
+          ]
+        ]
+      },
+      {
+        "id": "S-CATCH",
+        "desc": "되돌릴 수 없는 blob 삭제 후 DB 실패 → 데이터 불일치 (src/modules/review2.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "blob",
+            "삭제",
+            "되돌",
+            "불일치",
+            "orphan",
+            "고아",
+            "순서",
+            "트랜잭션",
+            "보상"
+          ]
+        ]
+      },
+      {
+        "id": "S-UNBOUND",
+        "desc": "[크로스파일] LIMIT 없는 SELECT * (contracts.ts MAX_PAGE_SIZE 위반) (src/modules/asset2.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "limit",
+            "상한",
+            "페이지",
+            "pagination",
+            "unbounded",
+            "전체",
+            "메모리",
+            "oom"
+          ]
+        ]
+      },
+      {
+        "id": "S-LEAK",
+        "desc": "early return 시 커넥션 미반환 (풀 고갈) (src/modules/invoice3.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "release",
+            "반환",
+            "누수",
+            "leak",
+            "커넥션",
+            "connection",
+            "pool",
+            "finally"
+          ]
+        ]
+      },
+      {
+        "id": "S-ORDER",
+        "desc": "할인 전 금액에 과세 → 과다 청구 (src/modules/review3.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "할인",
+            "discount"
+          ],
+          [
+            "세금",
+            "세액",
+            "tax"
+          ],
+          [
+            "순서",
+            "기준",
+            "전",
+            "후",
+            "before",
+            "after"
+          ]
+        ]
+      },
+      {
+        "id": "S-TRUSTC",
+        "desc": "[크로스파일] 권한을 요청 body의 role로 판정 (contracts.ts 위반) (src/modules/asset3.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "role",
+            "권한",
+            "body",
+            "클라이언트",
+            "요청",
+            "위조",
+            "신뢰",
+            "세션",
+            "session"
+          ]
+        ]
+      }
+    ]
+  },
+  "prd-digging.md": {
+    "reviewer": "prd-reviewer",
+    "note": "4렌즈 교차 픽스처. H2(관점 다양성) 검증용.",
+    "defects": [
+      {
+        "id": "G-C1",
+        "lens": "Completeness",
+        "desc": "Growth 등급인데 §4.4 Recovery(백업·복구) 섹션 자체가 없음",
+        "severity": "major",
+        "match": [
+          [
+            "4.4",
+            "recovery",
+            "백업",
+            "복구",
+            "재해",
+            "disaster"
+          ]
+        ]
+      },
+      {
+        "id": "G-C2",
+        "lens": "Completeness",
+        "desc": "FR-008 90일 삭제인데 개인정보 수집 동의·보존 근거 미정의",
+        "severity": "major",
+        "match": [
+          [
+            "개인정보",
+            "pii",
+            "privacy",
+            "동의",
+            "consent",
+            "보존"
+          ],
+          [
+            "이메일",
+            "email",
+            "삭제",
+            "90일"
+          ]
+        ]
+      },
+      {
+        "id": "G-F1",
+        "lens": "Feasibility",
+        "desc": "FR-003 실시간 1초+동시2000 ↔ Next.js 서버리스 — 장기 연결 유지 불가",
+        "severity": "critical",
+        "match": [
+          [
+            "서버리스",
+            "serverless",
+            "sse",
+            "websocket",
+            "스트림",
+            "stream",
+            "장기 연결",
+            "연결 유지"
+          ],
+          [
+            "실시간",
+            "1초",
+            "동시",
+            "2,000",
+            "2000",
+            "비용",
+            "한계",
+            "불가"
+          ]
+        ]
+      },
+      {
+        "id": "G-F2",
+        "lens": "Feasibility",
+        "desc": "FR-006 양방향 캘린더 동기화를 한 줄로 — webhook·충돌해소·토큰갱신 미설계",
+        "severity": "critical",
+        "match": [
+          [
+            "양방향",
+            "동기화",
+            "sync",
+            "캘린더",
+            "calendar"
+          ],
+          [
+            "충돌",
+            "conflict",
+            "webhook",
+            "토큰",
+            "갱신",
+            "복잡",
+            "과소",
+            "설계"
+          ]
+        ]
+      },
+      {
+        "id": "G-S1",
+        "lens": "Security",
+        "desc": "FR-004 링크만으로 응답 → 응답 위조·타인 사칭 방지 수단 없음",
+        "severity": "critical",
+        "match": [
+          [
+            "위조",
+            "사칭",
+            "impersonat",
+            "spoof",
+            "무단",
+            "누구나",
+            "도용"
+          ],
+          [
+            "링크",
+            "토큰",
+            "응답",
+            "uuid"
+          ]
+        ]
+      },
+      {
+        "id": "G-S2",
+        "lens": "Security",
+        "desc": "GET /meetings/{id}가 token 인가만으로 전체 참석자 응답·이메일 노출 (PII)",
+        "severity": "critical",
+        "match": [
+          [
+            "노출",
+            "유출",
+            "leak",
+            "expos",
+            "조회 가능"
+          ],
+          [
+            "이메일",
+            "참석자",
+            "전체",
+            "응답",
+            "pii",
+            "개인정보"
+          ]
+        ]
+      },
+      {
+        "id": "G-X1",
+        "lens": "Consistency",
+        "desc": "§2.3은 participant(SSO)/guest를 나눴는데 /m/[token]은 Auth Optional — 역할 구분 무의미",
+        "severity": "major",
+        "match": [
+          [
+            "participant",
+            "guest",
+            "역할",
+            "role"
+          ],
+          [
+            "optional",
+            "인증",
+            "sso",
+            "구분",
+            "무의미",
+            "우회"
+          ]
+        ]
+      },
+      {
+        "id": "G-X2",
+        "lens": "Consistency",
+        "desc": "FR-005 전원 메일 발송 ↔ FR-004 외부 참석자는 이메일 없이 참여 — 보낼 주소가 없음",
+        "severity": "critical",
+        "match": [
+          [
+            "fr-005",
+            "fr-004",
+            "메일",
+            "이메일",
+            "email"
+          ],
+          [
+            "모순",
+            "충돌",
+            "상충",
+            "conflict",
+            "주소가 없",
+            "수집하지"
+          ]
+        ]
+      },
+      {
+        "id": "G-X3",
+        "lens": "Consistency",
+        "desc": "Phase 1에 FR-004는 있고 FR-003(집계)은 Phase 2 → 수용기준 '즉시 반영'과 어긋남",
+        "severity": "major",
+        "match": [
+          [
+            "phase 1",
+            "phase 2",
+            "단계",
+            "순서"
+          ],
+          [
+            "fr-003",
+            "fr-004",
+            "집계",
+            "즉시",
+            "반영",
+            "의존"
+          ]
+        ]
+      }
+    ]
+  }
+}

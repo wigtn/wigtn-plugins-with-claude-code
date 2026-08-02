@@ -1,0 +1,5 @@
+judge=J56
+model=gpt-5.6-sol
+fixture=create-backend-webhook
+exit_code=0
+duration_seconds=69

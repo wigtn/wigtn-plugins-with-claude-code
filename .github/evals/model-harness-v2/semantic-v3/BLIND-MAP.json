@@ -1,0 +1,89 @@
+{
+  "create-ui-internal": {
+    "labels": {
+      "A": "M56-V2",
+      "B": "M56-V3",
+      "C": "M56-CURRENT"
+    },
+    "selection": {
+      "M56-CURRENT": {
+        "score": 8,
+        "repeat": 1,
+        "total": 13
+      },
+      "M56-V2": {
+        "score": 11,
+        "repeat": 1,
+        "total": 13
+      },
+      "M56-V3": {
+        "score": 13,
+        "repeat": 1,
+        "total": 13
+      }
+    },
+    "paths": {
+      "M56-CURRENT": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-CURRENT/create-ui-internal.1.md",
+      "M56-V2": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-V2/create-ui-internal.1.md",
+      "M56-V3": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-v3/M56-V3/create-ui-internal.1.md"
+    }
+  },
+  "create-backend-webhook": {
+    "labels": {
+      "A": "M56-V2",
+      "B": "M56-CURRENT",
+      "C": "M56-V3"
+    },
+    "selection": {
+      "M56-CURRENT": {
+        "score": 9,
+        "repeat": 1,
+        "total": 13
+      },
+      "M56-V2": {
+        "score": 12,
+        "repeat": 1,
+        "total": 13
+      },
+      "M56-V3": {
+        "score": 13,
+        "repeat": 1,
+        "total": 13
+      }
+    },
+    "paths": {
+      "M56-CURRENT": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-CURRENT/create-backend-webhook.1.md",
+      "M56-V2": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-V2/create-backend-webhook.1.md",
+      "M56-V3": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-v3/M56-V3/create-backend-webhook.1.md"
+    }
+  },
+  "create-mobile-expense": {
+    "labels": {
+      "A": "M56-CURRENT",
+      "B": "M56-V3",
+      "C": "M56-V2"
+    },
+    "selection": {
+      "M56-CURRENT": {
+        "score": 8,
+        "repeat": 1,
+        "total": 13
+      },
+      "M56-V2": {
+        "score": 11,
+        "repeat": 5,
+        "total": 13
+      },
+      "M56-V3": {
+        "score": 13,
+        "repeat": 1,
+        "total": 13
+      }
+    },
+    "paths": {
+      "M56-CURRENT": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-CURRENT/create-mobile-expense.1.md",
+      "M56-V2": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-regression/M56-V2/create-mobile-expense.5.md",
+      "M56-V3": "/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/runs-v3/M56-V3/create-mobile-expense.1.md"
+    }
+  }
+}

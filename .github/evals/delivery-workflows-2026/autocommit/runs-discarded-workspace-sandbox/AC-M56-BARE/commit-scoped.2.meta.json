@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M56-BARE",
+  "task": "commit-scoped",
+  "repeat": 2,
+  "exit_code": 1,
+  "duration_seconds": 1
+}

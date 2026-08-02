@@ -1,0 +1,7 @@
+{
+  "arm": "M56-V4",
+  "fixture": "review-universal",
+  "repeat": 2,
+  "exit_code": 0,
+  "duration_seconds": 47
+}

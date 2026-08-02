@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M56-BARE",
+  "task": "no-changes",
+  "repeat": 2,
+  "exit_code": 0,
+  "duration_seconds": 12
+}

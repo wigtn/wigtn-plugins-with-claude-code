@@ -1,0 +1,38 @@
+created_utc=2026-07-27T06:06:55Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+model=gpt-5.6-sol
+effort=medium
+e2573f9f7ecfcee2e985ceaa460774a59084fb1f774eb41f710ee5293193fbba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/EXTENSION-PROTOCOL.md
+d89334633091862f0eb747c1d37c5cd7115ddf4e34147a57bd7e4415f817da8f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/generate_tasks.py
+0f87bcd5d337fede483e8e08e5076478189463731cf7f0fd70efb0493450977f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/score.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/authorization/TASK.md
+aeb89dd70668ef84ea9033069015045abc409504290e8a24110f1db0d2e66c09  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/authorization/implementation.py
+7bf0e9ae27bdb19416a989ea002c596462e36ea0d6b8868af3882114eb9f6b2d  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/authorization/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/csv-injection/TASK.md
+bc48fdd7f1a1db50ac630730fffc90732ea64d97401bfbd92fbfa5292459a627  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/csv-injection/implementation.py
+6b3e4f76dc690bdfce1598c0e5b11fe4f74f9abb4744f50ecece2a16b96d3f8b  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/csv-injection/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/date-range/TASK.md
+1a294906ff45ef6ac9dfc1f9631171cfb687b274fcd6b2b7a3750bde8d037994  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/date-range/implementation.py
+17feef1ff1d614b219225929038efbe7150c0e9e26005110fe6f2eaf03b50bfb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/date-range/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/event-dedupe/TASK.md
+a243b79989bf82d3baa73ebf8de1cf2f276e455c21f0176947b8bcc244d7ea24  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/event-dedupe/implementation.py
+57cb77b7ae9c6b7a5e1e79479b4e36fe91754da13b93996ba8993267271c8387  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/event-dedupe/test_implementation.py
+3849c615671838f5dee1f1a1a1b0622cb465afd7849349982d491cfb112be086  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/manifest.json
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/money-rounding/TASK.md
+df57099ade2779985e6b6486986dce621a714f4edf70c0b4f7084805e98f577c  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/money-rounding/implementation.py
+0562548e544af058719501a6a58707987aabc9e2cb4b310e6034b62073c130fb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/money-rounding/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/pagination/TASK.md
+3d3926ae09560b8766603cc335d77cd618aeea9ef3f8609b7fbff9beef8b574e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/pagination/implementation.py
+fc77f721820b7db0872d634a014341edd8a6310ceab2f05f480e4acb6c7cbfbb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/pagination/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/retry-backoff/TASK.md
+c64585cdfdb8af5d38caebec839f5bd942efd97653ed9f9a9b784d49843cbd97  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/retry-backoff/implementation.py
+e39606a7ed617329b8a1a86dcc24ccf9d5dd14c0c05f15c6e4d32099153e6c3c  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/retry-backoff/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/safe-path/TASK.md
+1b8826eabc4c7c771eb4363dbcd6e65bd257e876b1a0f9654172e5bb68a2ebdb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/safe-path/implementation.py
+11522a28d8dc1bf22e1a9ec479b8239ee1bea59e9fd1f7d8a80d845639d8dc5d  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/safe-path/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/state-transition/TASK.md
+e4d61680696b7a3dc45fa60d71969f3dcb58dbf0167f87d779bcebd3faecb497  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/state-transition/implementation.py
+8d3c0b45a3589926efbcedc4fe530028de0a1664fcbb369c9463fbd91fdde77e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/state-transition/test_implementation.py
+68ac51a106b12d77bb16811b00b0a6402ceb36ffdacf3f84e77ef191c8d9071e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/webhook-signature/TASK.md
+be99a9c7019b6c65429eb12e1475512f8561e8d0eeb3ed4ac21219c446ca8409  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/webhook-signature/implementation.py
+36a5584d6074ffedde5c2e2846b4b6c73211ae08e522180c6b0b6419290fdbfb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/implementation-benchmark/fixtures/webhook-signature/test_implementation.py

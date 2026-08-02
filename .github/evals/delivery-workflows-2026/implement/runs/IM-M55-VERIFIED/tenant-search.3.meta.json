@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M55-VERIFIED",
+  "task": "tenant-search",
+  "repeat": 3,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 0,
+  "duration_seconds": 125,
+  "patch_lines": 117
+}

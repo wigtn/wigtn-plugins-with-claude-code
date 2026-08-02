@@ -1,0 +1,9 @@
+arm=M56-CURRENT
+fixture=create-mobile-expense
+repeat=2
+model=gpt-5.6-sol
+reasoning_effort=medium
+started_epoch=1785084295
+finished_epoch=1785084479
+duration_seconds=184
+exit_code=0

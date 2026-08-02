@@ -1,0 +1,7 @@
+created_utc=2026-07-27T06:35:32Z
+model=gpt-5.6-sol
+effort=low
+e7974db0b6504e0c877c8aed3f6e620c29f214ec5acf49ca7d00d806f8b043ab  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/V3-PROTOCOL.md
+10cf4b7f2499ecc7c9415c4b493a120edca9c5f691a59fe477ac871ead40796f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/v3-trigger/prompts.tsv
+3b36c4beae5a64b3c25db912340562eb114921e8975a5f3d3dc5e1b7f7f3eac9  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/v3-trigger/score.py
+12194f5ccfb7cb7b8163b238058018357ce136a1b1c3bfefe81531f824d4cda6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md

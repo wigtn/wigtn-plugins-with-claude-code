@@ -1,0 +1,9 @@
+arm=M55-CURRENT
+fixture=create-ui-internal
+repeat=1
+model=gpt-5.5
+reasoning_effort=medium
+started_epoch=1785083412
+finished_epoch=1785083476
+duration_seconds=64
+exit_code=0

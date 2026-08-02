@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Hand-drawn Diagram"
+  short_description: "Create verified hand-drawn SVG and PNG diagrams"
+  default_prompt: "Use $handdrawn-diagram to create a verified sketch-style architecture diagram."
+policy:
+  allow_implicit_invocation: true

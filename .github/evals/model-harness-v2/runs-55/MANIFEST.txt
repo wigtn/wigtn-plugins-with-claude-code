@@ -1,0 +1,24 @@
+created_utc=2026-07-27T05:27:10Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repeat=5
+model=gpt-5.5
+effort=medium
+66062fadb9c05d496ec875cae765ba3f8e5ef647abdc631605a9b3c19daacef0  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/STUDY-PROTOCOL.md
+e2573f9f7ecfcee2e985ceaa460774a59084fb1f774eb41f710ee5293193fbba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/EXTENSION-PROTOCOL.md
+e66ddd38ec1e3dad23f4752f0d3ec11ba6a99150bcd021d4723dc5f8d49e4854  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/score_55.py
+468b8b09e01d7ad873cc09398d5b49daa4e208ce61054d736e87eadc976bc2f6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+fedaf9352a704f1d3ead98c8d9631842b30186a78a858533fa2af9b41600d8af  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/create-contract.md
+123869d8cf6d74a003987e3fbd2022cce12089c007ecc9b918c53c0961582581  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/deep-dive.md
+7bcafd8a639f47e234a6a21460a7043a6889de53b6a67e9cd23973d99910365b  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-contract.md
+7cb96ef081b7f9aa291cd871d670709821271ef0653e9ae7e456a356cded1389  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-contract-clean.txt
+e0b893001fb1a294475f9ba29ea52742c87a86ae53014e26c980b8043d40b024  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-labels.json
+b07d0f82fb0877cc3511365b60b8c0acad99580db23d1617dcce5e4c4f979ef0  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-acceptance.txt
+f2681db743c5082c950d653df0360a72b80dad70b92a30280510fade6028efdd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-applicability.txt
+e852640ecd289447a3f678d5aa697fb820e919e19061af1fc7ba0ee1767d68cf  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-delivery.txt
+3c98f24f76183f2c231fa397aa8327921dfd414687b90558089392ae05bf8b63  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-flow.txt
+307059425da8d940be27df888c4d680f6b46a9c1cc6e76042a53c961c77a2616  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-pages.txt
+4239957f6afdbe26c9807bbd527f70809ba843547a03ce6b673577a4a6b55335  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-states.txt
+7bb1e43827a1b7f980cb0a72674cb8cf67dd089c6f5add790669e45acf15c1a4  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-backend-webhook.txt
+62eb305493a6c04c688dc7cf2390acf556bf53e05eba1205bed023f02958d176  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-mobile-expense.txt
+a0b442fe2f46197061b903bb4e27cbb8208ab75caea605346b5ce07ac98e39dd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-ui-internal.txt
+4eb67c4269a172fe12848491ace477a4b51b16607c5a81a207ae2c06d081f724  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-universal.txt

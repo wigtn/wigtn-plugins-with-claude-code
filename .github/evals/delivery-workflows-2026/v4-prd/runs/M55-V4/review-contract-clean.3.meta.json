@@ -1,0 +1,7 @@
+{
+  "arm": "M55-V4",
+  "fixture": "review-contract-clean",
+  "repeat": 3,
+  "exit_code": 0,
+  "duration_seconds": 52
+}

@@ -1,0 +1,513 @@
+You are an independent senior code evaluator.
+
+Four anonymous candidates implemented the same task from the same base repository.
+Do not infer model, plugin, or workflow identity. Test results are evidence but do
+not replace patch inspection.
+
+Score each candidate 0..4 on:
+- completeness: all requested behavior and edge cases are implemented
+- correctness: invariants, authorization, security, and failure behavior are sound
+- scope_discipline: no unrelated or test-oriented implementation shortcuts
+- maintainability: clear, minimal, project-native design
+- evidence_quality: implementation and executed-test evidence support the claims
+
+For blocker/high defects, cite a file or identifying diff line and explain impact.
+Return JSON only:
+{
+  "task": "config-migration",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 0,
+      "correctness": 0,
+      "scope_discipline": 0,
+      "maintainability": 0,
+      "evidence_quality": 0,
+      "blockers": [{"location": "...", "finding": "...", "impact": "..."}],
+      "high": [{"location": "...", "finding": "...", "impact": "..."}],
+      "summary": "..."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C", "D"]
+}
+
+All labels must appear exactly once and all scores must be integers 0..4.
+
+## Task
+
+v1/v2 배달 설정을 canonical 형태로 마이그레이션하는 기능을 구현해줘.
+
+요구사항:
+- v1: endpoint, timeout_seconds. v2: version=2와 delivery.endpoint/timeout_ms/enabled.
+- 결과는 CanonicalConfig(endpoint, timeout_ms, enabled)다.
+- endpoint는 https URL, timeout은 100..30000ms여야 한다.
+- v1/v2 필드가 섞였거나 알 수 없는 최상위 필드, bool timeout, 입력 타입 오류는 ValueError다.
+- 입력 mapping을 변경하지 않고 v1 enabled 기본값은 True다.
+- 공개 API, 표준 라이브러리, 공개 테스트를 보존한다.
+- notes/user-draft.txt는 수정하지 않고 커밋/push하지 않는다.
+
+
+## Base repository
+
+### config/__init__.py
+```python
+
+```
+### config/model.py
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class CanonicalConfig:
+    endpoint: str
+    timeout_ms: int
+    enabled: bool
+
+```
+### config/migrate.py
+```python
+from .model import CanonicalConfig
+
+def migrate_config(raw):
+    raise NotImplementedError
+
+```
+### test_config.py
+```python
+import unittest
+from config.migrate import migrate_config
+
+class ConfigTests(unittest.TestCase):
+    def test_v1(self):
+        out=migrate_config({"endpoint":"https://a.test/h","timeout_seconds":2})
+        self.assertEqual(out.timeout_ms,2000); self.assertTrue(out.enabled)
+
+    def test_v2(self):
+        out=migrate_config({"version":2,"delivery":{"endpoint":"https://a.test/h","timeout_ms":500,"enabled":False}})
+        self.assertEqual(out.timeout_ms,500); self.assertFalse(out.enabled)
+
+    def test_insecure(self):
+        with self.assertRaises(ValueError):
+            migrate_config({"endpoint":"http://a.test","timeout_seconds":1})
+
+if __name__ == "__main__": unittest.main()
+
+```
+
+## Anonymous candidates
+
+## Candidate A
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..3c5516b 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,73 @@
++from collections.abc import Mapping
++from math import isfinite
++from urllib.parse import urlparse
++
+ from .model import CanonicalConfig
+ 
++
++_V1_KEYS = {"endpoint", "timeout_seconds"}
++_V2_KEYS = {"version", "delivery"}
++_V2_DELIVERY_KEYS = {"endpoint", "timeout_ms", "enabled"}
++_MIN_TIMEOUT_MS = 100
++_MAX_TIMEOUT_MS = 30000
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    keys = set(raw)
++    if keys == _V1_KEYS:
++        timeout_ms = _seconds_to_ms(raw["timeout_seconds"])
++        return _canonical(raw["endpoint"], timeout_ms, True)
++
++    if keys == _V2_KEYS:
++        if raw["version"] != 2:
++            raise ValueError("unsupported config version")
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if set(delivery) != _V2_DELIVERY_KEYS:
++            raise ValueError("invalid delivery fields")
++        if not isinstance(delivery["enabled"], bool):
++            raise ValueError("enabled must be a bool")
++        timeout_ms = _timeout_ms(delivery["timeout_ms"])
++        return _canonical(delivery["endpoint"], timeout_ms, delivery["enabled"])
++
++    raise ValueError("invalid config fields")
++
++
++def _canonical(endpoint, timeout_ms, enabled):
++    _validate_endpoint(endpoint)
++    _validate_timeout_ms(timeout_ms)
++    return CanonicalConfig(endpoint=endpoint, timeout_ms=timeout_ms, enabled=enabled)
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be a string")
++    parsed = urlparse(endpoint)
++    if parsed.scheme != "https" or not parsed.netloc:
++        raise ValueError("endpoint must be an https URL")
++
++
++def _seconds_to_ms(timeout_seconds):
++    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
++        raise ValueError("timeout_seconds must be numeric")
++    if isinstance(timeout_seconds, float) and not isfinite(timeout_seconds):
++        raise ValueError("timeout_seconds must be finite")
++    timeout_ms = timeout_seconds * 1000
++    if timeout_ms != int(timeout_ms):
++        raise ValueError("timeout_seconds must convert to whole milliseconds")
++    return int(timeout_ms)
++
++
++def _timeout_ms(timeout):
++    if isinstance(timeout, bool) or not isinstance(timeout, int):
++        raise ValueError("timeout_ms must be an integer")
++    return timeout
++
++
++def _validate_timeout_ms(timeout_ms):
++    if not _MIN_TIMEOUT_MS <= timeout_ms <= _MAX_TIMEOUT_MS:
++        raise ValueError("timeout must be between 100 and 30000 ms")
+
+```
+
+## Candidate B
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..eec0aec 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,89 @@
++import math
++from collections.abc import Mapping
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = frozenset({"endpoint", "timeout_seconds"})
++_V2_FIELDS = frozenset({"version", "delivery"})
++_DELIVERY_FIELDS = frozenset({"endpoint", "timeout_ms", "enabled"})
++
++
++def _require_https_endpoint(value):
++    if not isinstance(value, str) or any(char.isspace() for char in value):
++        raise ValueError("endpoint must be an HTTPS URL")
++
++    try:
++        parsed = urlsplit(value)
++        # Accessing these properties also validates malformed hosts and ports.
++        hostname = parsed.hostname
++        parsed.port
++    except (TypeError, ValueError):
++        raise ValueError("endpoint must be an HTTPS URL") from None
++
++    if parsed.scheme.lower() != "https" or not parsed.netloc or hostname is None:
++        raise ValueError("endpoint must be an HTTPS URL")
++    return value
++
++
++def _require_timeout_ms(value):
++    if isinstance(value, bool) or not isinstance(value, int):
++        raise ValueError("timeout_ms must be an integer")
++    if not 100 <= value <= 30_000:
++        raise ValueError("timeout must be between 100 and 30000 milliseconds")
++    return value
++
++
++def _seconds_to_ms(value):
++    if isinstance(value, bool) or not isinstance(value, (int, float)):
++        raise ValueError("timeout_seconds must be a number")
++
++    milliseconds = value * 1000
++    if isinstance(milliseconds, float) and (
++        not math.isfinite(milliseconds) or not milliseconds.is_integer()
++    ):
++        raise ValueError("timeout_seconds must resolve to whole milliseconds")
++    return _require_timeout_ms(int(milliseconds))
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Validate a v1 or v2 delivery config and return its canonical form."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = set(raw)
++    has_v1_fields = bool(fields & _V1_FIELDS)
++    has_v2_fields = bool(fields & _V2_FIELDS)
++    if has_v1_fields and has_v2_fields:
++        raise ValueError("v1 and v2 fields cannot be mixed")
++
++    if fields == _V1_FIELDS:
++        return CanonicalConfig(
++            endpoint=_require_https_endpoint(raw["endpoint"]),
++            timeout_ms=_seconds_to_ms(raw["timeout_seconds"]),
++            enabled=True,
++        )
++
++    if fields != _V2_FIELDS:
++        raise ValueError("config has missing or unknown top-level fields")
++    if (
++        isinstance(raw["version"], bool)
++        or not isinstance(raw["version"], int)
++        or raw["version"] != 2
++    ):
++        raise ValueError("version must be 2")
++
++    delivery = raw["delivery"]
++    if not isinstance(delivery, Mapping):
++        raise ValueError("delivery must be a mapping")
++    if set(delivery) != _DELIVERY_FIELDS:
++        raise ValueError("delivery has missing or unknown fields")
++    if not isinstance(delivery["enabled"], bool):
++        raise ValueError("enabled must be a boolean")
++
++    return CanonicalConfig(
++        endpoint=_require_https_endpoint(delivery["endpoint"]),
++        timeout_ms=_require_timeout_ms(delivery["timeout_ms"]),
++        enabled=delivery["enabled"],
++    )
+
+```
+
+## Candidate C
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..6c0dd41 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,94 @@
++import math
++from collections.abc import Mapping
++from numbers import Real
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = {"endpoint", "timeout_seconds"}
++_V2_FIELDS = {"version", "delivery"}
++_DELIVERY_FIELDS = {"endpoint", "timeout_ms", "enabled"}
++
++
++def _field_names(value, description):
++    try:
++        return set(value)
++    except (TypeError, ValueError) as exc:
++        raise ValueError(f"{description} must have string keys") from exc
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be an https URL")
++
++    try:
++        parsed = urlsplit(endpoint)
++        hostname = parsed.hostname
++        parsed.port
++    except ValueError as exc:
++        raise ValueError("endpoint must be an https URL") from exc
++
++    if (
++        parsed.scheme.lower() != "https"
++        or hostname is None
++        or any(character.isspace() for character in endpoint)
++    ):
++        raise ValueError("endpoint must be an https URL")
++    return endpoint
++
++
++def _validate_timeout_ms(timeout_ms):
++    if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
++        raise ValueError("timeout_ms must be an integer")
++    if not 100 <= timeout_ms <= 30000:
++        raise ValueError("timeout_ms must be between 100 and 30000")
++    return timeout_ms
++
++
++def _seconds_to_ms(timeout_seconds):
++    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, Real):
++        raise ValueError("timeout_seconds must be a number")
++    if not math.isfinite(timeout_seconds):
++        raise ValueError("timeout_seconds must be finite")
++
++    milliseconds = timeout_seconds * 1000
++    if milliseconds != int(milliseconds):
++        raise ValueError("timeout_seconds must resolve to whole milliseconds")
++    return _validate_timeout_ms(int(milliseconds))
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Convert a v1 or v2 delivery mapping to ``CanonicalConfig``."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = _field_names(raw, "config")
++    if fields == _V1_FIELDS:
++        endpoint = _validate_endpoint(raw["endpoint"])
++        timeout_ms = _seconds_to_ms(raw["timeout_seconds"])
++        return CanonicalConfig(endpoint=endpoint, timeout_ms=timeout_ms, enabled=True)
++
++    if fields == _V2_FIELDS:
++        version = raw["version"]
++        if isinstance(version, bool) or version != 2:
++            raise ValueError("version must be 2")
++
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if _field_names(delivery, "delivery") != _DELIVERY_FIELDS:
++            raise ValueError("delivery fields do not match the v2 schema")
++
++        endpoint = _validate_endpoint(delivery["endpoint"])
++        timeout_ms = _validate_timeout_ms(delivery["timeout_ms"])
++        enabled = delivery["enabled"]
++        if not isinstance(enabled, bool):
++            raise ValueError("enabled must be a boolean")
++        return CanonicalConfig(
++            endpoint=endpoint,
++            timeout_ms=timeout_ms,
++            enabled=enabled,
++        )
++
++    raise ValueError("config fields do not match the v1 or v2 schema")
+
+```
+
+## Candidate D
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..7f40dcb 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,95 @@
++import math
++from collections.abc import Mapping
++from numbers import Real
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = frozenset({"endpoint", "timeout_seconds"})
++_V2_FIELDS = frozenset({"version", "delivery"})
++_DELIVERY_FIELDS = frozenset({"endpoint", "timeout_ms", "enabled"})
++_MIN_TIMEOUT_MS = 100
++_MAX_TIMEOUT_MS = 30_000
++
++
++def _require_exact_fields(value, expected):
++    if set(value) != expected:
++        raise ValueError("configuration fields do not match the selected version")
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be an HTTPS URL")
++
++    try:
++        parsed = urlsplit(endpoint)
++        # Reading these properties also detects malformed hosts and ports.
++        hostname = parsed.hostname
++        parsed.port
++    except (TypeError, ValueError):
++        raise ValueError("endpoint must be an HTTPS URL") from None
++
++    if (
++        parsed.scheme.lower() != "https"
++        or not parsed.netloc
++        or not hostname
++        or any(character.isspace() for character in endpoint)
++    ):
++        raise ValueError("endpoint must be an HTTPS URL")
++    return endpoint
++
++
++def _validate_timeout(value, multiplier=1):
++    if isinstance(value, bool) or not isinstance(value, Real):
++        raise ValueError("timeout must be a number")
++
++    try:
++        timeout_ms = value * multiplier
++        if not math.isfinite(timeout_ms) or not float(timeout_ms).is_integer():
++            raise ValueError("timeout must resolve to whole milliseconds")
++        timeout_ms = int(timeout_ms)
++    except (ArithmeticError, OverflowError, TypeError, ValueError):
++        raise ValueError("timeout must be a finite number of milliseconds") from None
++
++    if not _MIN_TIMEOUT_MS <= timeout_ms <= _MAX_TIMEOUT_MS:
++        raise ValueError("timeout must be between 100 and 30000 milliseconds")
++    return timeout_ms
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Migrate a v1 or v2 delivery configuration to its canonical form."""
++
++    if not isinstance(raw, Mapping):
++        raise ValueError("configuration must be a mapping")
++
++    keys = set(raw)
++    if keys == _V1_FIELDS:
++        endpoint = raw["endpoint"]
++        timeout_ms = _validate_timeout(raw["timeout_seconds"], multiplier=1000)
++        enabled = True
++    elif keys == _V2_FIELDS:
++        version = raw["version"]
++        if isinstance(version, bool) or not isinstance(version, int) or version != 2:
++            raise ValueError("version must be 2")
++
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        _require_exact_fields(delivery, _DELIVERY_FIELDS)
++
++        endpoint = delivery["endpoint"]
++        timeout_ms = _validate_timeout(delivery["timeout_ms"])
++        enabled = delivery["enabled"]
++        if not isinstance(enabled, bool):
++            raise ValueError("enabled must be a boolean")
++    else:
++        raise ValueError(
++            "configuration must contain only v1 fields or only v2 fields"
++        )
++
++    return CanonicalConfig(
++        endpoint=_validate_endpoint(endpoint),
++        timeout_ms=timeout_ms,
++        enabled=enabled,
++    )
+
+```
+

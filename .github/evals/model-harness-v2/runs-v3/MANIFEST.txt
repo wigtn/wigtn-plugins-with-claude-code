@@ -1,0 +1,23 @@
+created_utc=2026-07-27T06:21:54Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repeat=5
+effort=medium
+e7974db0b6504e0c877c8aed3f6e620c29f214ec5acf49ca7d00d806f8b043ab  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/V3-PROTOCOL.md
+44dba34b08356e0d8e5466f37cb96699b6e0d02ed60a77c6a4dc2df9ae306a23  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/score_v3.py
+12194f5ccfb7cb7b8163b238058018357ce136a1b1c3bfefe81531f824d4cda6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+d86b05d17061f78b002b2e0174832fd7500cbc4a095d79890d912cd6b3ef38ab  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/create-contract.md
+123869d8cf6d74a003987e3fbd2022cce12089c007ecc9b918c53c0961582581  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/deep-dive.md
+7bcafd8a639f47e234a6a21460a7043a6889de53b6a67e9cd23973d99910365b  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-contract.md
+942a3eba5b8565a828640338f7ad52b4c736e2b7ce21546f5e26fd1ea8fdf767  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-v3-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/scripts/validate-prd.py
+7cb96ef081b7f9aa291cd871d670709821271ef0653e9ae7e456a356cded1389  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-contract-clean.txt
+e0b893001fb1a294475f9ba29ea52742c87a86ae53014e26c980b8043d40b024  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-labels.json
+b07d0f82fb0877cc3511365b60b8c0acad99580db23d1617dcce5e4c4f979ef0  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-acceptance.txt
+f2681db743c5082c950d653df0360a72b80dad70b92a30280510fade6028efdd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-applicability.txt
+e852640ecd289447a3f678d5aa697fb820e919e19061af1fc7ba0ee1767d68cf  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-delivery.txt
+3c98f24f76183f2c231fa397aa8327921dfd414687b90558089392ae05bf8b63  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-flow.txt
+307059425da8d940be27df888c4d680f6b46a9c1cc6e76042a53c961c77a2616  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-pages.txt
+4239957f6afdbe26c9807bbd527f70809ba843547a03ce6b673577a4a6b55335  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/fixtures/review-missing-states.txt
+7bb1e43827a1b7f980cb0a72674cb8cf67dd089c6f5add790669e45acf15c1a4  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-backend-webhook.txt
+62eb305493a6c04c688dc7cf2390acf556bf53e05eba1205bed023f02958d176  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-mobile-expense.txt
+a0b442fe2f46197061b903bb4e27cbb8208ab75caea605346b5ce07ac98e39dd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-ui-internal.txt
+4eb67c4269a172fe12848491ace477a4b51b16607c5a81a207ae2c06d081f724  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-universal.txt

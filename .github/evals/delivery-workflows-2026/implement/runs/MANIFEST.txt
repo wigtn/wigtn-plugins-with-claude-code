@@ -1,0 +1,20 @@
+created_utc=2026-07-27T09:10:11Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repetitions=3
+effort=medium
+6da1e4738eb360cc23e07df3383b97cda6f49e33103c151d32b8ee6af0135032  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/PROTOCOL.md
+492964b02ac0394c2954809bd21ae64417c7c6c9f249b8a69c6d89f8a7168771  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/collect_state.py
+4d4b862be5d8a0c63c40bcc0b3fcb4b7192be72f25673ac791543d78dc6f8638  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/score.py
+c3e34c1d90dfafab174a614c77c6be299936ce0ec41ad81668dffe99d2b40334  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/setup_repo.py
+772ee6b532b99f37e12851481ff47ee0f6b267d2fd92ff7c1ad165a989d81fe3  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/run.sh
+82ed18ac26101a3c17b4a3fe42163f4fba84257eadd452fa51fd2a89839e7d22  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/hidden/config-migration.py
+574701f8ce904a393d0b342b1a341e466760697b87b0b013d34abae78f371dd2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/hidden/expense-approval.py
+a171bf498b748bb1acc64f2388e3e3e55fb226b42168f12e517083192bae2dae  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/hidden/tenant-search.py
+ce8d45dd6dbdf623726e50a972070d716c0777bd7d09bd62e5e78cf43fd18f34  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/hidden/webhook-delivery.py
+971cfbce84cd8d9a39346d93c63173b7a857bf3e560a9a4235345ed4dbfdc8c6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/runs/prompt-input/IM-M55-VERIFIED.json
+4862323e666859a1f614f01e28496cd39182d22d547ec21312c7cc137f70f0d1  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/runs/prompt-input/IM-M56-BARE.json
+f1eaec15bf0f3fc62e815b37f9c9218269f8da317a8611c7d3d3951718a2fe5a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/runs/prompt-input/IM-M56-ORDINARY.json
+c65758f79d92b0ae04042d1a4c4fae89c816e50b78e08fce15a54cd2c6e50f6e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/implement/runs/prompt-input/IM-M56-VERIFIED.json
+650bccabdea3f35c736c7bf8e1c184ca7a3c819fd29011312793d2c54828bc97  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/verified-delivery/SKILL.md
+7a9a582836d80cdd6f68b1487b408a4d3853b765f65061bf7b7d5c0f03f4a97f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/verified-delivery/agents/openai.yaml
+a89c1b1cf9e69ce66e43d0b0d0c693a62618b508f25270df63818b046091cc62  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/verified-delivery/references/delivery-evidence.md

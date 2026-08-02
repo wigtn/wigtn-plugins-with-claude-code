@@ -1,0 +1,33 @@
+created_utc=2026-07-27T05:50:25Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repeat=2
+model=gpt-5.6-sol
+effort=medium
+e2573f9f7ecfcee2e985ceaa460774a59084fb1f774eb41f710ee5293193fbba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/EXTENSION-PROTOCOL.md
+f4f0b0d7b5eb68c4771c6a1a7e4833c0abfd26521cb7a6a47e3b082ec41b7290  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/generate_fixtures.py
+041e4d81609b70c6bc58a46b8d1879818b78055dba64cc1779cf41462f0cb03e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/score.py
+5a8fa96b058824dd26f1b572136bec906c2140c84463cb75dc9d5c31ddb138a0  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/acceptance-verifier/TASK.md
+712bad61dc18a26ab1acc7719840e6794223ac10c19c2f4f077de7c11a3ffcef  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/acceptance-verifier/implementation.py
+3504d27f6468d715094c04dc10be0ad3f4042704c20424cd1a39ec288069ca20  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/acceptance-verifier/prd.md
+f33ca46b9fe493b83894d710ab04937ece8eedd6e42bebe54f5d8acc7d429276  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/acceptance-verifier/test_implementation.py
+b3cfd66051fc77ea8294edd9242a0a754204ed984df49ec7e3c453e64b9acccd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/design-direction/Dashboard.tsx
+bfb5e3f0924eeaf9b5fd4f68c8cf52bc4d9ad59eff22c69eb36821871767290d  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/design-direction/TASK.md
+4c757e527ae17449b7e4b908f1458fe3c1a5b496679ae76b24c63d46ead48bc2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/design-direction/tokens.css
+a6e90638666af5fa472b675cf36af6019428e395e80bdfb4d11a745f6b2119e2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/handdrawn-diagram/TASK.md
+bad500cf415a35198aca3632867c5a84800b63f2e484a43a50f196f28810ecf5  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/release-readiness/TASK.md
+4aa1bf4e3fa71a9a654d303a535c5b0a6e9396c23a69ca050f30b17798f7d2b6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/release-readiness/baseline.py
+86f0f9ac22e291059954b06cd4a389f96e65e5bc69d617991079cfa4d312d9eb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/release-readiness/modified.py
+e2ca36f6c817b2ab358b14c2c0b10d493390aee76a47c0957024dfcd133921a1  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/release-readiness/test_baseline.py
+bb0c50e3ba7b3840f532a31919d41c6eddc090752568b04aa834b5424962e54c  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/release-readiness/user-note.txt
+e3af5d4356d41e851d6f7cf5809bd6a5967c16a37b26abbd31955ac1b022976f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/verified-delivery/TASK.md
+b97974b4a0263fbdaa45a799e4ebc0a85eb6082fc5bee0b50f952c6f091cd8bd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/verified-delivery/implementation.py
+c14e90c951eef4cd5659402fd9362023093c83385dc71b38c4c5201c6a016c4c  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/verified-delivery/test_implementation.py
+5fc0f5a63f467c79e95bb9fe5f93b8487cad81e024c27847858fdabcf6fb8866  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/skill-behavior/fixtures/wigtn-presentation/TASK.md
+f0b82555db0c1210c1079bac84aa06c51c3518266303131856ca2e3326563bdd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/acceptance-verifier/SKILL.md
+04641a485fd20aac32e61e8a66f48380bfbcf344a33e39e2d6e75f64c4b11ad1  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/design-direction/SKILL.md
+8dfe3ee30a94cacf5f2f4c327dff13c07a50282aa33a27397886611026fbbd80  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/handdrawn-diagram/SKILL.md
+468b8b09e01d7ad873cc09398d5b49daa4e208ce61054d736e87eadc976bc2f6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+9909f288b7bae2e084801ccbd0c2fcf9938e20a52951b25e907a392974f9bb4f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/release-readiness/SKILL.md
+e6812ab5476ac2378e8a0d5b93a93322c08ab7f06053fe9f25883fb0921659b2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/screen-spec/SKILL.md
+5dbb2d8bfd13dbedb8c68f217f804ded481ee049bcfe51254f06bd14ba5de521  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/verified-delivery/SKILL.md
+db3efd56e773cfc65798e3485daa6b34cb6d82c19b3e55edc60270be0aadb499  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/wigtn-presentation/SKILL.md

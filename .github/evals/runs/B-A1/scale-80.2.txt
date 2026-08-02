@@ -1,0 +1,210 @@
+# Code Review Report — scale-80
+
+## Target
+- **Root**: `/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/fixtures/scale-80/src/`
+- **Scope**: `contracts.ts`, `infra.ts`, `modules/*.ts` (80 modules, 2372 LOC)
+- **Review level**: Level 3 (Deep) — full read of all 80 modules via 5 parallel category agents, then
+  independent re-verification of every reported finding against source by the coordinator.
+
+## Coverage method (why this is complete, not sampled)
+
+All 80 modules are generated from one boilerplate of four functions
+(`get*` / `list*` / `count*` / `rename*`), all of which are contract-clean:
+ownership checked against `session.userId` with an `admin` escape, `LIMIT` bound to
+`Math.min(limit, MAX_PAGE_SIZE)`, and fully parameterized SQL.
+
+Defects therefore live only in functions that deviate from that boilerplate. Enumerating every
+exported function that is not a boilerplate member yields exactly 12 functions across 11 files:
+
+    asset.ts:30    listAssetsWithOwner
+    asset1.ts:23   deleteAsset1
+    asset2.ts:39   exportAsset2s
+    asset3.ts:30   updateAsset3Price
+    invoice.ts:23  searchInvoice
+    invoice1.ts:39 claimInvoice1
+    invoice2.ts:30 invoice2Fee
+    invoice3.ts:23 reindexInvoice3s
+    review.ts:25   verifyReviewSig
+    review1.ts:39  onReview1Event
+    review2.ts:30  archiveReview2
+    review3.ts:23  review3Total
+
+Every one of the 12 is defective and is reported below. The remaining 68 modules
+(audit*, campaign*, contract*, coupon*, dispute*, lead*, payout*, payroll*, quote*, refundreq*,
+shift*, shipment*, subscription*, ticket*, vendor*, warehouse*, webhookjob*) were read in full and
+contain only clean boilerplate — no findings. The payout/payroll/quote/refundreq family returned
+zero findings on first pass and was independently re-verified by the coordinator to rule out a
+false-negative sweep.
+
+## Quality Gate Result
+
+### Gate Decision (findings 롤업 — 결정)
+
+| Severity | Count | 게이트 영향 |
+|----------|-------|------------|
+| Critical (high/med conf) | 11 | ≥1 → FAIL |
+| Major | 6 | — |
+| Minor | 2 | — |
+
+- **Status**: **FAIL**
+- **Rule**: critical ≥1 (high/med confidence) → FAIL, 커밋 차단
+- **Security Critical 포함**: SQL injection (invoice.ts), 인증 우회 (review.ts), 다건 authz 누락
+  → zero-tolerance, score-cap 우회 불가
+- **Action**: code-formatter로 해소 불가능한 로직/보안 결함. 수동 수정 후 재리뷰 필요.
+
+### 참고 점수 (게이트 비결정)
+
+| 항목 | 점수 |
+|------|------|
+| Readability | 17/20 |
+| Maintainability | 11/20 |
+| Performance | 15/20 |
+| Testability | 14/20 |
+| Best Practices | 5/20 |
+| **Total (참고)** | **62/100** |
+
+Readability는 높다 — 코드는 일관되고 읽기 쉽다. 문제는 전부 **읽기 쉬운 코드가 계약을 어기는**
+형태라, 훑어봐서는 안 잡히고 contracts.ts와 대조해야만 드러난다. Best Practices가 5점인 이유는
+4개 전역 계약이 **전부** 위반되었기 때문이다(금액 정수, LIMIT 강제, 멱등성, 서버측 소유권 검증).
+
+## Findings
+
+### Critical (즉시 수정 — 커밋 차단)
+
+**F1 · `modules/asset.ts:30` — 전 사용자 자산·소유자 매핑 무인증 노출**
+`listAssetsWithOwner()`는 `Session` 파라미터 자체가 없다. 형제 함수 `getAsset`/`listAssets`는
+모두 소유권을 검증하는데 이 함수만 모든 자산의 `id`+`owner_id`에 더해 `users` 테이블의 이름까지
+조인해 반환한다. 계약 4 위반. → `session: Session`을 받고 `WHERE owner_id = ?`로 스코프하거나
+`session.role === "admin"`으로 게이트.
+
+**F3 · `modules/asset1.ts:23` — 클라이언트가 보낸 ownerId를 신뢰한 삭제**
+`deleteAsset1(id, ownerId)`가 세션 대신 호출자가 준 `ownerId`를 DELETE 술어에 그대로 쓴다.
+피해자의 ownerId만 알면 남의 자산을 지울 수 있다. contracts.ts가 명시적으로 금지한 패턴
+("클라이언트가 보낸 ownerId를 신뢰하지 않는다"). → `Session`을 받아 `session.userId`로 바인딩.
+
+**F5 · `modules/asset2.ts:39` — 전 사용자 자산 전량 export 무인증**
+`exportAsset2s(from, to)`도 `Session`이 없고 `owner_id` 술어도 없어 `SELECT *`로 모든 사용자 행을
+호출자에게 반환한다. → `Session`을 받고 `AND owner_id = ?`로 스코프(admin 예외 허용).
+*(confidence: medium — 내부 admin 전용 배치 경로일 여지는 있으나, 그렇더라도 서버측 role 검증이 없음)*
+
+**F6 · `modules/asset3.ts:31` — 클라이언트가 보낸 role로 권한 판정**
+`if (body.role !== "admin")`은 요청 본문의 필드를 그대로 믿는다. `{"role":"admin"}`을 보내면
+누구나 임의 자산의 가격을 고칠 수 있다 — 금액 변조로 직결. → `session.role`로 서버측 검증.
+
+**F7 · `modules/invoice.ts:25` — SQL Injection**
+`` `... WHERE title LIKE '%${q}%' ...` `` — 호출자 문자열 `q`가 쿼리에 직접 보간된다. 이 파일의
+다른 모든 쿼리는 `?` 바인딩을 쓰는데 이 한 줄만 예외다. → `WHERE title LIKE ?` + `['%'+q+'%']`.
+
+**F9 · `modules/invoice1.ts:39` — 임의 사용자 명의로 인보이스 클레임**
+`claimInvoice1(id, userId)`가 `Session` 대신 호출자 `userId`를 받아 그대로 기록한다.
+→ `Session`을 받아 `session.userId`를 기록.
+
+**F11 · `modules/invoice2.ts:31` — Money 부동소수 오염**
+`return (amount * 25) / 1000;` — 반올림 정책 없이 나눗셈해 소수점이 있는 `Money`를 반환한다.
+`amount=1000`이면 `25`(정상)지만 `amount=101`이면 `2.525`가 그대로 금액으로 흘러간다.
+계약 1 위반. → `Math.round((amount * 25) / 1000)` 등 반올림 정책을 명시하고 정수로 복귀.
+
+**F13 · `modules/review.ts:26` — 웹훅 서명 검증이 서명 검증이 아님**
+`return sig === REVIEW_WEBHOOK_SECRET;` — `body`가 전혀 사용되지 않는다. 서명이 페이로드에
+바인딩되지 않으므로 (a) 상수 하나만 알면 임의 페이로드를 위조할 수 있고 (b) 모든 요청이 무한
+리플레이 가능하다. → 원문 body에 대한 HMAC을 계산하고 `crypto.timingSafeEqual`로 비교.
+
+**F14 · `modules/review.ts:23` — 시크릿 하드코딩**
+`whsec_7d2f9a1c4e8b6031`이 소스에 커밋되어 있다. 저장소 읽기 권한 = 자격증명 보유.
+→ 환경변수/시크릿 매니저로 이전하고 노출된 값을 **폐기·회전**.
+
+**F16 · `modules/review2.ts:30` — 무인증 아카이브 + 블롭 영구 삭제**
+`archiveReview2(id)`에 `Session`도 소유권 검사도 없다. id만 알면 남의 리뷰를 아카이브하고
+블롭을 되돌릴 수 없게 지운다 — 무인증 데이터 파괴. 같은 파일의 `getReview2`/`listReview2s`는
+소유권을 검증하므로 명백한 일관성 결함. → `Session`을 받아 `owner_id` 스코프.
+
+**F19 · `modules/review3.ts:24` — Money 부동소수 오염 (세금·할인)**
+`(base * taxBp) / 10000`, `(base * discountBp) / 10000` 모두 반올림 없이 나눈다. 반환 총액이
+소수점을 갖는다. 계약 1 위반이며, 세금/할인은 정산 전 구간으로 전파되므로 영향이 넓다.
+→ 각 성분에 반올림 정책 적용 후 정수 합산.
+
+### Major (수정 권장)
+
+**F4 · `modules/asset2.ts:41` — 상한 없는 SELECT**
+`SELECT * FROM assets2 WHERE created_at BETWEEN ? AND ?` — `LIMIT`이 없다. 전체 모듈 중 유일하게
+LIMIT이 빠진 목록 쿼리다. 넓은 날짜 범위 하나로 테이블 전량이 메모리에 올라온다. 계약 2 위반.
+→ `LIMIT ?`에 `Math.min(limit, MAX_PAGE_SIZE)` 바인딩 + 커서 페이지네이션.
+
+**F8 · `modules/invoice.ts:25` — 상한 없는 SELECT (F7과 같은 줄)**
+`searchInvoice`에 `LIMIT`이 없다. 주입을 고치더라도 이건 별개로 남는 계약 2 위반이다.
+→ `LIMIT ?` 추가.
+
+**F10 · `modules/invoice1.ts:41` — check-then-act 경쟁 조건**
+SELECT로 `claimed_by`를 확인한 뒤 무조건 UPDATE한다. 동시 요청 둘이 모두 SELECT를 통과해
+두 번째가 첫 번째의 클레임을 덮어쓴다. → 원자적 조건부 갱신:
+`UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL` 후 `affectedRows` 확인.
+
+**F12 · `modules/invoice3.ts:27` — 커넥션 누수**
+`if (!r.length) return { ok: false, missing: id };`가 `pool.release(conn)` 이전에 조기 반환한다.
+`conn.query`나 `search.index`가 throw해도 마찬가지로 누수된다. 누락 id 하나로 풀이 고갈된다.
+→ `try { ... } finally { await pool.release(conn); }`.
+
+**F15 · `modules/review1.ts:40` — 멱등성 없는 이벤트 핸들러**
+`onReview1Event`가 `evt.eventId`를 전혀 쓰지 않고 원장(ledger) 행을 INSERT한다. 계약 3에 따라
+프로바이더는 같은 eventId를 최대 5회 재전송하므로 원장에 최대 5개의 중복 행이 쌓인다.
+→ UNIQUE 제약이 있는 `processed_events`에 `eventId`를 먼저 INSERT
+(`ON CONFLICT DO NOTHING`)하고 no-op이면 조기 반환.
+
+**F17 · `modules/review2.ts:33` — 되돌릴 수 없는 삭제가 DB 커밋보다 먼저**
+`blob.remove()`가 성공한 뒤 34행 UPDATE가 실패하면, 블롭은 영구 삭제됐는데 DB 행은 여전히 그
+`blob_key`를 가리킨다 — 복구 불가한 불일치. → 행을 먼저 archived/pending-delete로 표시하고,
+내구성 있는 상태 변경이 커밋된 뒤에 블롭을 삭제.
+
+### Minor (개선 제안)
+
+**F2 · `modules/asset.ts:34` — N+1 쿼리**
+루프 안에서 행마다 `users`를 개별 조회한다(최대 100회 왕복). `LIMIT 100` 덕에 상한은 있다.
+→ `owner_id`를 모아 `WHERE id IN (?)` 한 번으로 조회하거나 JOIN.
+
+**F18 · `modules/review2.ts:31` — 미가드 인덱싱**
+`rows[0].blob_key`가 try 블록 밖에서 존재 확인 없이 역참조된다. 없는 id면 깔끔한 not-found 대신
+TypeError가 던져진다. → `if (!rows[0]) return { ok: false, error: "not_found" };`.
+
+## Recommendations
+
+우선순위 순으로:
+
+1. **먼저 시크릿을 회전한다** (F14). 코드 수정보다 앞선다 — 노출된 값은 이미 저장소 이력에 있다.
+2. **인증·인가 5건을 한 번에 고친다** (F1, F3, F5, F6, F9, F16). 전부 같은 결함 형태다:
+   함수가 `Session`을 아예 받지 않거나 클라이언트가 준 신원 필드를 믿는다. 정석 boilerplate가
+   이미 올바른 패턴(`row.owner_id !== session.userId && session.role !== "admin"`)을 보여주므로,
+   그 패턴을 이 함수들에도 그대로 적용하면 된다.
+3. **서명 검증을 실제 HMAC으로 교체한다** (F13). 현재 구현은 검증처럼 보이지만 검증이 아니다.
+4. **금액 산술을 정수로 되돌린다** (F11, F19). 반올림 방향(내림/반올림/은행가 반올림)을 팀에서
+   먼저 정하고 공용 헬퍼로 뽑아 각 모듈이 재발명하지 않게 한다.
+5. **계약을 린트로 강제한다.** 이 결함들은 전부 사람이 contracts.ts와 대조해야만 잡히는 종류다:
+   - `db.raw`에 템플릿 보간이 있으면 금지하는 커스텀 ESLint 룰 (F7 유형 차단)
+   - `SELECT` 문자열에 `LIMIT`이 없으면 경고 (F4, F8)
+   - `Money` 반환 함수에서 `/` 연산자 사용 시 경고 (F11, F19)
+   - `ExternalEvent`를 받는 핸들러가 `eventId`를 참조하지 않으면 경고 (F15)
+   - 사용자 소유 테이블을 건드리는 exported 함수에 `Session` 파라미터가 없으면 경고 (F1/F5/F16)
+   80개 모듈 중 68개가 완벽하게 클린하다는 사실은 boilerplate가 옳다는 뜻이다 — 문제는 사람이
+   손으로 추가한 함수에만 있다. 린트가 그 경계를 지켜야 한다.
+
+```json
+[
+{"id":"F1","file":"modules/asset.ts","line":30,"severity":"critical","reason":"listAssetsWithOwner takes no Session and applies no owner predicate, exposing every user's asset ids plus joined owner identities to any caller (contract 4).","suggestion":"Require a Session parameter and scope with WHERE owner_id = ? or gate on session.role === \"admin\"."},
+{"id":"F2","file":"modules/asset.ts","line":34,"severity":"minor","reason":"N+1 query: the users table is queried once per returned row, up to 100 extra round trips per call.","suggestion":"Collect owner_ids and fetch them in a single WHERE id IN (?) query, or JOIN users in the original statement."},
+{"id":"F3","file":"modules/asset1.ts","line":23,"severity":"critical","reason":"deleteAsset1 uses a caller-supplied ownerId in the DELETE predicate instead of session.userId, so any client can delete another user's asset by passing that user's id — the exact pattern contracts.ts forbids.","suggestion":"Change the signature to take a Session and bind WHERE id = ? AND owner_id = ? to session.userId, allowing role === \"admin\"."},
+{"id":"F5","file":"modules/asset2.ts","line":39,"severity":"critical","reason":"exportAsset2s has no Session parameter and no owner_id predicate, so it SELECT *-exports every user's rows to any caller.","suggestion":"Accept a Session and scope the query with AND owner_id = ? unless session.role === \"admin\"."},
+{"id":"F6","file":"modules/asset3.ts","line":31,"severity":"critical","reason":"updateAsset3Price authorizes on body.role, a client-supplied request field, so sending role:\"admin\" lets anyone rewrite any asset's price.","suggestion":"Take a Session parameter and check session.role === \"admin\" server-side instead of trusting body.role."},
+{"id":"F7","file":"modules/invoice.ts","line":25,"severity":"critical","reason":"searchInvoice interpolates the caller-supplied q directly into the SQL string (LIKE '%${q}%'), allowing SQL injection; every other query in the file uses bound parameters.","suggestion":"Use a bound parameter: WHERE title LIKE ? with ['%' + q + '%']."},
+{"id":"F8","file":"modules/invoice.ts","line":25,"severity":"major","reason":"searchInvoice is a list query with no LIMIT clause, violating the mandatory bounded-SELECT contract (contract 2).","suggestion":"Append LIMIT ? bound to Math.min(limit, MAX_PAGE_SIZE)."},
+{"id":"F9","file":"modules/invoice1.ts","line":39,"severity":"critical","reason":"claimInvoice1 takes a caller-supplied userId instead of a Session and performs no server-side identity check, so any caller can claim an invoice on behalf of an arbitrary user.","suggestion":"Take session: Session and record session.userId rather than a client-supplied id."},
+{"id":"F10","file":"modules/invoice1.ts","line":41,"severity":"major","reason":"claimInvoice1 does a check-then-act on claimed_by with no atomic guard, so two concurrent claims both pass the SELECT and the second silently overwrites the first.","suggestion":"Make the write atomic: UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL, then check affectedRows."},
+{"id":"F11","file":"modules/invoice2.ts","line":31,"severity":"critical","reason":"invoice2Fee divides Money by 1000 with no rounding policy, returning a fractional Money and corrupting the integer minimum-unit invariant (contract 1).","suggestion":"Apply an explicit rounding policy, e.g. Math.round((amount * 25) / 1000), so the result stays an integer."},
+{"id":"F12","file":"modules/invoice3.ts","line":27,"severity":"major","reason":"reindexInvoice3s returns early on a missing row without calling pool.release(conn), leaking the pooled connection; a thrown query or index error leaks it too.","suggestion":"Wrap the loop in try { ... } finally { await pool.release(conn); }."},
+{"id":"F13","file":"modules/review.ts","line":26,"severity":"critical","reason":"verifyReviewSig compares the incoming signature to a static secret and never derives it from body, so the signature is not bound to the payload — arbitrary webhook bodies can be forged and every request is replayable.","suggestion":"Compute an HMAC over the raw body with the secret and compare using crypto.timingSafeEqual."},
+{"id":"F14","file":"modules/review.ts","line":23,"severity":"critical","reason":"The webhook signing secret whsec_7d2f9a1c4e8b6031 is hardcoded in committed source, so anyone with repository read access holds the credential.","suggestion":"Load the secret from an environment variable or secret manager and rotate the exposed value."},
+{"id":"F15","file":"modules/review1.ts","line":40,"severity":"major","reason":"onReview1Event inserts a ledger row without any dedupe on evt.eventId, so the provider's up-to-5 redeliveries create up to 5 duplicate ledger rows (contract 3).","suggestion":"Insert evt.eventId into a processed_events table with a UNIQUE constraint (INSERT ... ON CONFLICT DO NOTHING) before the ledger write and return early when it is a no-op."},
+{"id":"F16","file":"modules/review2.ts","line":30,"severity":"critical","reason":"archiveReview2 takes no Session and performs no ownership check, so any caller can archive any review by id and irreversibly delete its blob, while sibling getReview2/listReview2s do enforce ownership.","suggestion":"Add a session: Session parameter and scope the SELECT/UPDATE with AND owner_id = ?, allowing role === \"admin\"."},
+{"id":"F17","file":"modules/review2.ts","line":33,"severity":"major","reason":"The irreversible blob.remove runs before the DB row is marked archived, so a failure of the UPDATE on line 34 leaves the blob permanently deleted while the record still points at it.","suggestion":"Mark the row archived (or pending-delete) first and delete the blob only after the durable state change commits."},
+{"id":"F18","file":"modules/review2.ts","line":31,"severity":"minor","reason":"rows[0].blob_key is dereferenced outside the try block with no existence check, so a nonexistent id throws an unhandled TypeError instead of returning a clean not-found result.","suggestion":"Guard with if (!rows[0]) return { ok: false, error: \"not_found\" }; before accessing blob_key."},
+{"id":"F19","file":"modules/review3.ts","line":24,"severity":"critical","reason":"Tax (line 24) and discount (line 25) are computed by floating-point division by 10000 with no rounding, so review3Total returns a fractional Money in violation of the integer minimum-unit contract.","suggestion":"Round each component explicitly, e.g. Math.round((base * taxBp) / 10000), and return an integer total."}
+]
+```

@@ -1,0 +1,31 @@
+# expected<TAB>prompt
+product-spec	OAuth 로그인 기능 PRD 뽑아줘
+product-spec	이 아이디어를 제품 요구사항으로 정리해줘
+product-spec	이 PRD 검토해줘
+product-spec	PRD 누락과 모순을 리뷰해줘
+product-spec	이 PRD 디깅해줘
+product-spec	기획서 보안과 엣지케이스를 깊게 파줘
+screen-spec	이 PRD로 화면정의서 만들어줘
+screen-spec	관리자 기능 IA와 user flow를 만들어줘
+screen-spec	lo-fi wireframe과 개발 핸드오프 부탁해
+acceptance-verifier	이번 구현이 PRD 요구사항을 만족하는지 검증해줘
+acceptance-verifier	acceptance criteria 반영 여부 확인해줘
+acceptance-verifier	FR별 코드와 테스트 근거를 매핑해줘
+design-direction	신규 대시보드 UI 디자인 방향 잡아줘
+design-direction	greenfield 앱의 visual direction 제안해줘
+handdrawn-diagram	한글 손그림 아키텍처 다이어그램 만들어줘
+handdrawn-diagram	Devpost용 sketch diagram 만들어줘
+wigtn-presentation	WIGTN 브랜드 피치덱 만들어줘
+wigtn-presentation	위그튼 회사 소개 발표자료 만들어줘
+release-readiness	변경사항 커밋해줘
+release-readiness	현재 브랜치 푸시해줘
+release-readiness	이 변경으로 PR 올려줘
+release-readiness	검증하고 커밋 준비해줘
+none	버튼 색을 파란색으로 바꿔줘
+none	이 에러 고쳐줘
+none	README 오타 수정해줘
+none	이 기능 구현해줘
+none	일반 회사 발표자료 만들어줘
+none	코드 리팩터링해줘
+none	테스트 추가해줘
+none	API 응답 속도 개선해줘

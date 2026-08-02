@@ -1,0 +1,79 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..3c5516b 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,73 @@
++from collections.abc import Mapping
++from math import isfinite
++from urllib.parse import urlparse
++
+ from .model import CanonicalConfig
+ 
++
++_V1_KEYS = {"endpoint", "timeout_seconds"}
++_V2_KEYS = {"version", "delivery"}
++_V2_DELIVERY_KEYS = {"endpoint", "timeout_ms", "enabled"}
++_MIN_TIMEOUT_MS = 100
++_MAX_TIMEOUT_MS = 30000
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    keys = set(raw)
++    if keys == _V1_KEYS:
++        timeout_ms = _seconds_to_ms(raw["timeout_seconds"])
++        return _canonical(raw["endpoint"], timeout_ms, True)
++
++    if keys == _V2_KEYS:
++        if raw["version"] != 2:
++            raise ValueError("unsupported config version")
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if set(delivery) != _V2_DELIVERY_KEYS:
++            raise ValueError("invalid delivery fields")
++        if not isinstance(delivery["enabled"], bool):
++            raise ValueError("enabled must be a bool")
++        timeout_ms = _timeout_ms(delivery["timeout_ms"])
++        return _canonical(delivery["endpoint"], timeout_ms, delivery["enabled"])
++
++    raise ValueError("invalid config fields")
++
++
++def _canonical(endpoint, timeout_ms, enabled):
++    _validate_endpoint(endpoint)
++    _validate_timeout_ms(timeout_ms)
++    return CanonicalConfig(endpoint=endpoint, timeout_ms=timeout_ms, enabled=enabled)
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be a string")
++    parsed = urlparse(endpoint)
++    if parsed.scheme != "https" or not parsed.netloc:
++        raise ValueError("endpoint must be an https URL")
++
++
++def _seconds_to_ms(timeout_seconds):
++    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
++        raise ValueError("timeout_seconds must be numeric")
++    if isinstance(timeout_seconds, float) and not isfinite(timeout_seconds):
++        raise ValueError("timeout_seconds must be finite")
++    timeout_ms = timeout_seconds * 1000
++    if timeout_ms != int(timeout_ms):
++        raise ValueError("timeout_seconds must convert to whole milliseconds")
++    return int(timeout_ms)
++
++
++def _timeout_ms(timeout):
++    if isinstance(timeout, bool) or not isinstance(timeout, int):
++        raise ValueError("timeout_ms must be an integer")
++    return timeout
++
++
++def _validate_timeout_ms(timeout_ms):
++    if not _MIN_TIMEOUT_MS <= timeout_ms <= _MAX_TIMEOUT_MS:
++        raise ValueError("timeout must be between 100 and 30000 ms")

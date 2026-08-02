@@ -1,0 +1,39 @@
+{
+  "fixture": "create-backend-webhook",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 2,
+      "blockers": [],
+      "high": [],
+      "summary": "Very complete and implementable, with strong coverage of delivery semantics, tenant isolation, persistence, security, observability, tests, and open decisions. Main weakness is length and some ceremony beyond what is needed."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Strongest overall balance. It cleanly separates requirements, assumptions, open decisions, risks, and acceptance criteria while avoiding invented SLA numbers. Minor ceremony remains, but most content is useful and actionable."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 4,
+      "feasibility": 3,
+      "traceability": 4,
+      "concision": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Concise and mostly accurate, with good traceable requirements and acceptance criteria. It is less complete on delivery/data model details, launch controls, and implementation contracts than A or B, but does not materially contradict the brief."
+    }
+  ],
+  "ranking_best_to_worst": ["B", "A", "C"]
+}

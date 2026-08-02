@@ -1,0 +1,7 @@
+arm=M56-CURRENT
+fixture=review-missing-pages
+repeat=3
+model=gpt-5.6-sol
+reasoning_effort=medium
+duration_seconds=141
+exit_code=0

@@ -1,0 +1,7 @@
+arm=M55-V2
+fixture=review-missing-states
+repeat=1
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=70
+exit_code=0

@@ -1,0 +1,18 @@
+created_utc=2026-07-26T16:30:10Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repeat=2
+effort=medium
+source_commit=8242fb3eb131a302fc776d1d9bedc4b4aedf9213
+
+# frozen-input-sha256
+3298bec001aa83e5a01f2fc7f5d2b9b159823196527cc04e44c517c9cd32ed8a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/STUDY-PROTOCOL.md
+360c23514cfcc290cc45cbeb0ab353e05172f08c857a6c1b40b27522824ab2fa  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/PLUGIN-AUDIT.md
+bfd2d3387dbcef5de71d9a9586bc9140eeddd69ed4a4503554b17cf2fdadd546  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/arms/optimized.patch
+66e4d15c62f76e4a08272c69100f5cc951ab7afb513dd4d9d0864e2a58bacb64  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/score_study.py
+7bb1e43827a1b7f980cb0a72674cb8cf67dd089c6f5add790669e45acf15c1a4  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-backend-webhook.txt
+62eb305493a6c04c688dc7cf2390acf556bf53e05eba1205bed023f02958d176  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-mobile-expense.txt
+a0b442fe2f46197061b903bb4e27cbb8208ab75caea605346b5ce07ac98e39dd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/create-ui-internal.txt
+86d63edc13a278bbaf471570ba40799125f25ab2d3d0bc53b5b9ac20e9933a9a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-clean.txt
+1e49f7718bf0c225d0e1110132fa2742a7ae8468a1a524461a67e55009e7d70f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-convention.txt
+4eb67c4269a172fe12848491ace477a4b51b16607c5a81a207ae2c06d081f724  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-universal.txt
+e549193551fcec940213c9d05379b224b099686c667ca77eb5c18f5832a07e7a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/screen-admin.txt

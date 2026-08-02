@@ -1,0 +1,60 @@
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..65e2b01 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,20 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        if event_id not in self.events:
++            self.events[event_id] = payload
++            return True
++
++        if self.events[event_id] == payload:
++            return False
++
++        raise ValueError("event ID was already accepted with a different payload")
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {1: 0, 2: 60, 3: 300}.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..5a0a4a4 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,27 @@
++import hashlib
++import hmac
++import string
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    """Verify a ``sha256=<hex>`` HMAC signature for *body*.
++
++    Invalid or otherwise malformed signature headers are treated as failed
++    verification instead of raising an exception.
++    """
++    if not isinstance(header, str):
++        return False
++
++    prefix = "sha256="
++    if not header.startswith(prefix):
++        return False
++
++    supplied_digest = header[len(prefix):]
++    if (
++        len(supplied_digest) != hashlib.sha256().digest_size * 2
++        or any(character not in string.hexdigits for character in supplied_digest)
++    ):
++        return False
++
++    expected_digest = hmac.new(secret, body, hashlib.sha256).hexdigest()
++    return hmac.compare_digest(expected_digest, supplied_digest.lower())

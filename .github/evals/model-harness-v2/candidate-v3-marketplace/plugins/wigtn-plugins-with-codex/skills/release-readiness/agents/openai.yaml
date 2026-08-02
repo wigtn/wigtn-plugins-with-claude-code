@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Release Readiness"
+  short_description: "Review, verify, commit, push, or open a PR safely"
+  default_prompt: "Use $release-readiness to verify these changes and prepare the requested Git action."
+policy:
+  allow_implicit_invocation: true

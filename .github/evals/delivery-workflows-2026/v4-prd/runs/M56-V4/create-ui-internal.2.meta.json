@@ -1,0 +1,7 @@
+{
+  "arm": "M56-V4",
+  "fixture": "create-ui-internal",
+  "repeat": 2,
+  "exit_code": 0,
+  "duration_seconds": 134
+}

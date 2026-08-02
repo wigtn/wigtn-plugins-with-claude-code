@@ -1,0 +1,7 @@
+arm=M56-CURRENT
+fixture=review-universal
+repeat=4
+model=gpt-5.6-sol
+reasoning_effort=medium
+duration_seconds=64
+exit_code=0

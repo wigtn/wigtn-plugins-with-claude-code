@@ -1,0 +1,362 @@
+You are an independent senior code evaluator.
+
+Four anonymous candidates implemented the same task from the same base repository.
+Do not infer model, plugin, or workflow identity. Test results are evidence but do
+not replace patch inspection.
+
+Score each candidate 0..4 on:
+- completeness: all requested behavior and edge cases are implemented
+- correctness: invariants, authorization, security, and failure behavior are sound
+- scope_discipline: no unrelated or test-oriented implementation shortcuts
+- maintainability: clear, minimal, project-native design
+- evidence_quality: implementation and executed-test evidence support the claims
+
+For blocker/high defects, cite a file or identifying diff line and explain impact.
+Return JSON only:
+{
+  "task": "webhook-delivery",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 0,
+      "correctness": 0,
+      "scope_discipline": 0,
+      "maintainability": 0,
+      "evidence_quality": 0,
+      "blockers": [{"location": "...", "finding": "...", "impact": "..."}],
+      "high": [{"location": "...", "finding": "...", "impact": "..."}],
+      "summary": "..."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C", "D"]
+}
+
+All labels must appear exactly once and all scores must be integers 0..4.
+
+## Task
+
+웹훅 수신·재시도 기능을 구현해줘.
+
+요구사항:
+- verify_signature는 `sha256=<hex>` HMAC-SHA256을 constant-time 비교하고 malformed header는 False다.
+- WebhookStore.accept(event_id, payload)는 최초 이벤트만 저장하고 같은 ID+payload는 중복으로 False를 반환한다.
+- 같은 ID에 다른 payload가 오면 ValueError다.
+- retry_delay(attempt, status_code)는 2xx면 None, 실패는 attempt 1/2/3에 0/60/300초, 그 이후 None이며 1 미만 attempt는 ValueError다.
+- 입력 bytes를 변형하지 않고 표준 라이브러리만 사용한다.
+- 공개 테스트를 실행하고 notes/user-draft.txt를 보존한다.
+- 커밋이나 push는 하지 않는다.
+
+
+## Base repository
+
+### webhook/__init__.py
+```python
+
+```
+### webhook/signing.py
+```python
+def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+    raise NotImplementedError
+
+```
+### webhook/delivery.py
+```python
+class WebhookStore:
+    def __init__(self):
+        self.events = {}
+
+    def accept(self, event_id: str, payload: bytes) -> bool:
+        raise NotImplementedError
+
+def retry_delay(attempt: int, status_code: int):
+    raise NotImplementedError
+
+```
+### test_webhook.py
+```python
+import hashlib, hmac, unittest
+from webhook.signing import verify_signature
+from webhook.delivery import WebhookStore, retry_delay
+
+class WebhookTests(unittest.TestCase):
+    def test_signature(self):
+        body=b"hello"; secret=b"secret"
+        sig=hmac.new(secret,body,hashlib.sha256).hexdigest()
+        self.assertTrue(verify_signature(secret,body,"sha256="+sig))
+        self.assertFalse(verify_signature(secret,b"changed","sha256="+sig))
+
+    def test_dedupe(self):
+        store=WebhookStore()
+        self.assertTrue(store.accept("e1",b"x"))
+        self.assertFalse(store.accept("e1",b"x"))
+
+    def test_retry(self):
+        self.assertIsNone(retry_delay(1,204))
+        self.assertEqual(retry_delay(2,500),60)
+
+if __name__ == "__main__": unittest.main()
+
+```
+
+## Anonymous candidates
+
+## Candidate A
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..8177308 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,21 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        if event_id not in self.events:
++            self.events[event_id] = payload
++            return True
++
++        if self.events[event_id] == payload:
++            return False
++
++        raise ValueError("event ID already exists with a different payload")
++
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {1: 0, 2: 60, 3: 300}.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..a9135ce 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,20 @@
++import hashlib
++import hmac
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    """Return whether *header* contains the HMAC-SHA256 signature for *body*."""
++    if not isinstance(header, str) or not header.startswith("sha256="):
++        return False
++
++    encoded_signature = header[len("sha256=") :]
++    if len(encoded_signature) != hashlib.sha256().digest_size * 2:
++        return False
++
++    try:
++        supplied_signature = bytes.fromhex(encoded_signature)
++    except ValueError:
++        return False
++
++    expected_signature = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(expected_signature, supplied_signature)
+
+```
+
+## Candidate B
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..50d47df 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,23 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        existing = self.events.get(event_id)
++        if existing is None:
++            self.events[event_id] = payload
++            return True
++        if existing == payload:
++            return False
++        raise ValueError("event_id already exists with different payload")
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++    if 200 <= status_code <= 299:
++        return None
++
++    delays = {
++        1: 0,
++        2: 60,
++        3: 300,
++    }
++    return delays.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..9349e48 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,20 @@
++import hashlib
++import hmac
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    prefix = "sha256="
++    if not isinstance(header, str) or not header.startswith(prefix):
++        return False
++
++    digest = header[len(prefix):]
++    if len(digest) != hashlib.sha256().digest_size * 2:
++        return False
++
++    try:
++        provided = bytes.fromhex(digest)
++    except ValueError:
++        return False
++
++    expected = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(provided, expected)
+
+```
+
+## Candidate C
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..00769da 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,21 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        if event_id not in self.events:
++            self.events[event_id] = payload
++            return True
++
++        if self.events[event_id] == payload:
++            return False
++
++        raise ValueError("event ID was already accepted with a different payload")
++
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {1: 0, 2: 60, 3: 300}.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..0638aa8 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,20 @@
++import hashlib
++import hmac
++import re
++
++
++_SIGNATURE_PATTERN = re.compile(r"sha256=([0-9a-fA-F]{64})\Z")
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    """Return whether *header* is a valid HMAC-SHA256 signature for *body*."""
++    if not isinstance(header, str):
++        return False
++
++    match = _SIGNATURE_PATTERN.fullmatch(header)
++    if match is None:
++        return False
++
++    supplied_digest = bytes.fromhex(match.group(1))
++    expected_digest = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(expected_digest, supplied_digest)
+
+```
+
+## Candidate D
+
+Visible tests: PASS
+
+Hidden tests: PASS
+
+```diff
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..18c7ccd 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,24 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        if event_id not in self.events:
++            self.events[event_id] = payload
++            return True
++
++        if self.events[event_id] == payload:
++            return False
++
++        raise ValueError("event ID was already accepted with a different payload")
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {
++        1: 0,
++        2: 60,
++        3: 300,
++    }.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..85b1920 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,19 @@
++import hashlib
++import hmac
++import re
++
++
++_SIGNATURE_PATTERN = re.compile(r"sha256=([0-9a-fA-F]{64})")
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    if not isinstance(header, str):
++        return False
++
++    match = _SIGNATURE_PATTERN.fullmatch(header)
++    if match is None:
++        return False
++
++    supplied_digest = bytes.fromhex(match.group(1))
++    expected_digest = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(expected_digest, supplied_digest)
+
+```
+

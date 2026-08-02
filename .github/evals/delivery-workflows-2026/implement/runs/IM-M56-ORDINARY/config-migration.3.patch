@@ -1,0 +1,95 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..eec0aec 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,89 @@
++import math
++from collections.abc import Mapping
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = frozenset({"endpoint", "timeout_seconds"})
++_V2_FIELDS = frozenset({"version", "delivery"})
++_DELIVERY_FIELDS = frozenset({"endpoint", "timeout_ms", "enabled"})
++
++
++def _require_https_endpoint(value):
++    if not isinstance(value, str) or any(char.isspace() for char in value):
++        raise ValueError("endpoint must be an HTTPS URL")
++
++    try:
++        parsed = urlsplit(value)
++        # Accessing these properties also validates malformed hosts and ports.
++        hostname = parsed.hostname
++        parsed.port
++    except (TypeError, ValueError):
++        raise ValueError("endpoint must be an HTTPS URL") from None
++
++    if parsed.scheme.lower() != "https" or not parsed.netloc or hostname is None:
++        raise ValueError("endpoint must be an HTTPS URL")
++    return value
++
++
++def _require_timeout_ms(value):
++    if isinstance(value, bool) or not isinstance(value, int):
++        raise ValueError("timeout_ms must be an integer")
++    if not 100 <= value <= 30_000:
++        raise ValueError("timeout must be between 100 and 30000 milliseconds")
++    return value
++
++
++def _seconds_to_ms(value):
++    if isinstance(value, bool) or not isinstance(value, (int, float)):
++        raise ValueError("timeout_seconds must be a number")
++
++    milliseconds = value * 1000
++    if isinstance(milliseconds, float) and (
++        not math.isfinite(milliseconds) or not milliseconds.is_integer()
++    ):
++        raise ValueError("timeout_seconds must resolve to whole milliseconds")
++    return _require_timeout_ms(int(milliseconds))
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Validate a v1 or v2 delivery config and return its canonical form."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = set(raw)
++    has_v1_fields = bool(fields & _V1_FIELDS)
++    has_v2_fields = bool(fields & _V2_FIELDS)
++    if has_v1_fields and has_v2_fields:
++        raise ValueError("v1 and v2 fields cannot be mixed")
++
++    if fields == _V1_FIELDS:
++        return CanonicalConfig(
++            endpoint=_require_https_endpoint(raw["endpoint"]),
++            timeout_ms=_seconds_to_ms(raw["timeout_seconds"]),
++            enabled=True,
++        )
++
++    if fields != _V2_FIELDS:
++        raise ValueError("config has missing or unknown top-level fields")
++    if (
++        isinstance(raw["version"], bool)
++        or not isinstance(raw["version"], int)
++        or raw["version"] != 2
++    ):
++        raise ValueError("version must be 2")
++
++    delivery = raw["delivery"]
++    if not isinstance(delivery, Mapping):
++        raise ValueError("delivery must be a mapping")
++    if set(delivery) != _DELIVERY_FIELDS:
++        raise ValueError("delivery has missing or unknown fields")
++    if not isinstance(delivery["enabled"], bool):
++        raise ValueError("enabled must be a boolean")
++
++    return CanonicalConfig(
++        endpoint=_require_https_endpoint(delivery["endpoint"]),
++        timeout_ms=_require_timeout_ms(delivery["timeout_ms"]),
++        enabled=delivery["enabled"],
++    )

@@ -1,0 +1,39 @@
+{
+  "fixture": "create-backend-webhook",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Very complete and implementation-oriented. It covers scope exclusions, at-least-once delivery, event ID stability, tenant isolation, retry policy, security open decisions, observability, acceptance criteria, and release gates. It is somewhat verbose, but most detail is applicable."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Best balance of coverage and density. It cleanly separates assumptions from open decisions, avoids unsupported SLA numbers, includes security and SSRF controls, defines observable acceptance criteria, and keeps the delivery contract implementable without excess ceremony."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Strong PRD with good requirements, state flow, acceptance criteria, security boundaries, and open decisions. It is slightly less concise due to some template residue and minor internal qualification around delivery attempts versus undeliverable endpoint cases, but no material release risk."
+    }
+  ],
+  "ranking_best_to_worst": ["B", "A", "C"]
+}

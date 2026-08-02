@@ -1,0 +1,15 @@
+created_utc=2026-07-27T05:29:04Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+model=gpt-5.6-sol
+effort=low
+e2573f9f7ecfcee2e985ceaa460774a59084fb1f774eb41f710ee5293193fbba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/EXTENSION-PROTOCOL.md
+695e0d4e4d1316bd7628aa9f08e0074233dcf37ce5729d1387a9d3e8f963bfe8  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/trigger-gate/prompts.tsv
+abde788dd734089d3804abd9a0194f11bde28430213a41752b543ea99f07dc4e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/trigger-gate/score.py
+f0b82555db0c1210c1079bac84aa06c51c3518266303131856ca2e3326563bdd  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/acceptance-verifier/SKILL.md
+04641a485fd20aac32e61e8a66f48380bfbcf344a33e39e2d6e75f64c4b11ad1  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/design-direction/SKILL.md
+8dfe3ee30a94cacf5f2f4c327dff13c07a50282aa33a27397886611026fbbd80  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/handdrawn-diagram/SKILL.md
+468b8b09e01d7ad873cc09398d5b49daa4e208ce61054d736e87eadc976bc2f6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+9909f288b7bae2e084801ccbd0c2fcf9938e20a52951b25e907a392974f9bb4f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/release-readiness/SKILL.md
+e6812ab5476ac2378e8a0d5b93a93322c08ab7f06053fe9f25883fb0921659b2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/screen-spec/SKILL.md
+5dbb2d8bfd13dbedb8c68f217f804ded481ee049bcfe51254f06bd14ba5de521  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/verified-delivery/SKILL.md
+db3efd56e773cfc65798e3485daa6b34cb6d82c19b3e55edc60270be0aadb499  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/candidate-marketplace/plugins/wigtn-plugins-with-codex/skills/wigtn-presentation/SKILL.md

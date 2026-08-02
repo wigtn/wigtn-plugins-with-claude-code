@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M55-PLUGIN",
+  "task": "push-only",
+  "repeat": 2,
+  "exit_code": 0,
+  "duration_seconds": 50
+}

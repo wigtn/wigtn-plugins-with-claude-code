@@ -1,0 +1,141 @@
+diff --git a/search/cursor.py b/search/cursor.py
+index 3662433..26b38b2 100644
+--- a/search/cursor.py
++++ b/search/cursor.py
+@@ -1,5 +1,86 @@
++import base64
++import binascii
++import hashlib
++import hmac
++import json
++
++
++# A cursor is client-visible state, so it must be authenticated before any of
++# its fields are trusted.  In an application this key would normally come from
++# server configuration; keeping it private to this module also prevents callers
++# from depending on the cursor representation.
++_CURSOR_KEY = b"tenant-search.cursor.v1.7c6c0942"
++_SIGNATURE_SIZE = hashlib.sha256().digest_size
++
++
++def _urlsafe_encode(value: bytes) -> str:
++    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
++
++
++def _urlsafe_decode(value: str) -> bytes:
++    try:
++        encoded = value.encode("ascii")
++        padding = b"=" * (-len(encoded) % 4)
++        decoded = base64.b64decode(encoded + padding, altchars=b"-_", validate=True)
++    except (UnicodeEncodeError, ValueError, binascii.Error) as exc:
++        raise ValueError("invalid cursor") from exc
++    if _urlsafe_encode(decoded) != value:
++        raise ValueError("invalid cursor")
++    return decoded
++
++
+ def encode_cursor(tenant_id: str, created_at: int, record_id: str) -> str:
+-    raise NotImplementedError
++    if not isinstance(tenant_id, str):
++        raise ValueError("tenant_id must be a string")
++    if isinstance(created_at, bool) or not isinstance(created_at, int):
++        raise ValueError("created_at must be an integer")
++    if not isinstance(record_id, str):
++        raise ValueError("record id must be a string")
++
++    payload = json.dumps(
++        {"v": 1, "tenant": tenant_id, "created_at": created_at, "id": record_id},
++        ensure_ascii=False,
++        separators=(",", ":"),
++        sort_keys=True,
++    ).encode("utf-8")
++    signature = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()
++    return _urlsafe_encode(payload + signature)
++
+ 
+ def decode_cursor(value: str, tenant_id: str):
+-    raise NotImplementedError
++    if not isinstance(value, str) or not isinstance(tenant_id, str):
++        raise ValueError("invalid cursor")
++
++    decoded = _urlsafe_decode(value)
++    if len(decoded) <= _SIGNATURE_SIZE:
++        raise ValueError("invalid cursor")
++
++    payload, supplied_signature = (
++        decoded[:-_SIGNATURE_SIZE],
++        decoded[-_SIGNATURE_SIZE:],
++    )
++    expected_signature = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()
++    if not hmac.compare_digest(supplied_signature, expected_signature):
++        raise ValueError("invalid cursor")
++
++    try:
++        data = json.loads(payload.decode("utf-8"))
++    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
++        raise ValueError("invalid cursor") from exc
++
++    if (
++        not isinstance(data, dict)
++        or set(data) != {"v", "tenant", "created_at", "id"}
++        or data["v"] != 1
++        or not isinstance(data["tenant"], str)
++        or isinstance(data["created_at"], bool)
++        or not isinstance(data["created_at"], int)
++        or not isinstance(data["id"], str)
++    ):
++        raise ValueError("invalid cursor")
++    if not hmac.compare_digest(
++        data["tenant"].encode("utf-8"), tenant_id.encode("utf-8")
++    ):
++        raise ValueError("cursor belongs to another tenant")
++
++    return data["created_at"], data["id"]
+diff --git a/search/service.py b/search/service.py
+index f8a1da0..c19af7e 100644
+--- a/search/service.py
++++ b/search/service.py
+@@ -1,4 +1,42 @@
+ from .cursor import encode_cursor, decode_cursor
+ 
++
+ def search(records, tenant_id, query, limit, cursor=None):
+-    raise NotImplementedError
++    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
++        raise ValueError("limit must be an integer between 1 and 50")
++    if not isinstance(tenant_id, str):
++        raise ValueError("tenant_id must be a string")
++    if not isinstance(query, str):
++        raise ValueError("query must be a string")
++
++    after = decode_cursor(cursor, tenant_id) if cursor is not None else None
++    folded_query = query.casefold()
++
++    matches = [
++        record
++        for record in records
++        if record["tenant_id"] == tenant_id
++        and folded_query in record["name"].casefold()
++    ]
++    matches.sort(key=lambda record: (-record["created_at"], record["id"]))
++
++    if after is not None:
++        last_created_at, last_id = after
++        matches = [
++            record
++            for record in matches
++            if record["created_at"] < last_created_at
++            or (
++                record["created_at"] == last_created_at
++                and record["id"] > last_id
++            )
++        ]
++
++    page_with_extra = matches[: limit + 1]
++    page = page_with_extra[:limit]
++    if len(page_with_extra) <= limit:
++        return page, None
++
++    last = page[-1]
++    next_cursor = encode_cursor(tenant_id, last["created_at"], last["id"])
++    return page, next_cursor

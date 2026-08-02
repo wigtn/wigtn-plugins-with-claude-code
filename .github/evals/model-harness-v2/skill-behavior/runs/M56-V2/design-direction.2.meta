@@ -1,0 +1,9 @@
+arm=M56-V2
+task=design-direction
+repeat=2
+model_exit=0
+test_exit=na
+tree_changed=no
+head_changed=no
+skill_loaded=yes
+duration_seconds=97

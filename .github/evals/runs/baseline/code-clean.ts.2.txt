@@ -1,0 +1,109 @@
+# Code Review Report
+
+## Target
+- **File**: `/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/fixtures/code-clean.ts`
+- **Lines**: 1-133 (파일 전체를 변경 diff로 간주)
+- **Review Level**: 3 (Deep) — 보안/인증/토큰 서명 코드라 심층 적용
+
+## Summary
+
+문서 공유 API 핸들러 4개(`searchDocuments`, `listDocumentsWithOwners`, `deleteDocument`,
+`createShareLink`)와 HMAC 공유 토큰 서명/검증 2개 함수. 통상 이 형태의 코드에서 자주
+나오는 결함군을 하나씩 짚었으나, 대부분 **이미 올바르게 처리되어 있다**. 실제 결함으로
+확정한 것은 SQL `ESCAPE` 리터럴의 방언 의존성 1건(minor)뿐이다.
+
+### 검증했고 결함이 아니었던 항목 (감점하지 않음)
+
+- **SQL 인젝션 (L21-28, L36-44, L52-55, L70-74, L94-96)**: 전부 `?` 바인딩. 문자열 연결 없음.
+  L40 `d.owner_id = ? OR ? = 'admin'`도 `session.role`이 바인딩 파라미터라 안전하다.
+- **LIKE 메타문자 (L19)**: `/[\\%_]/g`로 `\`, `%`, `_`를 모두 이스케이프하고 `ESCAPE`절과
+  짝을 맞췄다. `q="%"` 전체매칭 이슈까지 주석으로 의도가 명시돼 있다.
+- **인가 (L60-62, L100-102)**: 삭제는 owner 또는 admin, 공유링크 생성은 owner 전용.
+  IDOR 없음. `createShareLink`가 admin을 허용하지 않는 건 링크 발급이 더 강한 권한이라
+  타당한 비대칭이며 결함이 아니다.
+- **삭제 순서 (L64-86)**: DB 트랜잭션 커밋 → 스토리지 삭제 순. 실패 시 남는 것이 복구 가능한
+  고아 객체(reaper 수거)이고 복구 불가능한 좀비 행이 아니다. 트레이드오프가 주석에
+  근거와 함께 기록돼 있다. 스토리지 삭제 실패를 500으로 올리지 않는 것도 이 순서에서 옳다.
+- **타이밍 공격 (L126-128)**: `timingSafeEqual` 사용 + 길이 선검사로 `RangeError` 방지.
+  길이 누출은 base64url 고정 길이 MAC이라 무의미.
+- **파싱 전 검증 순서 (L123-130)**: MAC 검증이 `JSON.parse`보다 **먼저**다. 서명되지 않은
+  입력을 파싱하지 않는 올바른 순서 (역순이면 파서 공격면이 열린다).
+- **만료 검사 (L131)**: `exp`가 서명 페이로드 안에 있고 검증 후 확인한다. 클라이언트가
+  `exp`를 조작하면 MAC이 깨진다.
+- **비밀키 부재 (L7-10)**: 모듈 로드 시 fail-fast. 빈 문자열도 falsy라 함께 걸린다.
+- **토큰 형식 (L120-121)**: `payload`/`mac` 누락 시 조기 반환. 페이로드가 base64url이라
+  구분자 `.` 충돌 없음.
+
+## Quality Score (참고 표시값 — 게이트 비결정)
+
+| Category | Score | Grade |
+|----------|-------|-------|
+| Readability | 19/20 | A |
+| Maintainability | 18/20 | A- |
+| Performance | 18/20 | A- |
+| Testability | 17/20 | B+ |
+| Best Practices | 19/20 | A |
+| **Total (참고)** | **91/100** | **A-** |
+
+## Findings
+
+### Critical (즉시 수정)
+없음.
+
+### Major (수정 권장)
+없음.
+
+### Minor (개선 제안)
+
+**F1 — L24: `ESCAPE '\\'` 리터럴이 DB 방언에 의존한다 (confidence: low)**
+
+템플릿 리터럴에서 `'\\'`는 SQL 텍스트로 나갈 때 `'\'`(백슬래시 1개)가 된다.
+- PostgreSQL(standard_conforming_strings=on) / SQLite: 정상.
+- MySQL(기본, `NO_BACKSLASH_ESCAPES` 미설정): 문자열 리터럴 안에서 백슬래시가
+  이스케이프 문자라 `\'`가 따옴표를 이스케이프해 **구문 오류로 쿼리 전체가 실패**한다.
+
+이스케이프 로직 자체(L19)는 `ESCAPE`절과 정확히 짝이 맞으므로 로직 결함은 아니다.
+방언이 Postgres/SQLite로 고정돼 있다면 무시해도 된다. MySQL 가능성이 있다면
+`ESCAPE '|'` 같은 비-백슬래시 문자를 쓰고 L19 치환도 `|`로 맞추면 방언 무관해진다.
+실패가 조용하지 않고(첫 호출부터 즉시 에러) 통합 테스트 1회로 드러나므로 severity는 minor.
+
+### Info (제안 — 게이트 영향 없음)
+
+- **L113, L123 `SHARE_TOKEN_SECRET!`**: L8-10의 throw 이후 `const`는 TS가 클로저 안에서도
+  `string`으로 좁히므로 non-null 단언이 불필요하다. 단언을 지워도 컴파일된다면 지우는 편이
+  낫다(나중에 fail-fast 가드를 지웠을 때 컴파일 에러로 잡히게 된다).
+- **L119-133 토큰 폐기(revocation) 없음**: 서명 토큰은 stateless라 발급 후 TTL 7일 동안
+  회수할 수 없다. 문서가 삭제되거나 소유권이 바뀌어도 링크는 살아 있다. 소비 지점에서
+  문서 존재/소유자 재확인을 하는지 이 파일만으로는 알 수 없다. 요구사항이라면
+  `jti` + 폐기 테이블 또는 소비 시 재검증이 필요하다.
+- **L19, L26 선행 와일드카드 검색**: `%q%`는 B-tree 인덱스를 못 타 `documents`가 커지면
+  풀스캔이 된다. `LIMIT 50`이 응답 크기는 막아주지만 스캔 비용은 막지 못한다.
+  규모가 커지면 trigram/FTS 인덱스 고려. 현재 코드의 결함은 아님.
+- **Testability**: `db`/`s3`가 모듈 싱글턴이고 L8-10이 import 시점에 throw하므로,
+  유닛 테스트는 `SHARE_TOKEN_SECRET` 스텁을 import 이전에 세팅해야 한다.
+  `sign`/`verifyShareToken`은 순수 함수에 가까워 라운드트립·변조·만료 테스트가 쉽다.
+
+## Gate Decision (findings 롤업 — 결정)
+
+| Severity | Count | 게이트 영향 |
+|----------|-------|------------|
+| Critical (high/med conf) | 0 | 미차단 |
+| Major | 0 | 미발동 |
+| Minor | 1 | (5 미만) |
+
+- **Status**: **PASS**
+- **Rule**: critical 0 AND major 0 AND minor < 5 → PASS
+- **Action**: 커밋 진행 가능
+
+## Recommendations
+
+1. DB 방언이 MySQL일 가능성이 있으면 L19/L24의 이스케이프 문자를 `|` 등 비-백슬래시로
+   교체해 방언 의존성을 제거한다. (아니면 무시)
+2. 공유 링크 소비 경로에서 `verifyShareToken` 통과 후 문서 존재/소유권을 한 번 더
+   확인하는지 확인한다 — 이 파일 밖의 책임이지만 폐기 부재를 보완하는 유일한 지점이다.
+3. 나머지는 유지. 특히 L64-67의 "왜 이 순서인가" 주석과 L17-18의 이스케이프 의도 주석은
+   리뷰어가 잘못된 결함을 지적하는 것을 막아주는 좋은 문서화다.
+
+```json
+[{"id":"F1","file":"code-clean.ts","line":24,"severity":"minor","confidence":"low","reason":"템플릿 리터럴의 ESCAPE '\\\\' 는 SQL 텍스트로 ESCAPE '\\' (백슬래시 1개)가 되어 나간다. Postgres/SQLite에서는 정상이지만 MySQL 기본 설정(NO_BACKSLASH_ESCAPES 미설정)에서는 문자열 리터럴 내 백슬래시가 이스케이프 문자라 \\' 가 닫는 따옴표를 이스케이프해 쿼리가 구문 오류로 실패한다. L19의 이스케이프 로직 자체는 ESCAPE 절과 정확히 짝이 맞아 결함이 아니며, 이 항목은 DB 방언 의존성에 한정된다.","suggestion":"방언 무관하게 하려면 백슬래시 대신 다른 이스케이프 문자를 쓴다: L24 를 ESCAPE '|' 로, L19 를 %${q.replace(/[|%_]/g, (c) => `|${c}`)}% 로 함께 변경. 방언이 Postgres/SQLite로 확정돼 있다면 수정 불필요."}]
+```

@@ -1,0 +1,91 @@
+diff --git a/config/migrate.py b/config/migrate.py
+index 475af38..8280c6b 100644
+--- a/config/migrate.py
++++ b/config/migrate.py
+@@ -1,4 +1,85 @@
++import math
++from collections.abc import Mapping
++from urllib.parse import urlsplit
++
+ from .model import CanonicalConfig
+ 
++
++_V1_FIELDS = frozenset({"endpoint", "timeout_seconds"})
++_V2_FIELDS = frozenset({"version", "delivery"})
++_DELIVERY_FIELDS = frozenset({"endpoint", "timeout_ms", "enabled"})
++
++
+ def migrate_config(raw):
+-    raise NotImplementedError
++    """Convert a version 1 or version 2 delivery config to its canonical form."""
++    if not isinstance(raw, Mapping):
++        raise ValueError("config must be a mapping")
++
++    fields = set(raw)
++    if fields == _V1_FIELDS:
++        endpoint = raw["endpoint"]
++        timeout_ms = _seconds_to_milliseconds(raw["timeout_seconds"])
++        enabled = True
++    elif fields == _V2_FIELDS:
++        version = raw["version"]
++        if isinstance(version, bool) or not isinstance(version, int) or version != 2:
++            raise ValueError("version must be 2")
++
++        delivery = raw["delivery"]
++        if not isinstance(delivery, Mapping):
++            raise ValueError("delivery must be a mapping")
++        if set(delivery) != _DELIVERY_FIELDS:
++            raise ValueError("delivery has missing or unknown fields")
++
++        endpoint = delivery["endpoint"]
++        timeout_ms = delivery["timeout_ms"]
++        enabled = delivery["enabled"]
++        if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, int):
++            raise ValueError("timeout_ms must be an integer")
++        if not isinstance(enabled, bool):
++            raise ValueError("enabled must be a boolean")
++    else:
++        raise ValueError("config has missing, unknown, or mixed-version fields")
++
++    _validate_endpoint(endpoint)
++    if not 100 <= timeout_ms <= 30_000:
++        raise ValueError("timeout must be between 100 and 30000 milliseconds")
++
++    return CanonicalConfig(
++        endpoint=endpoint,
++        timeout_ms=timeout_ms,
++        enabled=enabled,
++    )
++
++
++def _seconds_to_milliseconds(timeout_seconds):
++    if isinstance(timeout_seconds, bool) or not isinstance(
++        timeout_seconds, (int, float)
++    ):
++        raise ValueError("timeout_seconds must be a number")
++    if isinstance(timeout_seconds, float) and not math.isfinite(timeout_seconds):
++        raise ValueError("timeout_seconds must be finite")
++    if not 0.1 <= timeout_seconds <= 30:
++        raise ValueError("timeout must be between 100 and 30000 milliseconds")
++
++    milliseconds = timeout_seconds * 1000
++    if isinstance(milliseconds, float) and not milliseconds.is_integer():
++        raise ValueError("timeout_seconds must resolve to whole milliseconds")
++    return int(milliseconds)
++
++
++def _validate_endpoint(endpoint):
++    if not isinstance(endpoint, str):
++        raise ValueError("endpoint must be a string")
++    if any(character.isspace() for character in endpoint):
++        raise ValueError("endpoint must be an https URL")
++
++    try:
++        parsed = urlsplit(endpoint)
++        hostname = parsed.hostname
++        parsed.port
++    except ValueError as exc:
++        raise ValueError("endpoint must be an https URL") from exc
++
++    if parsed.scheme.lower() != "https" or not parsed.netloc or hostname is None:
++        raise ValueError("endpoint must be an https URL")

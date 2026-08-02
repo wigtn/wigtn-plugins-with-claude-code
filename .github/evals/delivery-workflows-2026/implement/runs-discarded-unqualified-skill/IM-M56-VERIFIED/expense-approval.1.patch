@@ -1,0 +1,121 @@
+diff --git a/expense/repository.py b/expense/repository.py
+index 63be58c..b136251 100644
+--- a/expense/repository.py
++++ b/expense/repository.py
+@@ -1,5 +1,9 @@
++from threading import RLock
++
++
+ class Repository:
+     def __init__(self):
+         self.expenses = {}
+         self.idempotency = {}
+         self.audit = []
++        self.lock = RLock()
+diff --git a/expense/service.py b/expense/service.py
+index 9cb4658..d40dee4 100644
+--- a/expense/service.py
++++ b/expense/service.py
+@@ -1,11 +1,100 @@
++from uuid import uuid4
++
++from .domain import Expense
+ from .repository import Repository
+ 
++
+ class ExpenseService:
+     def __init__(self, repository: Repository):
+         self.repository = repository
+ 
+     def submit(self, owner_id, team_id, amount, idempotency_key):
+-        raise NotImplementedError
++        try:
++            is_positive = not isinstance(amount, bool) and amount > 0
++        except TypeError:
++            is_positive = False
++        if not is_positive:
++            raise ValueError("amount must be positive")
++
++        idempotency_id = (owner_id, idempotency_key)
++        payload = (team_id, amount)
++
++        with self.repository.lock:
++            previous = self.repository.idempotency.get(idempotency_id)
++            if previous is not None:
++                previous_payload, expense_id = previous
++                if previous_payload != payload:
++                    raise ValueError(
++                        "idempotency key was already used with a different payload"
++                    )
++                return self.repository.expenses[expense_id]
++
++            expense = Expense(
++                id=str(uuid4()),
++                owner_id=owner_id,
++                team_id=team_id,
++                amount=amount,
++            )
++            self.repository.expenses[expense.id] = expense
++            self.repository.idempotency[idempotency_id] = (payload, expense.id)
++            self.repository.audit.append(
++                {
++                    "actor": owner_id,
++                    "action": "SUBMIT",
++                    "before": None,
++                    "after": "PENDING",
++                }
++            )
++            return expense
+ 
+     def decide(self, actor_id, actor_team, expense_id, action, reason=None):
+-        raise NotImplementedError
++        if not isinstance(action, str):
++            raise ValueError("action must be APPROVE or REJECT")
++
++        normalized_action = action.strip().upper()
++        target_statuses = {"APPROVE": "APPROVED", "REJECT": "REJECTED"}
++        if normalized_action not in target_statuses:
++            raise ValueError("action must be APPROVE or REJECT")
++        if normalized_action == "REJECT" and (
++            not isinstance(reason, str) or not reason.strip()
++        ):
++            raise ValueError("a non-empty reason is required when rejecting")
++
++        with self.repository.lock:
++            expense = self.repository.expenses.get(expense_id)
++            if expense is None:
++                raise KeyError(expense_id)
++
++            if not self._is_manager(actor_id):
++                raise PermissionError("only a manager may decide an expense")
++            if actor_team != expense.team_id:
++                raise PermissionError("a manager may only decide expenses for their team")
++            if actor_id == expense.owner_id:
++                raise PermissionError("an owner may not decide their own expense")
++
++            target_status = target_statuses[normalized_action]
++            target_reason = reason if normalized_action == "REJECT" else None
++
++            if expense.status != "PENDING":
++                if expense.status == target_status and expense.reason == target_reason:
++                    return expense
++                raise ValueError("expense has already been decided")
++
++            before = expense.status
++            expense.status = target_status
++            expense.reason = target_reason
++            self.repository.audit.append(
++                {
++                    "actor": actor_id,
++                    "action": normalized_action,
++                    "before": before,
++                    "after": target_status,
++                }
++            )
++            return expense
++
++    @staticmethod
++    def _is_manager(actor_id):
++        # The public API carries no separate role argument. Existing callers encode
++        # manager identities with the "m"/"manager" prefix (for example, "m1").
++        return isinstance(actor_id, str) and actor_id.lower().startswith("m")

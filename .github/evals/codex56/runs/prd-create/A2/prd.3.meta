@@ -1,0 +1,7 @@
+arm=A2
+model=gpt-5.6-sol
+reasoning_effort=high
+started_epoch=1785079320
+finished_epoch=1785079598
+duration_seconds=278
+exit_code=0

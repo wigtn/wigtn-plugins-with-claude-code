@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Acceptance Verifier"
+  short_description: "Map requirements to code and test evidence"
+  default_prompt: "Use $acceptance-verifier to verify this implementation against its requirements."
+policy:
+  allow_implicit_invocation: true

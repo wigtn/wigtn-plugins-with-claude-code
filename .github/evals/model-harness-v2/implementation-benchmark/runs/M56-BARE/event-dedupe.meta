@@ -1,0 +1,7 @@
+arm=M56-BARE
+task=event-dedupe
+model_exit=0
+test_exit=0
+test_integrity=intact
+duration_seconds=37
+wigtn_skill_loaded=no

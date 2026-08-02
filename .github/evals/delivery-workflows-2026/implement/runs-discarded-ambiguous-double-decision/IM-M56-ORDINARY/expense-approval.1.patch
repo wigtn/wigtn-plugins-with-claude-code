@@ -1,0 +1,117 @@
+diff --git a/expense/repository.py b/expense/repository.py
+index 63be58c..9a57cf7 100644
+--- a/expense/repository.py
++++ b/expense/repository.py
+@@ -1,5 +1,10 @@
++from threading import RLock
++
++
+ class Repository:
+     def __init__(self):
+         self.expenses = {}
+         self.idempotency = {}
+         self.audit = []
++        # Service operations update several collections as one logical operation.
++        self.lock = RLock()
+diff --git a/expense/service.py b/expense/service.py
+index 9cb4658..94f7ecf 100644
+--- a/expense/service.py
++++ b/expense/service.py
+@@ -1,11 +1,95 @@
++from uuid import uuid4
++
++from .domain import Expense
+ from .repository import Repository
+ 
++
+ class ExpenseService:
+     def __init__(self, repository: Repository):
+         self.repository = repository
+ 
+     def submit(self, owner_id, team_id, amount, idempotency_key):
+-        raise NotImplementedError
++        try:
++            is_positive = not isinstance(amount, bool) and amount > 0
++        except TypeError:
++            is_positive = False
++        if not is_positive:
++            raise ValueError("amount must be positive")
++
++        key = (owner_id, idempotency_key)
++        payload = (team_id, amount)
++
++        with self.repository.lock:
++            previous = self.repository.idempotency.get(key)
++            if previous is not None:
++                previous_payload, expense_id = previous
++                if previous_payload != payload:
++                    raise ValueError(
++                        "idempotency key was already used with a different payload"
++                    )
++                return self.repository.expenses[expense_id]
++
++            expense = Expense(
++                id=str(uuid4()),
++                owner_id=owner_id,
++                team_id=team_id,
++                amount=amount,
++            )
++            self.repository.expenses[expense.id] = expense
++            self.repository.idempotency[key] = (payload, expense.id)
++            self.repository.audit.append(
++                {
++                    "actor": owner_id,
++                    "action": "SUBMIT",
++                    "before": None,
++                    "after": "PENDING",
++                }
++            )
++            return expense
+ 
+     def decide(self, actor_id, actor_team, expense_id, action, reason=None):
+-        raise NotImplementedError
++        if action not in ("APPROVE", "REJECT"):
++            raise ValueError("action must be APPROVE or REJECT")
++        if action == "REJECT" and (
++            not isinstance(reason, str) or not reason.strip()
++        ):
++            raise ValueError("a non-empty reason is required to reject an expense")
++
++        with self.repository.lock:
++            try:
++                expense = self.repository.expenses[expense_id]
++            except KeyError:
++                raise KeyError(f"unknown expense: {expense_id}") from None
++
++            if actor_team != expense.team_id:
++                raise PermissionError("only a manager from the same team may decide")
++            if not self._is_manager(actor_id):
++                raise PermissionError("only a manager may decide an expense")
++            if actor_id == expense.owner_id:
++                raise PermissionError("an owner cannot decide their own expense")
++
++            target_status = "APPROVED" if action == "APPROVE" else "REJECTED"
++            if expense.status != "PENDING":
++                if expense.status == target_status and expense.reason == (
++                    reason if action == "REJECT" else None
++                ):
++                    return expense
++                raise ValueError("expense has already been decided")
++
++            before = expense.status
++            expense.status = target_status
++            expense.reason = reason if action == "REJECT" else None
++            self.repository.audit.append(
++                {
++                    "actor": actor_id,
++                    "action": action,
++                    "before": before,
++                    "after": target_status,
++                }
++            )
++            return expense
++
++    @staticmethod
++    def _is_manager(actor_id):
++        """Use the repository fixture's public manager-id convention."""
++        return isinstance(actor_id, str) and actor_id.lower().startswith("m")

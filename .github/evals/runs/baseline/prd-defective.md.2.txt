@@ -1,0 +1,254 @@
+# PRD Analysis Report
+
+## 분석 대상
+- **문서**: `.github/evals/fixtures/prd-defective.md`
+- **제목**: 사내 문서 공유 (defective fixture)
+- **분석일**: 2026-07-26
+- **Type 판정**: 헤더에 `Type: feature`로만 표기 — 규정상 모호 → **strict = `product-feature`**로 처리 (auth / rate-limiting / 개인정보 Critical 기준 정상 발화)
+- **Scale Grade**: Startup
+- **모드**: 순차 (섹션 6개 · FR 7개 → 병렬 임계 미달). 순차여도 4개 렌즈(Completeness / Feasibility / Security / Consistency) + Phase 2.5 Completeness Critic 전부 적용
+
+## 요약
+
+| 카테고리 | 발견 | Critical | Major | Minor |
+|----------|------|----------|-------|-------|
+| 완전성 (Completeness) | 8 | 3 | 3 | 2 |
+| 실현가능성 (Feasibility) | 6 | 1 | 3 | 2 |
+| 보안 (Security) | 4 | 3 | 1 | 0 |
+| 일관성 (Consistency) | 5 | 1 | 3 | 1 |
+| **총계** | **23** | **8** | **10** | **5** |
+
+## Quality Gate 판정
+
+**❌ BLOCKED — Critical 8건**
+
+`/screen-spec` · `/implement` 진행 불가. 특히 F1·F2는 `/screen-spec`의 **필수 입력** 누락이라 다음 단계에서 즉시 막히고, F3는 "인증이 필요하다 / 필요 없다"가 같은 P0 요구사항 안에서 충돌해 구현자가 결정을 내릴 수 없는 상태다.
+
+## 외부 근거 검증 (Phase 1.5 — 실행함)
+
+게이팅 통과: 외부 의존 주장 존재(Next.js 16, S3 호환 스토리지) **AND** Scale Grade Startup(≥ Startup) **AND** 3rd-party 연동 1건(S3). 주장 3건 추출 → 검증.
+
+| Claim (PRD 섹션) | Verdict | Source |
+|------------------|---------|--------|
+| Next.js 16 (App Router)가 실재하는 안정 버전 (§5.1) | **confirmed** | nextjs.org/blog/next-16 (16.2.x 안정, App Router stable) |
+| `POST /api/documents` 라우트 핸들러로 최대 50MB 파일 업로드 (FR-001 · §5.2) | **contradicted** (3표 적대 재검증 후 2/3 유지) | vercel.com/docs/functions/limitations (요청 본문 4.5MB 상한, 초과 시 413 FUNCTION_PAYLOAD_TOO_LARGE) · nextjs.org discussion #70621 (App Router 라우트 핸들러는 bodySizeLimit 설정 불가) |
+| S3 호환 스토리지 사용 (§5.1) | unverifiable (구체 벤더·SDK 미지정이라 검증 대상이 성립하지 않음) | — |
+
+→ contradicted 1건은 **F8(Critical)**의 씨앗으로 편입. 업계 표준 대응(presigned URL 직업로드)도 PRD에 없다.
+
+## Scale Grade ↔ 스택 정합성
+
+Startup 등급 대비 `Next.js 16 / PostgreSQL / S3` 는 정합(Over/Under-Spec 2단계 괴리 없음). 이 축에서는 Critical 없음. 다만 Startup 등급이면 통상 요구되는 SLO·백업·감사로그가 §4에 전무한 것은 별도 지적(F14 · F11).
+
+---
+
+## 상세 분석
+
+### Critical (즉시 수정 필요)
+
+#### C-1 (F1). §5.4.1 Page State Matrix 누락 — FE 페이지 3개 존재
+- **위치**: §5.4 Pages
+- **문제**: `Has FE Components: Yes` 페이지가 `/documents`, `/documents/[id]`, `/s/[token]` 3개인데 §5.4.1 Page State Matrix 섹션이 아예 없다.
+- **영향**: `/screen-spec`의 필수 입력이 비어 파이프라인이 그 자리에서 멈춘다. 각 화면의 loading / empty / error / permission-denied / 만료 상태가 정의되지 않아 구현자가 임의로 채우게 되고, 특히 `/s/[token]`의 "만료된 링크" · "삭제된 문서" 상태는 보안 결정과 직결되는데 공백이다.
+- **개선안**: 3개 페이지 × (default / loading / empty / error / unauthorized / expired) 매트릭스를 §5.4.1로 추가. 각 셀에 표시 문구와 다음 액션을 명시.
+
+#### C-2 (F2). §5.5 User Flow Mermaid 누락
+- **위치**: §5.4 다음 (섹션 자체 부재)
+- **문제**: FE 페이지가 있는데 사용자 흐름 다이어그램이 없다. §2.2 AC 두 개(업로드 / 링크 공유)는 해피패스 문장 2줄뿐이고 분기가 전혀 없다.
+- **영향**: `/screen-spec`의 Flow 산출물을 만들 수 없다. 업로드 실패, 용량 초과, 권한 없는 문서 접근, 만료 토큰 진입 등 분기가 설계 단계에서 소실된다.
+- **개선안**: §5.5에 Mermaid flowchart 추가 — member 업로드→공유 발급→guest 열람, admin 삭제, 각 실패 분기 포함.
+
+#### C-3 (F3). FR-003 ↔ FR-007 정면 충돌 — 인증 정책 결정 불가
+- **위치**: §3 FR-003, FR-007
+- **문제**: FR-003은 "공유 링크 수신자는 **로그인 없이** 열람"이고 FR-007은 "**모든 문서 조회 요청은 인증을 거쳐야 한다**"이다. 둘 다 P0이고, 같은 리소스(문서 조회)를 대상으로 정반대를 규정한다.
+- **영향**: 구현 불가능한 요구사항. 어느 쪽으로 짜도 P0 하나를 위반한다. 최악은 구현자가 FR-003만 보고 `/api/documents/{id}` 전체를 무인증 허용하는 것 — 사내 전체 문서가 ID 추측만으로 노출된다(Goal §1.3 "외부 유출 방지" 정면 위배).
+- **개선안**: 조회 경로를 두 개로 분리해 재작성. (a) 인증 필수 경로 `GET /api/documents/{id}` — 세션 + 소유/admin 검사. (b) 토큰 경로 `GET /api/share/{token}` — 무인증이되 토큰이 곧 인가 증표이며 문서 ID를 노출하지 않음. FR-007은 "토큰 경로를 제외한 모든 조회"로 한정.
+
+#### C-4 (F4). 공유 토큰 스펙 전무 (엔트로피·만료·폐기·접근 제한)
+- **위치**: §3 FR-003, §5.2 `POST /api/documents/{id}/share`, §5.4 `/s/[token]`
+- **문제**: 토큰 생성 방식(CSPRNG 여부·길이), 유효기간, 수동 폐기(revoke), 1회용 여부, 열람 횟수/IP 제한, 다운로드 허용 여부가 전부 미정의.
+- **영향**: 순차 ID나 짧은 토큰이면 열거 공격으로 사내 문서 전량 유출. 만료·폐기가 없으면 퇴사자·오전송 링크가 영구히 살아 있다. 제품 목표 §1.3과 정면 충돌하며, 이 PRD에서 가장 큰 단일 유출 경로다.
+- **개선안**: 토큰 ≥128비트 CSPRNG(URL-safe), 기본 TTL(예: 7일) + 생성 시 조정, 소유자/admin 폐기 API, 문서 삭제 시 토큰 연쇄 무효화, 열람 로그(누가·언제·IP) 기록을 FR로 승격.
+
+#### C-5 (F5). 인가(Authorization) 정책 미정의 — Broken Access Control / IDOR
+- **위치**: §3 FR-004, FR-005, §5.2 `DELETE /api/documents/{id}`
+- **문제**: FR-004(본인 문서 삭제)와 FR-005(admin 임의 삭제)가 **동일한 엔드포인트 하나**에 매핑돼 있는데, 역할 판별·소유권 검사 규칙이 어디에도 없다. §2.3 롤 테이블은 권한을 서술만 하고 API 레벨 매핑이 없다.
+- **영향**: 소유권 검사 누락 시 임의 사용자가 남의 문서를 삭제(IDOR)한다. admin 판정 근거(role claim 출처, 위조 방지)도 없어 권한 상승 위험. `GET /api/documents`의 범위(내 문서만 vs 전체)도 미정이라 조회 쪽에도 같은 구멍이 난다.
+- **개선안**: §5.2 표에 엔드포인트별 `필요 롤 / 소유권 조건 / 실패 시 응답(403 vs 404)` 컬럼 추가. 존재 여부 노출을 막으려면 미인가는 404 통일. admin 판정은 서버 측 DB 롤 조회로 고정하고 클라이언트 주장 신뢰 금지를 명시.
+
+#### C-6 (F6). Rate Limiting 미정의
+- **위치**: §4.2 Security, §5.2 전 엔드포인트
+- **문제**: 업로드·공유 링크 생성·**무인증 토큰 열람** 어디에도 요청 제한이 없다.
+- **영향**: `/s/[token]` 무인증 경로에 대한 토큰 브루트포스를 막을 장치가 전무(C-4와 결합 시 실제 유출로 직결). 50MB 업로드 무제한 반복은 스토리지 비용 폭증·DoS. 검색(FR-006)도 무제한이면 DB 부하 증폭.
+- **개선안**: 엔드포인트별 한도 명시 — 업로드 N회/시간·사용자, 공유 생성 N회/시간, `/s/{token}` IP당 분당 한도 + 연속 실패 시 지수 백오프·차단. 위반 시 429 응답 규격 정의.
+
+#### C-7 (F7). Goal "최신본이 항상 명확"에 대응하는 FR 부재 — 핵심 기능 누락
+- **위치**: §1.2 Goals ↔ §3 FR 전체
+- **문제**: 문제 정의(§1.1)와 목표(§1.2) 모두 "최신본 판별"을 핵심 가치로 내세우는데, FR-001~007 어디에도 버전 관리·재업로드·최신본 표시 요구사항이 없다. FR-002는 "업로드 최신순 정렬"일 뿐 동일 문서의 버전 개념이 아니다.
+- **영향**: PRD대로 구현하면 같은 문서의 v1·v2가 별개 항목으로 쌓여, 해결하려던 문제(어느 것이 최신본인지 모름)를 그대로 재현한다. 제품 목표 달성 실패.
+- **개선안**: FR 추가 — 기존 문서에 새 버전 업로드, 최신 버전 뱃지/버전 이력, 공유 링크가 "항상 최신" 또는 "고정 버전" 중 무엇을 가리키는지 명시(공유 시맨틱은 보안에도 영향).
+
+#### C-8 (F8). 50MB 업로드 경로가 플랫폼 본문 한도와 충돌 (외부 근거로 반증됨)
+- **위치**: §3 FR-001, §5.1, §5.2 `POST /api/documents`
+- **문제**: FR-001은 최대 50MB를 서버 라우트 핸들러 `POST /api/documents`로 받는 설계인데, Next.js App Router 라우트 핸들러는 본문 크기 상한을 설정할 수 없고, 서버리스 배포 시 요청 본문 4.5MB 초과는 413(FUNCTION_PAYLOAD_TOO_LARGE)으로 거부된다.
+- **영향**: P0 요구사항이 현재 아키텍처에서 **작동하지 않는다**. Phase 1에서 뒤늦게 발견되면 업로드 경로·프론트 폼·스토리지 연동 전체를 재작업해야 한다.
+- **개선안**: presigned URL 기반 클라이언트 직업로드로 전환 — `POST /api/documents/upload-url`(인증 + 크기·MIME 사전 검증 후 서명 발급) → 브라우저가 S3에 직접 PUT → `POST /api/documents`는 메타데이터만 커밋. 서명 TTL·최대 크기를 서명 정책에 박아 클라이언트 우회 차단. §5.2 표와 FR-001에 이 3단계를 반영.
+
+### Major (구현 전 수정 권장)
+
+#### M-1 (F9). §5.3 결번 — 데이터 모델/스토리지 스키마 섹션 자체가 없음
+- **위치**: §5.2 → §5.4 (5.3 누락)
+- **문제**: documents / share_tokens / users 테이블, S3 키 규칙, 메타데이터 컬럼, 인덱스가 전무. 섹션 번호도 건너뛰어 있어 의도적 삭제인지 누락인지 불명.
+- **개선안**: §5.3 Data Model 추가 — 엔티티·컬럼·제약·인덱스·S3 키 네이밍·DB↔오브젝트 정합 규칙.
+
+#### M-2 (F10). 삭제 시맨틱 미정의 — 데이터 무결성/잔존 노출
+- **위치**: FR-004, FR-005
+- **문제**: soft delete인지 hard delete인지, S3 오브젝트를 함께 지우는지, 발급된 공유 토큰이 무효화되는지, 실패 시 보상 트랜잭션이 있는지 전부 공백.
+- **영향**: DB만 지우면 S3 고아 객체가 남아 비용·유출 잔존. 토큰 무효화가 없으면 **삭제한 문서가 공유 링크로 계속 열람**된다(C-4와 결합 시 심각).
+- **개선안**: soft delete + 즉시 토큰 무효화 + 비동기 오브젝트 정리(보존기간 명시), 부분 실패 시 재시도 큐 규정.
+
+#### M-3 (F12). 업로드 파일 검증이 "확장자 검사"뿐
+- **위치**: §4.2 Security, FR-001
+- **문제**: 확장자는 클라이언트가 자유롭게 위조 가능. MIME/매직바이트 검증, 크기 재검증, 악성코드 스캔, 저장·서빙 시 `Content-Disposition`/`Content-Type` 강제, 별도 도메인 서빙 여부가 없다.
+- **영향**: `.pdf`로 위장한 HTML/SVG가 **무인증 경로 `/s/[token]`** 에서 원본 타입으로 서빙되면 저장형 XSS·피싱 페이지 호스팅이 성립한다.
+- **개선안**: 매직바이트 화이트리스트, 서명 발급 시 Content-Type 고정, 다운로드는 `attachment` 강제, 인라인 미리보기는 sandbox iframe 또는 서버 렌더 이미지로 제한.
+
+#### M-4 (F13). 미리보기 렌더링 방식 미정의 (특히 DOCX)
+- **위치**: §5.4 "문서 상세 — 미리보기"
+- **문제**: PDF는 브라우저 네이티브가 가능하나 DOCX는 불가. 서버 변환(→PDF/이미지)인지 3rd-party 뷰어인지, 변환 지연·실패 시 UX가 없다.
+- **개선안**: 변환 파이프라인(비동기 잡 + 상태 폴링)과 미지원 포맷 폴백(다운로드만) 명시. §5.4.1 상태 매트릭스에 "변환 중 / 변환 실패" 반영.
+
+#### M-5 (F14). NFR이 측정 불가 — SLA/SLO 부재
+- **위치**: §4.1
+- **문제**: "업로드는 사용자가 기다릴 만한 수준"은 검증 불가능한 문장. 동시 사용자 수, p95 응답시간, 목록/검색 지연 목표, 스토리지 총량, 가용성·백업·RPO/RTO가 전부 없다.
+- **개선안**: 구체 수치로 대체 — 예: 10MB 업로드 p95 ≤ 15s, 목록 p95 ≤ 300ms, 동시 100명, 일 백업·RPO 24h.
+
+#### M-6 (F15). FR-002 목록 요구사항 불완전
+- **위치**: FR-002
+- **문제**: 페이지네이션/무한스크롤 여부, 페이지 크기, 정렬 변경 가능 여부, **조회 범위(내 문서만인지 전사 공개인지)**, 빈 상태가 없다. 범위 미정은 그대로 권한 결함이 된다.
+- **개선안**: `GET /api/documents`에 커서 페이지네이션·기본 정렬·필수 필터(owner scope) 명시.
+
+#### M-7 (F11). 개인정보·감사로그·보존정책 미고려
+- **위치**: §4.2, §2.3 admin
+- **문제**: admin이 전 구성원 문서를 열람 가능한데 접근 감사로그가 없다. 문서 보존기간, 퇴사자 문서 처리, 업로더 식별정보 취급, 국내 개인정보보호법/GDPR 대응 언급이 전무.
+- **개선안**: 조회·삭제·공유 발급/열람 감사로그(주체·대상·시각·IP), 보존기간과 파기 절차, 퇴사자 계정 처리 규정을 §4에 추가.
+
+#### M-8 (F16). §2.3 admin "전체 문서 조회" 권한이 FR·API 어디에도 없음
+- **위치**: §2.3 ↔ §3 ↔ §5.2
+- **문제**: 롤 테이블만 권한을 선언하고 대응 FR도, 조회 범위 파라미터도 없다.
+- **개선안**: admin 전체 조회 FR 신설 + `GET /api/documents?scope=all`(admin 전용) 정의, 또는 §2.3에서 해당 권한 삭제.
+
+#### M-9 (F17). `guest` 롤이 FR-007·§2.2와 불일치
+- **위치**: §2.3 `guest` ↔ FR-007 ↔ §2.2 AC
+- **문제**: 롤 테이블은 guest의 무인증 열람을 전제하는데 FR-007은 전면 인증을 요구한다. §2.2 "링크 공유" 시나리오에도 인증 조건·만료 조건이 없어 세 곳의 서술이 서로 어긋난다.
+- **개선안**: C-3 해소안(경로 분리)에 맞춰 §2.3 guest 권한 범위를 "유효한 토큰 보유 시 해당 문서 1건 열람"으로 좁히고, §2.2 AC에 만료·폐기 시나리오 추가.
+
+#### M-10 (F19). `/s/[token]` 화면에 대응하는 API가 §5.2에 없음
+- **위치**: §5.4 `/s/[token]` ↔ §5.2 API 표
+- **문제**: 공유 링크 **생성** API만 있고 **토큰으로 조회**하는 API가 없다. 구현자가 `GET /api/documents/{id}`를 무인증 허용하는 최악의 우회를 택할 여지를 만든다.
+- **개선안**: `GET /api/share/{token}` (+ 필요 시 다운로드 URL 발급)을 §5.2에 추가하고, 문서 ID를 응답에 노출하지 않도록 규정.
+
+### Minor (개선 제안)
+
+#### m-1 (F18). FR-006 제목 부분 일치 검색의 확장성
+`LIKE '%q%'`는 B-tree 인덱스를 못 쓴다. 문서 수 증가 시 풀스캔. `pg_trgm` GIN 인덱스 또는 tsvector FTS를 §5.3에서 지정할 것. 검색 범위(본인 문서만 vs 전체)도 M-6과 같은 이유로 명시 필요.
+
+#### m-2 (F23). 거부 케이스 UX/에러 카피 미정의
+50MB 초과, PDF/DOCX 외 확장자, 업로드 중 네트워크 단절 시 사용자에게 무엇을 보여줄지 없음. §5.4.1과 함께 마이크로카피 정의 권장.
+
+#### m-3 (F20). §6 Phase ↔ FR 매핑 부재
+Phase 1~3에 FR ID가 붙어 있지 않고, P0인 FR-007(인증)이 어느 Phase에도 없다. 인증·인가는 Phase 1의 전제로 명시할 것.
+
+#### m-4 (F22). Non-Goals가 범위 경계를 못 그음
+"실시간 공동 편집 / 오프라인 동기화"만 배제. 버전 관리(C-7 관련)·권한 세분화·외부 게스트 계정·문서 코멘트 등 논쟁 여지가 큰 항목의 포함/배제가 불명확.
+
+#### m-5 (F24). 운영 측면 공백 (Completeness Critic 산출)
+4개 렌즈 어디에도 걸리지 않은 사각지대: 롤백 전략, 기존 이메일/메신저 문서의 초기 마이그레이션, 스토리지 비용 증가 추정, 접근성(a11y — 업로드 컨트롤·미리보기 대체 텍스트), 모니터링/알림. 최소한 §4에 한 줄씩이라도 입장 표명 필요.
+
+---
+
+## 누락된 요구사항
+
+| ID | 요구사항 | 권장 우선순위 |
+|----|---------|--------------|
+| FR-008 | 기존 문서에 새 버전 업로드 및 버전 이력 조회 (최신본 명시) | P0 |
+| FR-009 | 공유 링크 만료(기본 TTL) 및 소유자/admin의 수동 폐기 | P0 |
+| FR-010 | presigned URL 발급 → 클라이언트 직업로드 → 메타데이터 커밋 3단계 업로드 | P0 |
+| FR-011 | 엔드포인트별 Rate Limiting (특히 무인증 `/s/{token}`) | P0 |
+| FR-012 | 문서 삭제 시 공유 토큰 무효화 + 스토리지 객체 정리 | P0 |
+| FR-013 | 접근·공유·삭제 감사로그 기록 및 admin 조회 | P1 |
+| FR-014 | 목록/검색 커서 페이지네이션 및 owner scope 필터 | P1 |
+| FR-015 | 업로드 파일 매직바이트 검증 + 서빙 시 Content-Disposition 강제 | P1 |
+| FR-016 | DOCX 미리보기 변환 파이프라인 및 변환 실패 폴백 | P2 |
+
+## 리스크 매트릭스
+
+| 리스크 | 발생 확률 | 영향도 | 대응 방안 |
+|--------|-----------|--------|-----------|
+| 공유 토큰 열거로 사내 문서 대량 유출 | 높음 | 치명적 | C-4 + C-6: 128비트 토큰, TTL, IP 레이트리밋, 열람 로그 |
+| FR-003/007 충돌을 구현자가 "무인증 허용"으로 해석 | 높음 | 치명적 | C-3: 조회 경로 이원화를 PRD에 명문화 |
+| 50MB 업로드가 배포 환경에서 413으로 전량 실패 | 매우 높음 | 높음 | C-8: presigned URL 직업로드로 설계 변경 |
+| 소유권 검사 누락으로 타인 문서 삭제(IDOR) | 중간 | 높음 | C-5: 엔드포인트별 롤·소유권 표 작성, 미인가 404 통일 |
+| 삭제된 문서가 링크로 계속 열람 | 중간 | 높음 | M-2: 삭제 시 토큰 연쇄 무효화 |
+| 위장 파일 업로드로 저장형 XSS | 중간 | 중간 | M-3: 매직바이트 검증 + attachment 서빙 |
+| 버전 관리 부재로 제품 목표 미달성 | 높음 | 중간 | C-7: 버전 FR 신설 |
+| 검색 성능 저하 | 낮음 | 낮음 | m-1: pg_trgm / FTS 인덱스 |
+
+## 권장 조치
+
+### 즉시 조치 (Critical 8건 — 이거 다 닫아야 게이트 통과)
+1. C-3: FR-003/FR-007 충돌 해소 — 인증 경로와 토큰 경로 분리 재작성
+2. C-4: 공유 토큰 스펙(엔트로피·TTL·폐기·로그) FR로 승격
+3. C-5: §5.2 API 표에 롤·소유권·실패 응답 컬럼 추가
+4. C-6: 엔드포인트별 Rate Limiting 정의
+5. C-8: 업로드를 presigned URL 3단계로 재설계
+6. C-7: 버전 관리 FR 추가
+7. C-1: §5.4.1 Page State Matrix 작성 (3페이지 × 6상태)
+8. C-2: §5.5 User Flow Mermaid 작성 (실패 분기 포함)
+
+### 구현 전 조치 (Major 10건)
+§5.3 데이터 모델 신설, 삭제 시맨틱, 파일 검증, 미리보기 파이프라인, 측정 가능한 NFR, 목록 페이지네이션·scope, 감사로그/보존정책, admin 조회 FR, guest 롤 정합, `GET /api/share/{token}` 추가.
+
+### 가능하면 조치 (Minor 5건)
+검색 인덱스 전략, 에러 마이크로카피, Phase↔FR 매핑, Non-Goals 보강, 운영(롤백·마이그레이션·비용·a11y·모니터링).
+
+---
+
+## 다음 단계 (PRD 통과 후)
+
+§5.4에 `Has FE Components: Yes` 페이지가 3개이므로 화면정의서 단계가 필요하다.
+
+- Critical 8건 수정 → 재리뷰 → PASS 시 `/screen-spec 사내-문서-공유` (IA/Flow/Spec/Wireframe/Handoff 5종 생성)
+- 그 다음 `/implement`
+
+❌ **현재 상태로는 `/screen-spec`·`/implement` 진행 불가.** 위 즉시 조치 8건을 반영한 뒤 재리뷰하세요.
+
+---
+
+```json
+[
+  {"id":"F1","category":"Completeness","severity":"critical","prd_section":"§5.4.1","description":"FE 페이지 3개(/documents, /documents/[id], /s/[token])가 있는데 Page State Matrix 섹션이 존재하지 않음","reason":"§5.4.1은 /screen-spec의 필수 입력이라 누락 시 파이프라인이 정지하고, loading/empty/error/expired 상태가 구현자 임의로 채워진다"},
+  {"id":"F2","category":"Completeness","severity":"critical","prd_section":"§5.5","description":"FE 페이지가 존재하는데 User Flow Mermaid 다이어그램 섹션이 없음","reason":"§5.5는 /screen-spec의 필수 입력이며, 업로드 실패·권한 없음·만료 토큰 등 분기 흐름이 설계 단계에서 소실된다"},
+  {"id":"F3","category":"Consistency","severity":"critical","prd_section":"§3 FR-003, FR-007","description":"FR-003은 공유 링크 수신자의 무인증 열람을 P0로 규정하고 FR-007은 모든 문서 조회에 인증을 P0로 요구해 정면 충돌","reason":"두 P0 요구사항이 동일 리소스에 정반대를 규정해 구현 불가능하며, 구현자가 FR-003 기준으로 조회 API 전체를 무인증 허용하면 사내 문서가 ID 추측으로 노출된다"},
+  {"id":"F4","category":"Security","severity":"critical","prd_section":"§3 FR-003, §5.2, §5.4","description":"공유 토큰의 엔트로피·생성 방식·만료·수동 폐기·열람 제한·로깅이 전혀 정의되지 않음","reason":"무인증 공개 경로의 유일한 인가 수단인데 스펙이 없어 토큰 열거로 전량 유출이 가능하고, 만료·폐기 부재로 오전송·퇴사자 링크가 영구 유효해 Goal §1.3(외부 유출 방지)과 정면 충돌한다"},
+  {"id":"F5","category":"Security","severity":"critical","prd_section":"§3 FR-004, FR-005, §5.2","description":"본인 삭제와 admin 삭제가 동일 엔드포인트 DELETE /api/documents/{id}에 매핑됐는데 롤 판별·소유권 검사·실패 응답 규칙이 미정의","reason":"Broken Access Control/IDOR로 타인 문서 삭제가 가능하고, admin 판정 근거가 없어 권한 상승 위험이 있으며 GET 계열의 조회 범위도 함께 미정이다"},
+  {"id":"F6","category":"Security","severity":"critical","prd_section":"§4.2, §5.2","description":"업로드·공유 생성·무인증 토큰 열람 등 전 엔드포인트에 Rate Limiting 정의가 없음","reason":"무인증 /s/[token] 경로의 토큰 브루트포스를 막을 장치가 없어 F4와 결합 시 실제 유출로 직결되고, 50MB 업로드 무제한 반복은 비용 폭증·DoS를 유발한다"},
+  {"id":"F7","category":"Completeness","severity":"critical","prd_section":"§1.2 ↔ §3","description":"핵심 목표인 '최신본 판별'에 대응하는 버전 관리·재업로드·최신본 표시 요구사항이 FR에 전혀 없음","reason":"PRD대로 구현하면 동일 문서의 v1·v2가 별개 항목으로 쌓여 해결하려던 문제를 그대로 재현하므로 핵심 기능 누락에 해당한다"},
+  {"id":"F8","category":"Feasibility","severity":"critical","prd_section":"§3 FR-001, §5.1, §5.2","description":"최대 50MB 파일을 POST /api/documents 라우트 핸들러로 직접 수신하는 설계가 플랫폼 본문 크기 한도와 충돌","reason":"외부 근거로 반증됨 — Next.js App Router 라우트 핸들러는 bodySizeLimit 설정이 불가하고 서버리스 배포 시 요청 본문 4.5MB 초과는 413 FUNCTION_PAYLOAD_TOO_LARGE로 거부되어 P0 요구사항이 작동하지 않는다"},
+  {"id":"F9","category":"Completeness","severity":"major","prd_section":"§5.3 (결번)","description":"데이터 모델/스토리지 스키마 섹션이 통째로 누락되어 섹션 번호가 5.2에서 5.4로 건너뜀","reason":"documents/share_tokens 테이블, S3 키 규칙, 인덱스가 없어 DB와 오브젝트 스토리지 간 정합 규칙을 구현자가 임의 결정하게 된다"},
+  {"id":"F10","category":"Feasibility","severity":"major","prd_section":"§3 FR-004, FR-005","description":"삭제가 soft/hard인지, S3 객체와 공유 토큰이 함께 정리되는지, 부분 실패 보상 처리가 있는지 미정의","reason":"DB만 삭제하면 고아 객체가 남아 비용·유출이 잔존하고, 토큰 무효화가 없으면 삭제된 문서가 공유 링크로 계속 열람되는 데이터 무결성 결함이 생긴다"},
+  {"id":"F11","category":"Security","severity":"major","prd_section":"§4.2, §2.3","description":"감사로그·보존기간·퇴사자 문서 처리·개인정보 규제 대응이 전혀 언급되지 않음","reason":"admin이 전 구성원 문서를 열람할 수 있는데 접근 기록이 남지 않아 오남용 추적이 불가능하고, 사내 문서의 개인정보 취급·파기 근거가 없다"},
+  {"id":"F12","category":"Feasibility","severity":"major","prd_section":"§4.2, §3 FR-001","description":"업로드 검증이 확장자 검사뿐이며 MIME/매직바이트 검증, 악성코드 스캔, 서빙 시 Content-Disposition·Content-Type 강제가 없음","reason":"확장자는 위조가 자유로워 .pdf로 위장한 HTML/SVG가 무인증 경로 /s/[token]에서 원본 타입으로 서빙되면 저장형 XSS·피싱 호스팅이 성립한다"},
+  {"id":"F13","category":"Feasibility","severity":"major","prd_section":"§5.4","description":"문서 상세의 미리보기 렌더링 방식이 미정의이며 특히 DOCX는 브라우저 네이티브 렌더링이 불가","reason":"서버 변환인지 3rd-party 뷰어인지 결정되지 않아 구현 난이도·비용 추정이 불가능하고 변환 지연·실패 시 UX가 정의되지 않았다"},
+  {"id":"F14","category":"Completeness","severity":"major","prd_section":"§4.1","description":"성능 요구가 '사용자가 기다릴 만한 수준'이라는 측정 불가능한 문장뿐이고 SLA/SLO·동시성·백업·RPO/RTO가 없음","reason":"검증 기준이 없어 완료 판정이 불가능하고 Startup 등급에서 통상 요구되는 가용성·백업 목표가 설계에 반영되지 않는다"},
+  {"id":"F15","category":"Completeness","severity":"major","prd_section":"§3 FR-002","description":"목록 요구사항에 페이지네이션·페이지 크기·정렬 변경·조회 범위(내 문서 vs 전체)·빈 상태가 없음","reason":"조회 범위 미정은 그 자체로 권한 결함이 되고, 페이지네이션 부재는 문서 증가 시 목록 API가 전량 반환으로 성능 붕괴를 일으킨다"},
+  {"id":"F16","category":"Consistency","severity":"major","prd_section":"§2.3 ↔ §3 ↔ §5.2","description":"§2.3 롤 테이블의 admin '전체 문서 조회' 권한에 대응하는 FR과 API 파라미터가 어디에도 없음","reason":"권한 선언과 기능 명세가 어긋나 admin 전체 조회가 구현되지 않거나 조회 범위 없이 임의 구현될 여지가 있다"},
+  {"id":"F17","category":"Consistency","severity":"major","prd_section":"§2.3 ↔ FR-007 ↔ §2.2","description":"guest 롤은 무인증 링크 열람을 전제하는데 FR-007은 전면 인증을 요구하고 §2.2 AC에는 인증·만료 조건이 없음","reason":"롤 테이블·요구사항·수락 기준 세 곳의 서술이 서로 어긋나 guest의 실제 권한 경계를 확정할 수 없다"},
+  {"id":"F18","category":"Feasibility","severity":"minor","prd_section":"§3 FR-006","description":"제목 부분 일치 검색의 구현 방식(LIKE 와일드카드 vs pg_trgm/FTS)과 인덱스 전략이 미정의","reason":"선행 와일드카드 LIKE는 B-tree 인덱스를 사용할 수 없어 문서 증가 시 풀스캔으로 성능이 저하된다"},
+  {"id":"F19","category":"Consistency","severity":"major","prd_section":"§5.2 ↔ §5.4","description":"§5.4에 /s/[token] 열람 화면이 있으나 §5.2 API 표에는 공유 링크 생성만 있고 토큰으로 조회하는 엔드포인트가 없음","reason":"화면과 API 명세가 어긋나 구현자가 GET /api/documents/{id}를 무인증 허용하는 최악의 우회를 택할 여지를 만든다"},
+  {"id":"F20","category":"Completeness","severity":"minor","prd_section":"§6","description":"Implementation Phase에 FR ID 매핑이 없고 P0인 FR-007(인증)이 어느 Phase에도 배치되지 않음","reason":"인증·인가가 어느 단계의 전제인지 불명확해 Phase 1이 무인증 상태로 구현될 수 있다"},
+  {"id":"F22","category":"Consistency","severity":"minor","prd_section":"§1.3","description":"Non-Goals가 실시간 공동 편집·오프라인 동기화만 배제하고 버전 관리·권한 세분화·외부 게스트 계정·코멘트 등의 포함 여부가 불명확","reason":"범위 경계가 흐려 Goals(최신본 명확)와 Non-Goals 사이에 해석 충돌이 남는다"},
+  {"id":"F23","category":"Feasibility","severity":"minor","prd_section":"§3 FR-001, §5.4","description":"50MB 초과·미지원 확장자·업로드 중 네트워크 단절 등 거부 케이스의 사용자 피드백과 에러 카피가 정의되지 않음","reason":"실패 경로 UX가 없어 구현자마다 처리가 달라지고 F1의 상태 매트릭스와도 연결되지 않는다"},
+  {"id":"F24","category":"Completeness","severity":"minor","prd_section":"§4, §6","description":"롤백 전략, 기존 이메일/메신저 문서의 초기 마이그레이션, 스토리지 비용 증가 추정, 접근성, 모니터링/알림이 전혀 다뤄지지 않음","reason":"Completeness Critic 패스에서 4개 렌즈 모두의 사각지대로 확인된 운영 항목으로, 출시 후 대응 비용이 커진다"}
+]
+```

@@ -1,0 +1,5 @@
+judge=J55
+model=gpt-5.5
+fixture_repeat=create-ui-internal.2
+duration_seconds=19
+exit_code=0

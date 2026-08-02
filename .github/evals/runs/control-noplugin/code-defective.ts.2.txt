@@ -1,0 +1,144 @@
+# Code Review — .github/evals/fixtures/code-defective.ts
+
+문서 공유 API 핸들러. 4개의 export 핸들러(search / list / delete / createShareLink)와 자체 구현 `sign()` 유틸로 구성.
+전반적으로 **인증·인가 계층이 전혀 없고**, SQL 인젝션과 위조 가능한 "서명" 토큰이 동시에 존재해 프로덕션 배포 불가 상태.
+
+요약: critical 6건, major 6건, minor 7건.
+
+---
+
+## Critical
+
+### F1 — SQL 인젝션 (line 11-17)
+`q` 는 `url.searchParams.get("q")` 로 받은 **사용자 완전 제어 문자열**인데, 템플릿 리터럴로 raw SQL 에 직접 삽입된다.
+
+```ts
+WHERE title LIKE '%${q}%'
+```
+
+`?q=%' UNION SELECT id, password_hash, email, created_at FROM users --` 같은 입력으로 임의 테이블 덤프가 가능하다.
+같은 파일 line 30 / 40 / 45 에서는 이미 `?` 플레이스홀더를 쓰고 있어, **이 한 곳만 일관성이 깨진 것**이라 실수일 가능성이 높다. 즉시 파라미터 바인딩으로 전환해야 한다.
+
+수정:
+```ts
+const rows = await db.raw(
+  `SELECT id, title, owner_id, created_at
+     FROM documents
+    WHERE owner_id = ? AND title LIKE ?
+    ORDER BY created_at DESC
+    LIMIT 50`,
+  [userId, `%${escapeLike(q)}%`]
+);
+```
+
+### F2 — 소스코드에 프로덕션 시크릿 하드코딩 (line 5)
+```ts
+const SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d";
+```
+변수명에 `prod` 까지 박혀 있다. VCS 히스토리에 영구 기록되며, 저장소 접근 권한이 있는 모든 사람 = 모든 공유 링크 위조 가능.
+`process.env.SHARE_TOKEN_SECRET` 로 옮기고, 부팅 시 존재 검증(없으면 throw), 그리고 **이미 커밋된 이 값은 폐기(rotate)** 해야 한다. 코드에서 지우는 것만으로는 히스토리에 남아 무효화되지 않는다.
+
+### F3 — `sign()` 은 서명이 아니다. 토큰 위조 + 시크릿 유출 (line 56-58)
+```ts
+function sign(payload: object, secret: string): string {
+  return Buffer.from(JSON.stringify(payload) + secret).toString("base64url");
+}
+```
+base64url 은 인코딩이지 암호가 아니다. 두 가지 치명적 결과:
+1. **시크릿 유출** — 공유 링크를 한 번이라도 받은 사람은 토큰을 base64 디코드해 뒤에 붙은 `SHARE_TOKEN_SECRET` 평문을 그대로 읽는다.
+2. **임의 위조** — 시크릿을 얻은 뒤에는 아무 `documentId` 로나 유효 토큰을 만들 수 있다. 즉 공유 링크 하나 = 전체 문서 저장소 열람 권한.
+
+함수명이 `sign` 이라 호출부에서는 안전해 보이는 것이 특히 위험하다. HMAC-SHA256(`crypto.createHmac`) 또는 검증된 JWT 라이브러리로 교체하고, 비교는 `crypto.timingSafeEqual` 로 해야 한다.
+
+### F4 — `verify` 경로 부재: 발급만 하고 검증 로직이 없음 (line 50-54)
+토큰을 발급하는 코드는 있는데 대응하는 검증 함수가 이 모듈 어디에도 없다. `exp` 를 payload 에 넣지만 **아무도 읽지 않으므로 만료가 강제되지 않는다** — 발급된 링크는 사실상 영구 유효. 서명/만료 검증기를 함께 구현하고, 폐기(revocation) 목록도 고려해야 한다.
+
+### F5 — `deleteDocument` 인가 검사 전무 (line 39-48)
+`params.id` 만으로 즉시 S3 객체 + DB 행을 삭제한다. 호출자가 누구인지, 그 문서의 소유자인지 확인하는 코드가 없다. ID 만 알면(또는 순차 ID 면 열거해서) **타인의 문서를 무단 삭제**할 수 있는 IDOR + 파괴적 연산이다. 세션에서 사용자를 확인하고 `WHERE id = ? AND owner_id = ?` 로 좁혀야 한다.
+
+### F6 — 목록/검색에 인가 없음 + 이메일 PII 노출 (line 7-37)
+`searchDocuments` 와 `listDocumentsWithOwners` 둘 다 요청자 신원과 무관하게 **전체 테넌트의 문서**를 반환한다. 더해서 line 30 은 `users.email` 을 조회해 응답에 그대로 실어 보낸다(line 33). 인증 없는 엔드포인트에서의 사용자 이메일 대량 수집 경로이며, 개인정보 관점에서도 문제다. 소유자/공유 범위로 필터링하고, 응답에는 표시에 필요한 최소 필드만 포함해야 한다.
+
+---
+
+## Major
+
+### F7 — N+1 쿼리 (line 28-34)
+문서 100건마다 사용자 조회 1회 → 요청당 최대 101 쿼리. `await` 가 루프 안에 있어 **순차 실행**이므로 지연도 선형으로 누적된다. JOIN 한 번, 또는 `WHERE id IN (?)` 로 owner 를 배치 조회한 뒤 Map 으로 붙이면 2쿼리로 끝난다.
+
+### F8 — 존재하지 않는 문서에서 `doc[0]` 크래시 (line 40-44)
+```ts
+await s3.deleteObject({ Key: doc[0].storage_key });
+```
+행이 없으면 `doc[0]` 는 `undefined` → `TypeError` → 500. 정상적으로는 404 여야 한다. 미인증 사용자가 500/404 응답 차이로 문서 ID 존재 여부를 탐지하는 오라클로도 쓰인다.
+
+### F9 — 삭제 순서 + 트랜잭션 부재로 데이터 정합성 깨짐 (line 44-45)
+S3 객체를 먼저 지우고 DB 행을 나중에 지운다. `s3.deleteObject` 성공 후 `db.raw(DELETE)` 가 실패하면 **DB 에는 남아 있지만 실제 파일은 사라진 문서**가 생기고, 이후 다운로드는 전부 깨진다. DB 삭제(또는 soft-delete)를 먼저 커밋하고 스토리지 정리는 재시도 가능한 후속 작업으로 넘기는 게 안전하다.
+
+### F10 — 요청 바디 무검증 (line 51-52)
+`await req.json()` 의 결과는 `any` 이고 `body.exp` 를 그대로 payload 에 넣는다. 타입/범위 검증이 없어 `exp: "9999999999999"`, `exp: null`, 객체 등 무엇이든 들어간다. 또한 바디가 비었거나 malformed JSON 이면 `req.json()` 이 throw → try/catch 가 없어 500. Zod 등으로 파싱하고 `exp` 는 서버가 정한 상한(예: 최대 7일) 안으로 clamp 해야 한다.
+
+### F11 — LIKE 와일드카드 인젝션 (line 14)
+F1 을 파라미터 바인딩으로 고쳐도 남는 문제다. `%` / `_` 는 LIKE 메타문자라 `q="%"` 하나로 전체 행 매칭 + 풀스캔을 유발한다. 바인딩 전에 이스케이프하고 `ESCAPE` 절을 지정해야 한다.
+
+### F12 — 전역 에러 핸들링 부재 (파일 전체)
+네 핸들러 모두 try/catch 가 없다. DB/S3 예외가 그대로 위로 전파돼 프레임워크 기본 핸들러가 스택 트레이스·쿼리문·테이블명을 응답에 노출할 수 있다. 핸들러 경계에서 잡아 일반화된 메시지로 변환하고 상세는 서버 로그로만 보내야 한다.
+
+---
+
+## Minor
+
+### F13 — 페이지네이션 없음 (line 16, 24)
+`LIMIT 50` / `LIMIT 100` 하드코딩이고 offset/cursor 가 없다. 51번째 이후 문서는 API 로 도달 불가능하다.
+
+### F14 — 빈 검색어가 전체 목록을 반환 (line 9)
+`q` 미지정 시 `""` → `LIKE '%%'` → 전 행 매칭. 빈 쿼리는 400 이나 빈 결과로 처리하는 편이 낫다.
+
+### F15 — 사용하지 않는 `req` 파라미터 (line 22)
+`listDocumentsWithOwners(req: Request)` 에서 `req` 를 전혀 쓰지 않는다. 인증 컨텍스트를 읽어야 할 자리가 비어 있다는 신호이기도 하다(F6 참조).
+
+### F16 — `const items = []` 암묵적 any[] (line 27)
+초기 타입이 추론되지 않아 push 되는 객체 형태가 타입 검사에서 빠진다. 명시적 인터페이스를 선언하거나 `docs.map()` 으로 바꾸면 해결된다.
+
+### F17 — `db.raw` 반환 타입 미지정 (line 11, 23, 29, 40)
+모든 호출이 `any` 로 흘러 `doc[0].storage_key`, `owner[0]`, `doc.owner_id` 접근이 전부 무검사다. F8 같은 런타임 크래시를 타입 시스템이 못 잡는 근본 원인.
+
+### F18 — 삭제 결과 미확인 / 비멱등 (line 45)
+`DELETE` 의 affected rows 를 보지 않아 실제로 지워졌는지 알 수 없다. 항상 `{ ok: true }` 를 반환한다.
+
+### F19 — 공유 링크 발급에 레이트 리밋 없음 (line 50)
+토큰 생성이 무제한 호출 가능하다. F3/F4 와 결합하면 오프라인 분석용 토큰 수집이 쉬워진다.
+
+---
+
+## 권장 조치 순서
+
+1. F1, F2, F3 — 배포 차단 요소. 파라미터 바인딩 / 시크릿 환경변수화 + rotate / HMAC 교체.
+2. F5, F6, F4 — 인증·인가 미들웨어를 도입하고 모든 핸들러에 적용, 토큰 검증기 구현.
+3. F8, F9, F10 — 정합성과 에러 처리.
+4. F7 — 성능(JOIN 또는 배치 조회).
+5. 나머지 minor 는 타입 정의 도입 시 함께 정리.
+
+```json
+[
+  {"id":"F1","file":"code-defective.ts","line":14,"severity":"critical","reason":"사용자 제어 쿼리 파라미터 q 가 템플릿 리터럴로 raw SQL 에 직접 삽입되어 SQL 인젝션이 가능하다. UNION 주입으로 users 테이블 등 임의 데이터 탈취 가능.","suggestion":"`WHERE title LIKE ?` 로 바꾸고 `[`%${escapeLike(q)}%`]` 를 바인딩 파라미터로 전달한다. 같은 파일 line 30/40/45 는 이미 ? 바인딩을 쓰고 있으므로 동일 패턴으로 통일."},
+  {"id":"F2","file":"code-defective.ts","line":5,"severity":"critical","reason":"프로덕션 서명 시크릿이 소스코드에 하드코딩되어 VCS 히스토리에 영구 기록된다. 저장소 접근자 전원이 공유 토큰을 위조할 수 있다.","suggestion":"process.env.SHARE_TOKEN_SECRET 으로 이전하고 부팅 시 존재 여부를 검증(없으면 throw)한다. 이미 노출된 현재 값은 반드시 폐기/재발급한다."},
+  {"id":"F3","file":"code-defective.ts","line":57,"severity":"critical","reason":"sign() 이 payload+secret 을 base64url 인코딩만 한다. 토큰 수신자가 디코드하면 시크릿 평문이 그대로 드러나고, 이후 임의 documentId 로 유효 토큰을 위조할 수 있다.","suggestion":"crypto.createHmac('sha256', secret) 기반 HMAC 또는 검증된 JWT 라이브러리로 교체하고, 검증 시 crypto.timingSafeEqual 로 상수시간 비교한다."},
+  {"id":"F4","file":"code-defective.ts","line":52,"severity":"critical","reason":"토큰 발급만 있고 대응하는 검증 함수가 없다. payload 의 exp 를 읽는 코드가 없어 만료가 전혀 강제되지 않으므로 발급된 공유 링크가 영구 유효하다.","suggestion":"서명 검증 + exp 만료 확인 + 폐기 목록 조회를 수행하는 verifyShareToken() 을 구현하고 문서 조회 경로에서 필수로 호출한다."},
+  {"id":"F5","file":"code-defective.ts","line":39,"severity":"critical","reason":"deleteDocument 가 인증·인가 검사 없이 params.id 만으로 S3 객체와 DB 행을 삭제한다. ID 를 아는 누구나 타인 문서를 파괴할 수 있는 IDOR.","suggestion":"세션에서 사용자 식별 후 `DELETE FROM documents WHERE id = ? AND owner_id = ?` 로 범위를 좁히고, 영향 행이 0 이면 404 를 반환한다."},
+  {"id":"F6","file":"code-defective.ts","line":29,"severity":"critical","reason":"searchDocuments/listDocumentsWithOwners 가 요청자와 무관하게 전체 문서를 반환하고, 응답에 users.email PII 까지 포함한다. 인증 없는 이메일 대량 수집 경로.","suggestion":"모든 조회에 owner_id/공유범위 필터를 적용하고, 응답 DTO 에서 email 을 제거하거나 소유자 본인에게만 노출한다."},
+  {"id":"F7","file":"code-defective.ts","line":28,"severity":"major","reason":"문서마다 소유자 조회를 순차 await 하는 N+1 쿼리로 요청당 최대 101 쿼리가 발생하고 지연이 선형 누적된다.","suggestion":"documents JOIN users 단일 쿼리로 바꾸거나, owner_id 를 모아 `WHERE id IN (?)` 배치 조회 후 Map 으로 결합해 2쿼리로 처리한다."},
+  {"id":"F8","file":"code-defective.ts","line":44,"severity":"major","reason":"존재하지 않는 id 일 때 doc[0] 이 undefined 라 storage_key 접근에서 TypeError 가 발생해 500 이 된다. 404 여야 하며, 500/404 차이가 문서 존재 여부 탐지 오라클로 악용된다.","suggestion":"조회 직후 `if (!doc[0]) return new Response(null, { status: 404 })` 가드를 추가한다."},
+  {"id":"F9","file":"code-defective.ts","line":44,"severity":"major","reason":"S3 삭제를 DB 삭제보다 먼저 수행하고 트랜잭션이 없어, DB DELETE 실패 시 행은 남고 실제 파일만 사라진 고아 레코드가 생긴다.","suggestion":"DB 삭제(또는 soft-delete)를 먼저 커밋하고 스토리지 정리는 재시도 가능한 후속 작업/큐로 분리한다."},
+  {"id":"F10","file":"code-defective.ts","line":51,"severity":"major","reason":"req.json() 결과가 any 이고 body.exp 를 검증 없이 토큰 payload 에 넣는다. malformed JSON 이면 throw 되어 try/catch 부재로 500 이 된다.","suggestion":"Zod 등으로 바디를 파싱하고 exp 를 서버 정책 상한(예: 최대 7일)으로 clamp 하며, 파싱 실패는 400 으로 응답한다."},
+  {"id":"F11","file":"code-defective.ts","line":14,"severity":"major","reason":"파라미터 바인딩으로 고쳐도 % 와 _ 는 LIKE 메타문자로 남아, q=\"%\" 하나로 전체 행 매칭과 풀스캔을 유발한다.","suggestion":"바인딩 전에 % _ \\\\ 를 이스케이프하고 쿼리에 ESCAPE '\\\\' 절을 명시한다."},
+  {"id":"F12","file":"code-defective.ts","line":7,"severity":"major","reason":"네 핸들러 모두 try/catch 가 없어 DB/S3 예외가 그대로 전파되고, 기본 에러 핸들러가 스택 트레이스와 쿼리·테이블명을 응답에 노출할 수 있다.","suggestion":"핸들러 경계에서 예외를 잡아 일반화된 메시지 + 적절한 상태 코드로 변환하고 상세 정보는 서버 로그로만 기록한다."},
+  {"id":"F13","file":"code-defective.ts","line":16,"severity":"minor","reason":"LIMIT 50 / LIMIT 100 이 하드코딩되고 offset/cursor 가 없어 상한을 넘는 문서에 API 로 도달할 수 없다.","suggestion":"cursor 기반 페이지네이션을 추가하고 limit 을 상한이 있는 요청 파라미터로 노출한다."},
+  {"id":"F14","file":"code-defective.ts","line":9,"severity":"minor","reason":"q 미지정 시 빈 문자열이 되어 LIKE '%%' 로 전체 행을 반환하며 불필요한 풀스캔을 유발한다.","suggestion":"q 가 비면 400 을 반환하거나 빈 결과를 즉시 응답한다."},
+  {"id":"F15","file":"code-defective.ts","line":22,"severity":"minor","reason":"listDocumentsWithOwners 의 req 파라미터가 전혀 사용되지 않는다. 인증 컨텍스트를 읽어야 할 자리가 비어 있다는 신호이기도 하다.","suggestion":"req 에서 세션/사용자를 읽어 조회 필터에 사용하거나, 불필요하면 시그니처에서 제거한다."},
+  {"id":"F16","file":"code-defective.ts","line":27,"severity":"minor","reason":"`const items = []` 는 요소 타입이 추론되지 않아 push 되는 객체 형태가 타입 검사에서 제외된다.","suggestion":"명시적 결과 인터페이스를 선언하거나 for 루프를 docs.map() 으로 대체해 타입을 추론시킨다."},
+  {"id":"F17","file":"code-defective.ts","line":11,"severity":"minor","reason":"db.raw 호출들이 반환 타입 없이 any 로 흘러 doc[0].storage_key, owner[0], doc.owner_id 접근이 전부 무검사다. F8 같은 런타임 크래시를 타입 시스템이 잡지 못하는 근본 원인.","suggestion":"db.raw 를 제네릭(`db.raw<DocumentRow>(...)`)으로 감싸거나 행 타입을 정의해 반환값에 적용한다."},
+  {"id":"F18","file":"code-defective.ts","line":45,"severity":"minor","reason":"DELETE 의 affected rows 를 확인하지 않고 항상 { ok: true } 를 반환해, 실제 삭제 여부를 호출자가 알 수 없다.","suggestion":"영향 행 수를 확인해 0 이면 404, 1 이면 성공을 반환한다."},
+  {"id":"F19","file":"code-defective.ts","line":50,"severity":"minor","reason":"공유 링크 발급에 레이트 리밋이 없어 토큰을 무제한 생성할 수 있고, 취약한 sign() 과 결합하면 오프라인 분석용 샘플 수집이 쉬워진다.","suggestion":"사용자/문서 단위 레이트 리밋과 활성 공유 링크 수 상한을 적용한다."}
+]
+```

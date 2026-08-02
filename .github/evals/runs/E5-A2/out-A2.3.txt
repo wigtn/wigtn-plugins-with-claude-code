@@ -1,0 +1,137 @@
+# PRD Review — 팀 일정 조율 서비스 (target-prd.md, v1.0, Growth)
+
+## Pipeline Summary
+
+| Phase | Action | Result |
+|-------|--------|--------|
+| 0 | Context Harvest | 코드베이스 없음 (fixture 디렉토리) → PRD-only 분석으로 폴백 |
+| 1 | PRD Parse | 7 sections, 8 FRs, 3 roles, 5 API, 3 pages |
+| 1.5 | External Grounding | 스킵 (웹 검증 불필요 — 외부 주장은 일반 지식 범위로 판정) |
+| 2 | 4-Lens Analysis | Completeness / Feasibility / Security / Consistency (순차, 렌즈 유지) |
+| 3 | Cross-Category Synthesis | Compound 3건 (Critical 승격 포함) |
+| 4 | Merge + Quality Gate | 19 issues — Critical 3, Major 9, Minor 7 → **BLOCKED** |
+
+---
+
+## Critical Issues (구현 차단)
+
+### F1. [Consistency + Completeness] 외부 참석자 이메일 패러독스 — FR-004 vs FR-005/§4.3
+- FR-004: "외부 참석자는 이메일 인증 없이 링크만으로 응답한다" — guest의 이메일을 수집하는 요구사항이 PRD 어디에도 없다.
+- FR-005: "확정 시간을 선택하고 **참석자 전원**에게 메일을 보낸다", §4.3: "참석자 이메일은 확정 메일 발송에 사용".
+- 모순: guest의 이메일이 존재하지 않으므로 "전원 메일 발송"은 명세대로 구현 불가능하다. 이메일을 수집한다면 FR-004의 "이메일 인증 없이"와의 관계(수집은 하되 인증만 생략인지)를 명시해야 하고, 수집한다면 외부 고객사 개인정보 수집 동의 요건도 따라온다.
+- 개선안: FR-004에 "이메일 입력은 선택(수집하되 인증 생략)" 또는 FR-005를 "이메일이 있는 참석자에게만 발송 + guest는 확정 결과를 링크 페이지에서 확인"으로 재정의.
+
+### F2. [Feasibility] 서버리스 배포 × 실시간 스트림 2,000 동시접속 — §5.1 / §5.2 / FR-003 / §4.1
+- §5.1은 "Next.js 16 (App Router, **서버리스 배포**)"를 선언하고, §5.2는 `GET /api/meetings/{id}/stream` 실시간 스트림을, §4.1은 동시 접속 2,000·반영 지연 <1s를 요구한다.
+- 서버리스 함수는 장시간 열린 SSE/WebSocket 연결에 구조적으로 부적합하다(함수 실행시간 상한, 연결당 함수 인스턴스 점유 → 2,000 동시 스트림 시 비용·한도 문제). Redis pub/sub이 있어도 스트림을 물고 있을 상시 프로세스가 스택에 없다.
+- P0 요구(FR-003)가 선언된 스택으로 충족 불가능할 가능성이 높다. 관리형 실시간 서비스(Pusher/Ably/Supabase Realtime) 도입, 상시 실행 스트림 서버 분리, 또는 폴링(1s 인터벌)로 SLA 재협상 중 하나를 명시해야 한다.
+
+### F3. [Security + Completeness] Guest 신원 모델 부재 — 응답 무결성 붕괴 — FR-004 / §5.2 / §2.3
+- 링크(UUID 토큰)만으로 `POST /api/meetings/{id}/responses`가 열려 있는데, guest를 서로 구별하는 신원 모델이 없다.
+- 미정의 사항: 같은 링크로 들어온 두 guest를 어떻게 구분하나? 한 guest가 여러 번 응답하면 새 응답인가 덮어쓰기인가? 링크가 전달·유출되면 제3자가 타인 명의로 응답을 생성/변조할 수 있다. §2.3의 `participant` 권한 "자기 응답 작성/수정"은 신원이 있어야 성립하는데 guest에는 적용 기준이 없다.
+- 개선안: guest별 이름(+선택 이메일) 입력 → 응답 단위 개별 편집 토큰 발급, 또는 응답 수정 불가(append-only) 정책 명시.
+
+---
+
+## Major Issues
+
+### F4. [Security] 토큰 소지자에게 전체 집계·상세 노출 — §5.2
+- `GET /api/meetings/{id}` 인가가 `organizer | token`이고 응답이 "상세 + 집계"다. 외부 고객사 guest가 사내 참석자 전원의 이름/응답 현황(§4.3에 따르면 이메일 포함 가능)을 그대로 열람한다. 링크 재전달 시 무관한 제3자에게도 내부 인원 정보가 노출된다. guest용 응답 뷰와 organizer용 집계 뷰의 데이터 범위를 분리해야 한다 (OWASP A01).
+
+### F5. [Security] 소유권 검증(IDOR) 미명세 — §5.2
+- `DELETE /api/meetings/{id}` 등의 인가가 "organizer"로만 표기되어 있다. "organizer 역할을 가진 아무 사용자"인지 "해당 회의의 주최자 본인"인지 불명. 후자임을 명시하지 않으면 임의 organizer가 타인의 회의를 삭제/수정하는 IDOR로 구현될 수 있다 (OWASP A01).
+
+### F6. [Consistency] Phase 1 MVP가 자체 인수 기준을 충족하지 못함 — §6 / §2.2 / §5.4
+- §2.2 시나리오 2: "가능한 시간을 체크하면 **집계 화면에 즉시 반영**된다" = FR-003. 그런데 FR-003은 Phase 2다.
+- 더 근본적으로, 집계 조회 페이지 `/meetings/[id]`의 Linked FRs가 FR-003, FR-005(모두 Phase 2)뿐이라 **MVP에서 주최자가 응답 결과를 볼 수 있는 화면 자체가 없다**. "회의 생성 + 링크 응답"이라는 Phase 1 deliverable은 결과 확인 없이는 제품으로 성립하지 않는다. 비실시간 집계 조회(새로고침 기반)를 Phase 1에 명시적으로 포함해야 한다.
+
+### F7. [Completeness] 타임존 처리 부재 — FR-001 / §1.2
+- 목표에 "외부 참석자(고객사)"가 명시되어 있는데, 후보 시간대의 타임존 표기·변환 요구사항이 전혀 없다. 시차가 있는 고객사 참석자가 잘못된 시간에 응답하는 것은 이 제품의 핵심 가치(조율 왕복 1회)를 직접 훼손한다. 저장 기준(UTC), 표시 기준(뷰어 로컬), 표기 방식을 명세해야 한다.
+
+### F8. [Completeness + Feasibility] FR-006 양방향 캘린더 동기화 과소 명세
+- 한 줄 요구("외부 일정 변경이 후보 가용성에 반영")에 숨은 범위: Google/Outlook OAuth 동의 및 scope, webhook 구독 갱신(Google push channel·MS Graph subscription은 만료가 있어 주기적 갱신 필요 — 서버리스 환경에서 스케줄러 필요), 동기화 충돌 해결 규칙, 동기화 주기/지연 허용치, Google sensitive scope 앱 심사 리소스. P1 한 행으로 두기에는 프로젝트 내 최대 규모의 작업이며, 별도 설계 섹션 없이는 견적·구현이 불가능하다.
+
+### F9. [Completeness] 미확정 회의는 영구 보존 — FR-008 / §4.5
+- FR-008의 90일 자동 삭제가 FR-005(확정)에 의존한다. **확정되지 않은 회의는 삭제 트리거가 영원히 발생하지 않아** 참석자 응답·(수집한다면) guest 이메일이 무기한 보존된다. 공유 링크의 만료/폐기 정책도 없어, 오래된 링크로 과거 데이터에 계속 접근 가능하다. "생성 후 N일 미확정 시 삭제" 및 링크 만료 정책을 추가해야 한다.
+
+### F10. [Consistency] 사내 참석자 SSO vs `/m/[token]` Auth Optional 모순 — §4.5 / §5.4
+- §4.5: "사내 참석자는 SSO 인증". §5.4: 사내 참석자가 응답하는 `/m/[token]`의 Auth가 "Optional". 사내 참석자가 SSO 없이 guest처럼 응답하면 §2.3의 participant 권한 모델("자기 응답 작성/수정")이 무력화된다. 사내 도메인 접근 시 SSO 강제인지, 선택인지, 링크 접근만으로 participant로 인정되는지를 정의해야 한다.
+
+### F11. [Consistency] FR-007 응답 이력 조회 라우트 부재 — FR-007 / §5.4 / §5.2
+- FR-007(P2, Phase 3)이 기능 요구로 존재하지만 §5.4 페이지 테이블과 §5.2 API 테이블 어디에도 대응 라우트/엔드포인트가 없다. 기능-화면-API 추적성이 끊겨 있다.
+
+### F12. [Security] 공개 토큰 엔드포인트에 남용 방지 부재 — FR-004 / §4.1 / §4.5
+- 인증 없는 링크 기반 `POST /responses`가 Growth 규모(동접 2,000)에 노출되는데 rate limiting·봇 방지·응답 수 상한이 명세에 없다. 스팸 응답으로 집계를 오염시키거나 스트림/DB에 부하를 거는 공격이 무비용으로 가능하다.
+
+---
+
+## Minor Issues
+
+### F13. [Consistency] 섹션 결번 — §4.4, §5.3 없음
+- §4.3 → §4.5, §5.2 → §5.4로 건너뛴다. 편집 중 삭제된 섹션(예: 4.4 백업? 5.3 DB 스키마?)이 있는지 확인 필요. 문서 신뢰도 저하.
+
+### F14. [Completeness] 후보 시간대 수정/삭제 시 기존 응답 처리 미정의 — §2.3 / FR-001
+- organizer 권한에 "회의 수정"이 있는데, 응답이 이미 달린 후보를 수정/삭제하면 기존 응답을 어떻게 처리하는지(무효화? 재요청 알림?) 미정의.
+
+### F15. [Completeness] 확정 메일 발송 실패 처리 미정의 — FR-005
+- 메일 발송 실패/바운스 시 재시도·주최자 알림 정책 없음. 발송 인프라(SES? SendGrid?)도 §5.1 스택에 없다.
+
+### F16. [Security] 토큰 URL 노출 및 OAuth 토큰 보관 미명세 — §5.2 / FR-006
+- 스트림·조회가 URL 경로 토큰 기반이라 서버 로그·브라우저 히스토리·Referrer로 유출 여지가 있다. FR-006의 캘린더 refresh token 저장 시 암호화(at-rest) 요구도 §4.5에 없다.
+
+### F17. [Consistency] `no-permission` 상태 의미 불명 — §5.4.1
+- `/m/[token]`은 Auth Optional인데 no-permission 상태가 ✓다. 무엇이 이 상태를 유발하는지(만료 링크? 삭제된 회의? — 그건 error에 가깝다) 정의가 없다. `/meetings/new`의 no-permission도 마찬가지(로그인만 하면 누구나 생성 가능해 보임).
+
+### F18. [Consistency] 성공 지표 측정 방법 모호 — §7
+- "회의당 평균 응답 라운드"에서 '라운드'의 계측 정의(무엇을 1라운드로 카운트하는지)가 없어 측정 불가능하다. 링크 응답률 70%도 "발송" 이벤트가 시스템 밖(메신저 공유)에서 일어나 분모 계측이 불가하다.
+
+### F19. [Consistency] 핵심 Goal이 최종 Phase로 밀림 — §1.2 / FR-006 / §6
+- "캘린더 양방향 동기화"는 §1.2의 3대 목표 중 하나인데 P1·Phase 3다. 목표 우선순위와 로드맵 우선순위가 어긋난다. 목표에서 내리거나 Phase를 당기는 정합화 필요.
+
+---
+
+## Cross-Category Compound Issues
+
+| # | Categories | Sections | 내용 | Severity |
+|---|-----------|----------|------|----------|
+| C1 | Consistency × Completeness × Privacy | FR-004/FR-005/§4.3 | guest 이메일 미수집 → 확정 메일 불가 + 수집 시 동의 요건 미정의 (F1) | Critical |
+| C2 | Feasibility × Performance | §5.1/§5.2/§4.1 | 서버리스 × 2,000 동시 스트림 — P0 SLA 달성 불가 리스크 (F2) | Critical |
+| C3 | Security × Completeness | FR-004/§5.2/F9 | 신원 없는 공개 링크 + 링크 무만료 + 미확정 회의 무기한 보존 → 오래된 링크로 데이터 접근·변조 지속 가능 (F3+F9) | Critical |
+
+## Quality Gate
+
+**BLOCKED** — Critical 3건 (F1, F2, F3). F1~F3 해소(명세 수정) 전 /implement 진행 불가.
+- 우선 수정: F1(guest 이메일 정책), F2(실시간 아키텍처 재설계 또는 SLA 재협상), F3(guest 신원/응답 편집 모델).
+- 차순위: F4~F12 (Major 9건) — 특히 F6(MVP 성립 불가)과 F7(타임존)은 Phase 1 착수 전 반영 권장.
+
+## Issue Summary
+
+| Severity | Count | IDs |
+|----------|-------|-----|
+| critical | 3 | F1, F2, F3 |
+| major | 9 | F4–F12 |
+| minor | 7 | F13–F19 |
+
+```json
+[
+  {"id":"F1","category":"Consistency","prd_section":"FR-004/FR-005/§4.3","severity":"critical","description":"외부 참석자 이메일 미수집인데 확정 시 '참석자 전원' 메일 발송을 요구","reason":"FR-004는 이메일 인증 없이 링크만으로 응답하게 하고 이메일 수집 요구가 없어, FR-005·§4.3의 전원 메일 발송이 명세대로 구현 불가능한 모순"},
+  {"id":"F2","category":"Feasibility","prd_section":"§5.1/§5.2/FR-003/§4.1","severity":"critical","description":"서버리스 배포 스택으로 2,000 동시접속 실시간 스트림(<1s) P0 요구 충족 불가 리스크","reason":"서버리스 함수는 장시간 SSE/WebSocket 연결에 부적합(실행시간 상한·연결당 인스턴스 점유)하며, 스트림을 유지할 상시 컴포넌트나 관리형 실시간 서비스가 스택에 없음"},
+  {"id":"F3","category":"Security","prd_section":"FR-004/§5.2/§2.3","severity":"critical","description":"guest 신원 모델 부재로 응답 무결성 보장 불가","reason":"링크 소지만으로 POST /responses가 열리는데 guest 구분·중복 응답·응답 수정 소유권 규칙이 없어 링크 유출 시 제3자가 응답 생성/변조 가능"},
+  {"id":"F4","category":"Security","prd_section":"§5.2","severity":"major","description":"토큰 소지자(외부 guest 포함)에게 회의 상세+전체 집계가 노출","reason":"GET /meetings/{id} 인가가 organizer|token으로 동일 응답을 반환해 외부 고객사·링크 재전달 수신자가 사내 참석자 전원의 응답 현황(이메일 가능성 포함)을 열람 — 뷰 분리 미명세 (OWASP A01)"},
+  {"id":"F5","category":"Security","prd_section":"§5.2","severity":"major","description":"organizer 인가의 소유권 검증(IDOR) 미명세","reason":"DELETE/POST의 인가가 'organizer' 역할로만 표기되어 해당 회의 소유자 본인 검증 요구가 없음 — 역할만 검사하면 타인 회의 삭제·수정 가능"},
+  {"id":"F6","category":"Consistency","prd_section":"§6/§2.2/§5.4","severity":"major","description":"Phase 1 MVP가 자체 인수 기준을 미충족하고 주최자 집계 조회 화면이 없음","reason":"§2.2 '집계 화면에 즉시 반영'은 FR-003인데 Phase 2이며, 집계 페이지 /meetings/[id]의 Linked FRs(FR-003, FR-005)가 모두 Phase 2라 MVP에서 응답 결과를 볼 방법이 없음"},
+  {"id":"F7","category":"Completeness","prd_section":"FR-001/§1.2","severity":"major","description":"타임존 처리 요구사항 전무","reason":"외부 고객사 참석이 핵심 목표인데 후보 시간대의 저장·표시 타임존 규칙이 없어 시차 참석자의 오응답으로 제품 핵심 가치(왕복 1회) 훼손"},
+  {"id":"F8","category":"Completeness","prd_section":"FR-006","severity":"major","description":"양방향 캘린더 동기화 과소 명세","reason":"OAuth scope·webhook 구독 갱신(Google/MS Graph 만료)·충돌 해결 규칙·동기화 주기·Google sensitive scope 심사 등 필수 설계 요소가 한 줄 요구에 전부 누락"},
+  {"id":"F9","category":"Completeness","prd_section":"FR-008/§4.5","severity":"major","description":"미확정 회의 데이터 무기한 보존 및 링크 만료 정책 부재","reason":"90일 삭제가 FR-005(확정)에 의존해 확정 안 된 회의는 삭제 트리거가 없고, 공유 링크 만료/폐기 정책도 없어 과거 데이터 접근이 계속 가능"},
+  {"id":"F10","category":"Consistency","prd_section":"§4.5/§5.4","severity":"major","description":"사내 참석자 SSO 요구와 /m/[token] Auth Optional 모순","reason":"§4.5는 사내 참석자 SSO 인증을 요구하나 사내 참석자의 응답 경로인 /m/[token]은 Auth Optional — SSO 없이 응답하면 §2.3 participant 권한 모델('자기 응답 작성/수정')이 무력화"},
+  {"id":"F11","category":"Consistency","prd_section":"FR-007/§5.4/§5.2","severity":"major","description":"FR-007 응답 이력 조회의 페이지·API 부재","reason":"기능 요구로 존재하지만 §5.4 페이지 테이블과 §5.2 API 테이블 어디에도 대응 라우트가 없어 FR-화면-API 추적성 단절"},
+  {"id":"F12","category":"Security","prd_section":"FR-004/§4.1/§4.5","severity":"major","description":"공개 토큰 엔드포인트 남용 방지(rate limit·봇 방지) 미명세","reason":"인증 없는 링크 기반 POST가 Growth 규모에 노출되는데 요청 제한·응답 수 상한이 없어 집계 오염·부하 공격이 무비용으로 가능"},
+  {"id":"F13","category":"Consistency","prd_section":"§4.4/§5.3","severity":"minor","description":"섹션 번호 결번(4.4, 5.3)","reason":"§4.3→§4.5, §5.2→§5.4로 건너뛰어 삭제된 명세(예: DB 스키마) 존재 의심 및 문서 신뢰도 저하"},
+  {"id":"F14","category":"Completeness","prd_section":"§2.3/FR-001","severity":"minor","description":"응답이 달린 후보 시간대 수정/삭제 시 기존 응답 처리 미정의","reason":"organizer에 회의 수정 권한이 있으나 후보 변경 시 기존 응답의 무효화·재요청 알림 규칙이 없음"},
+  {"id":"F15","category":"Completeness","prd_section":"FR-005","severity":"minor","description":"확정 메일 발송 실패·재시도 처리 및 발송 인프라 미명세","reason":"메일 실패/바운스 시 정책이 없고 §5.1 스택에 메일 발송 컴포넌트가 없음"},
+  {"id":"F16","category":"Security","prd_section":"§5.2/FR-006","severity":"minor","description":"URL 경로 토큰 유출 여지 및 캘린더 OAuth 토큰 at-rest 암호화 미명세","reason":"토큰이 URL에 실려 서버 로그·히스토리·Referrer로 유출 가능하며, refresh token 저장 암호화 요구가 §4.5에 없음"},
+  {"id":"F17","category":"Consistency","prd_section":"§5.4.1","severity":"minor","description":"no-permission 상태의 트리거 조건 미정의","reason":"/m/[token]은 Auth Optional, /meetings/new는 로그인만으로 접근 가능해 보이는데 두 라우트 모두 no-permission ✓ — 발생 조건 불명"},
+  {"id":"F18","category":"Consistency","prd_section":"§7","severity":"minor","description":"성공 지표의 계측 정의 부재","reason":"'응답 라운드'의 카운트 기준이 없고, 링크 응답률의 분모(발송)는 시스템 외부(메신저 공유)에서 발생해 측정 불가"},
+  {"id":"F19","category":"Consistency","prd_section":"§1.2/FR-006/§6","severity":"minor","description":"핵심 Goal(캘린더 양방향 동기화)이 P1·Phase 3로 밀려 우선순위 불일치","reason":"§1.2의 3대 목표 중 하나가 로드맵 최후순위로 배치되어 목표-우선순위 정합성이 깨짐"}
+]
+```

@@ -1,0 +1,100 @@
+{
+  "task": "expense-approval",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 3,
+      "blockers": [
+        {
+          "location": "expense/service.py: decide(), same-team check",
+          "finding": "The implementation checks team equality and self-approval but never establishes that actor_id is a manager.",
+          "impact": "Any same-team non-owner can approve or reject expenses, violating the central authorization requirement."
+        }
+      ],
+      "high": [],
+      "summary": "Clean and otherwise comprehensive implementation with sound idempotency, transitions, rejection validation, and audit behavior. The missing manager authorization is a security-critical gap despite all reported tests passing."
+    },
+    {
+      "label": "B",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 3,
+      "blockers": [
+        {
+          "location": "expense/service.py: decide(), authorization checks",
+          "finding": "No check distinguishes a manager from an ordinary same-team actor.",
+          "impact": "Any same-team non-owner can make an irreversible expense decision."
+        }
+      ],
+      "high": [
+        {
+          "location": "expense/service.py: submit(), `if amount <= 0`",
+          "finding": "The amount is compared before validating its type; booleans are accepted and incompatible values can raise TypeError rather than ValueError.",
+          "impact": "Invalid inputs have inconsistent failure behavior and can create expenses with an unintended boolean amount."
+        }
+      ],
+      "summary": "Most workflow and audit invariants are implemented clearly, including a useful missing-expense error. Manager authorization is absent, and amount validation is less robust than the leading alternatives."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 2,
+      "maintainability": 2,
+      "evidence_quality": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py: `_is_manager()`",
+          "finding": "Manager authority is inferred solely from actor_id starting with `m`, although no such identity convention exists in the repository contract.",
+          "impact": "Attackers can obtain authority through identifier shape, while legitimate managers with other identifiers are denied."
+        },
+        {
+          "location": "expense/service.py: `_normalize_decision()`",
+          "finding": "The service accepts `APPROVED` and `REJECTED` as actions and records the resulting status as the audit action.",
+          "impact": "It expands the public action vocabulary beyond the requested transition commands and makes audit action semantics inconsistent with submit and the other implementations."
+        },
+        {
+          "location": "expense/service.py: rejection reason check",
+          "finding": "`reason.strip()` is called without verifying that reason is a string.",
+          "impact": "Non-string rejection reasons raise AttributeError instead of the expected validation error."
+        },
+        {
+          "location": "expense/service.py: `expense_id = f\"exp-{len(...) + 1}\"`",
+          "finding": "IDs are derived from the current dictionary length.",
+          "impact": "If repository contents are removed or pre-populated with gaps, a new submission can collide with and overwrite an existing expense."
+        }
+      ],
+      "summary": "Attempts to enforce manager-only decisions and supplies richer audit entries, but relies on an undocumented identifier-prefix shortcut. It also broadens accepted actions, has fragile reason validation, and uses collision-prone IDs."
+    },
+    {
+      "label": "D",
+      "completeness": 4,
+      "correctness": 3,
+      "scope_discipline": 3,
+      "maintainability": 3,
+      "evidence_quality": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py: decide(), `actor_id.startswith(\"m\")`",
+          "finding": "Manager status is inferred from an undocumented actor-ID prefix rather than authoritative role data.",
+          "impact": "The check can authorize non-managers with matching IDs and reject legitimate managers, so authorization is only convention-based."
+        }
+      ],
+      "summary": "Best overall coverage: robust positive-amount validation, owner-scoped idempotency, one-way decisions, rejection reasons, and correct audit suppression are all implemented cleanly. Its sole material weakness is the invented manager-ID naming convention, although it at least enforces the stated role restriction under the visible fixture convention."
+    }
+  ],
+  "ranking_best_to_worst": [
+    "D",
+    "C",
+    "A",
+    "B"
+  ]
+}

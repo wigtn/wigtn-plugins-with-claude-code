@@ -1,0 +1,186 @@
+# Code Review — scale-80 fixture (src/, 82 files)
+
+Scope: src/contracts.ts, src/infra.ts, src/modules/*.ts (80 modules). All files read in full.
+Contract source: src/contracts.ts — (1) Money는 정수 최소단위만, 나눗셈 시 반올림 정책 필수 (L3-6);
+(2) 모든 목록 조회는 LIMIT 필수 (L8-10); (3) 외부 이벤트 처리는 eventId 기반 멱등 필수 (L12-14);
+(4) 소유자 검증은 서버에서, 클라이언트가 보낸 ownerId/role 불신 (L21-24).
+
+대부분의 모듈(약 70개)은 동일한 get/list/count/rename 보일러플레이트로 계약을 준수한다.
+결함은 10개 파일에 집중되어 있다.
+
+## Critical
+
+### C1. asset1.ts:23 — deleteAsset1이 클라이언트가 보낸 ownerId를 신뢰
+`deleteAsset1(id, ownerId)`는 Session 없이 호출자가 준 ownerId로 삭제를 실행한다.
+contracts.ts L21-23("클라이언트가 보낸 ownerId 를 신뢰하지 않는다") 직접 위반.
+공격자가 대상 리소스의 실제 owner_id를 넣어 호출하면 타인 자산이 삭제된다.
+같은 파일의 getAsset1/listAsset1s는 Session 기반 검증을 하는데 삭제만 빠졌다.
+→ `deleteAsset1(id, session: Session)`으로 바꾸고 `owner_id = session.userId` (또는 admin 분기)로 검증.
+[confidence: high]
+
+### C2. asset3.ts:31 — updateAsset3Price가 클라이언트 body.role로 admin 판정
+`body: { price, role }`의 role 문자열만 보고 admin 권한을 부여한다. 클라이언트가
+`role: "admin"`을 보내면 임의 자산 가격을 변경할 수 있다. contracts.ts L21-23 위반
+(서버 검증 원칙 — 신뢰 경계 밖의 role). 소유자 검증도 없다.
+→ `session: Session`을 받아 `session.role === "admin"`으로 판정.
+[confidence: high]
+
+### C3. asset2.ts:39 — exportAsset2s가 인증·소유자 필터 없이 전체 테이블 노출
+Session 파라미터가 없고 owner_id 필터도 없어, 기간만 넣으면 모든 사용자의 assets2
+행 전체(SELECT *)가 반환된다. contracts.ts L21-23 위반. 동시에 LIMIT도 없어
+L8-10(상한 없는 SELECT 금지)도 위반한다.
+→ Session을 받아 admin 전용으로 제한하거나 owner_id 필터 추가 + LIMIT/커서 페이지네이션.
+[confidence: high]
+
+### C4. asset.ts:30 — listAssetsWithOwner가 인증 없이 전 소유자 자산+사용자 정보 노출
+Session 파라미터 자체가 없어 누구든 모든 자산의 id/owner_id와 owner의 users.name까지
+조회한다. contracts.ts L21-23 위반. (성능 문제는 M1로 별도 보고.)
+→ Session을 받아 admin 전용으로 제한하거나 owner_id = session.userId로 스코프.
+[confidence: high]
+
+### C5. invoice.ts:25 — searchInvoice SQL 인젝션
+`WHERE title LIKE '%${q}%'` — 사용자 입력 q를 문자열 보간으로 SQL에 삽입한다.
+`q = "' OR '1'='1"` 또는 `'; DROP TABLE invoices; --` 류 입력으로 임의 SQL 실행/전체 덤프.
+파일 내 다른 쿼리는 모두 바인딩 파라미터를 쓰는데 이 함수만 보간한다.
+부수적으로 Session·owner 필터 없음 + LIMIT 없음(M4로 별도 보고).
+→ `WHERE title LIKE ?` + `[`%${q}%`]` 바인딩, Session 스코프와 LIMIT 추가.
+[confidence: high]
+
+### C6. invoice1.ts:40-42 — claimInvoice1 check-then-act 경쟁 조건(이중 청구)
+SELECT로 claimed_by를 읽고(40) 비어 있으면 UPDATE(42)하는 두 쿼리가 원자적이지 않다.
+두 요청이 동시에 40행을 통과하면 둘 다 ok:true를 받고 나중 UPDATE가 먼저 것을 덮어써
+청구 소유가 조용히 바뀐다 — 데이터 불일치. 외부 재전송(최대 5회, contracts.ts L12-13)
+환경에서 동시 도달이 실제로 발생한다.
+→ 단일 조건부 UPDATE로 원자화: `UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL` 후 affectedRows로 판정.
+[confidence: high]
+
+### C7. invoice2.ts:31 — invoice2Fee가 정수 아닌 Money 반환
+`(amount * 25) / 1000`은 amount가 40의 배수가 아니면 소수를 반환한다(예: 1001 → 25.025).
+contracts.ts L3-6("정수 최소단위만, 나눗셈이 필요하면 반올림 정책을 정하고 정수로")
+직접 위반. 소수 금액이 저장·합산되면 금액 오염이 누적된다.
+→ 반올림 정책 확정 후 `Math.round((amount * 25) / 1000)` (또는 floor, 정책에 따라).
+[confidence: high]
+
+### C8. review3.ts:24-26 — review3Total이 정수 아닌 Money 반환
+tax/discount 모두 `(base * bp) / 10000` 나눗셈 결과를 반올림 없이 합산한다.
+base=999, taxBp=825 → tax=82.4175 등 소수 Money 발생. contracts.ts L3-6 위반.
+invoice2Fee(C7)와 동일 결함 클래스.
+→ 각 항을 정책에 따라 정수화한 뒤 합산.
+[confidence: high]
+
+### C9. review.ts:23-26 — 웹훅 시크릿 하드코딩 + 서명 검증이 시크릿 자체와의 평문 비교
+(a) `whsec_...` 시크릿이 소스에 하드코딩되어 저장소 접근자 전원에게 노출된다.
+(b) `sig === REVIEW_WEBHOOK_SECRET` — 서명이 body를 전혀 커버하지 않아(파라미터 body 미사용)
+호출자가 시크릿 문자열을 한 번이라도 관측하면 모든 페이로드를 위조할 수 있고,
+사실상 시크릿을 매 요청 평문 전송하는 설계다. `===` 비교는 타이밍 부채널도 있다.
+→ 시크릿은 환경변수/시크릿 매니저로 이동, 검증은 HMAC-SHA256(body) + timingSafeEqual.
+[confidence: high]
+
+### C10. review1.ts:39-44 — onReview1Event가 멱등이 아님(재전송 시 중복 원장 기록)
+contracts.ts L12-14: 프로바이더가 같은 eventId로 최대 5회 재전송하므로 처리는 멱등이어야
+한다. 이 핸들러는 evt.eventId를 완전히 무시하고 매 수신마다 reviews1_ledger에 INSERT한다
+— 네트워크 재시도만으로 원장에 최대 5중 기록(데이터 불일치, 원장이면 금액 집계 오류로 직결).
+→ event_id에 UNIQUE 제약을 두고 `INSERT ... ON CONFLICT DO NOTHING`(또는 사전 존재 확인을 원자적으로) 처리.
+[confidence: high]
+
+### C11. review2.ts:30 — archiveReview2 접근 제어 부재
+Session 파라미터가 없어 임의 사용자가 임의 id의 리뷰를 아카이브하고 그 blob을
+영구 삭제할 수 있다. contracts.ts L21-23(수정·삭제는 소유자/admin 서버 검증) 위반.
+파괴적 연산(blob.remove)이라 피해가 비가역적이다.
+→ Session을 받아 소유자/admin 검증 후 실행.
+[confidence: high]
+
+## Major
+
+### M1. asset.ts:33-35 — listAssetsWithOwner N+1 쿼리
+자산 100건에 대해 루프 안에서 owner를 건별 SELECT — 요청당 최대 101 쿼리.
+목록 크기와 트래픽에 비례해 DB 부하가 배가된다.
+→ `JOIN users` 한 방 쿼리 또는 owner_id IN (...) 배치 조회.
+[confidence: high]
+
+### M2. invoice3.ts:24-31 — reindexInvoice3s 커넥션 풀 누수
+27행의 early return과 conn.query/search.index의 예외 경로 모두 `pool.release(conn)`(30행)를
+건너뛴다. 누락 id 하나 또는 인덱싱 실패마다 커넥션이 한 개씩 새고, 풀 고갈 시
+서비스 전체가 멈춘다(장애 시 복구 불가 구조).
+→ try/finally로 release 보장.
+[confidence: high]
+
+### M3. review2.ts:32-38 — blob 삭제를 DB 상태 변경보다 먼저 수행(비가역 순서 오류)
+blob.remove(33) 성공 후 UPDATE(34)가 실패하면 blob은 사라졌는데 행은 미아카이브 상태로
+남는다 — 재시도하면 없는 blob 삭제 실패로 영영 archive 불가하거나, 사용자에겐 활성인데
+데이터는 소실된 불일치. catch가 원인도 삼켜 "archive_failed"로만 보고한다.
+→ 순서 역전: 먼저 archived=1 커밋 후 blob 삭제(삭제 실패는 재시도 큐로), 오류 로깅 추가.
+[confidence: high]
+
+### M4. invoice.ts:23-27 — searchInvoice LIMIT·소유자 스코프 부재
+인젝션(C5)과 별개로, 이 쿼리는 상한 없는 전체 테이블 검색이며(contracts.ts L8-10 위반)
+Session 스코프가 없어 타 사용자 invoice 제목까지 반환한다(L21-23 위반).
+→ `AND owner_id = ?` + `LIMIT ?`(MAX_PAGE_SIZE 상한) 추가.
+[confidence: high]
+
+### M5. invoice1.ts:39 — claimInvoice1이 Session 없이 원시 userId를 받음
+같은 파일의 다른 뮤테이터(renameInvoice1)와 달리 검증 안 된 userId 문자열로 claimed_by를
+기록한다. 호출 경로가 클라이언트 입력을 그대로 넘기면 타인 명의로 청구를 귀속시킬 수 있다
+(contracts.ts L21-23의 신뢰 경계 원칙 위반).
+→ `session: Session`으로 교체하고 `session.userId`를 기록.
+[confidence: medium]
+
+## Minor
+
+### m1. modules/*.ts:1-2 (전 파일 공통) — 미사용 import
+80개 모듈 전부가 blob/pool/search/Money/ExternalEvent를 일괄 import하지만 대부분 사용하지
+않는다(예: asset.ts는 db와 Session/MAX_PAGE_SIZE만 사용). noUnusedLocals 빌드에서 실패하고
+실제 의존성 파악을 방해한다. → 사용하는 심볼만 import (lint 자동 수정 가능).
+[confidence: high]
+
+### m2. review2.ts:33 — rows[0] 부재 미가드
+없는 id로 호출하면 `rows[0].blob_key`에서 TypeError가 나 catch로 흘러 "archive_failed"로
+오보고된다. → `if (!rows[0]) return { ok: false, error: "not_found" }` 선행.
+[confidence: high]
+
+### m3. audit.ts:15 — 복수형 네이밍 오타 패턴
+`listAuditEntrys`(→ listAuditEntries). audit1-3의 count/list 계열도 동일.
+[confidence: high]
+
+### m4. modules/ 전반 — 80개 파일이 동일 보일러플레이트의 복사-붙여넣기
+get/list/count/rename이 테이블명만 다른 채 80벌 중복된다. 계약 변경(예: 페이지네이션
+방식 변경) 시 80곳을 수정해야 하며 이번 결함들처럼 일부 파일만 규약에서 이탈하는
+드리프트를 낳는다. → 제네릭 repository 헬퍼(table명 파라미터화)로 통합.
+[confidence: medium]
+
+## 롤업 판정
+
+| severity | count |
+|---|---|
+| critical | 11 (전부 confidence high) |
+| major | 5 |
+| minor | 4 |
+
+**판정: FAIL** — critical ≥1 (11건, high confidence) → 커밋 차단.
+클라이언트 신뢰(ownerId/role), SQL 인젝션, 비멱등 웹훅, 소수 Money, 시크릿 하드코딩이
+핵심 차단 사유다.
+
+```json
+[
+  {"file": "src/modules/asset1.ts", "line": 23, "severity": "critical", "confidence": "high", "reason": "deleteAsset1이 Session 검증 없이 클라이언트가 보낸 ownerId를 신뢰해 삭제를 실행한다 — contracts.ts L21-23(클라이언트 ownerId 불신) 위반. 실제 owner_id를 아는 공격자가 타인 자산을 삭제할 수 있다.", "suggestion": "시그니처를 deleteAsset1(id, session: Session)으로 바꾸고 owner_id = session.userId(또는 admin 분기)로 서버 검증한다."},
+  {"file": "src/modules/asset3.ts", "line": 31, "severity": "critical", "confidence": "high", "reason": "updateAsset3Price가 클라이언트 body.role === 'admin' 문자열만으로 권한을 판정한다 — contracts.ts L21-23 위반. role: 'admin'을 보내면 누구나 임의 자산 가격을 변경(권한 상승)한다.", "suggestion": "session: Session을 받아 session.role === 'admin'으로 판정하고 body에서 role을 제거한다."},
+  {"file": "src/modules/asset2.ts", "line": 39, "severity": "critical", "confidence": "high", "reason": "exportAsset2s가 Session·owner 필터 없이 SELECT *로 모든 사용자의 데이터를 반환하고 LIMIT도 없다 — contracts.ts L21-23(접근 제어) 및 L8-10(상한 없는 SELECT 금지) 동시 위반.", "suggestion": "Session을 받아 admin 전용 또는 owner_id 스코프로 제한하고 LIMIT/커서 페이지네이션을 추가한다."},
+  {"file": "src/modules/asset.ts", "line": 30, "severity": "critical", "confidence": "high", "reason": "listAssetsWithOwner가 Session 파라미터 없이 전 소유자의 자산 id/owner_id와 users.name까지 노출한다 — contracts.ts L21-23 위반.", "suggestion": "Session을 받아 admin 전용으로 제한하거나 owner_id = session.userId로 스코프한다."},
+  {"file": "src/modules/invoice.ts", "line": 25, "severity": "critical", "confidence": "high", "reason": "searchInvoice가 사용자 입력 q를 템플릿 보간으로 SQL에 삽입한다(LIKE '%${q}%') — SQL 인젝션. 임의 SQL 실행·전체 테이블 덤프 가능. 같은 파일의 다른 쿼리는 모두 바인딩을 쓴다.", "suggestion": "바인딩 파라미터로 교체: WHERE title LIKE ? 에 [`%${q}%`] 전달."},
+  {"file": "src/modules/invoice1.ts", "line": 40, "severity": "critical", "confidence": "high", "reason": "claimInvoice1이 SELECT(확인) 후 UPDATE(청구)를 비원자적으로 수행한다 — 동시 요청 둘 다 ok:true를 받고 나중 UPDATE가 먼저 것을 덮어써 이중 청구/소유 불일치가 발생한다.", "suggestion": "UPDATE invoices1 SET claimed_by = ? WHERE id = ? AND claimed_by IS NULL 단일 조건부 UPDATE로 원자화하고 affectedRows로 성공을 판정한다."},
+  {"file": "src/modules/invoice2.ts", "line": 31, "severity": "critical", "confidence": "high", "reason": "invoice2Fee가 (amount * 25) / 1000을 반올림 없이 반환해 amount가 40의 배수가 아니면 소수 Money가 나온다 — contracts.ts L3-6(정수 최소단위, 나눗셈 시 반올림 정책 필수) 위반. 소수 금액이 저장·합산되면 금액 오염이 누적된다.", "suggestion": "반올림 정책을 정한 뒤 Math.round((amount * 25) / 1000) 등으로 정수화해 반환한다."},
+  {"file": "src/modules/review3.ts", "line": 26, "severity": "critical", "confidence": "high", "reason": "review3Total이 (base * bp) / 10000 나눗셈 결과(tax, discount)를 반올림 없이 합산해 소수 Money를 반환한다 — contracts.ts L3-6 위반. 예: base=999, taxBp=825 → 82.4175.", "suggestion": "tax와 discount를 각각 정책에 따라 정수화(Math.round 등)한 후 합산한다."},
+  {"file": "src/modules/review.ts", "line": 26, "severity": "critical", "confidence": "high", "reason": "웹훅 시크릿이 소스에 하드코딩(L23)되어 있고, verifyReviewSig가 body를 무시한 채 sig === 시크릿 평문 비교를 한다 — 서명이 페이로드를 커버하지 않아 시크릿 1회 관측으로 모든 요청 위조 가능하며, === 비교는 타이밍 부채널도 있다.", "suggestion": "시크릿을 환경변수/시크릿 매니저로 이동하고 HMAC-SHA256(body)을 timingSafeEqual로 비교한다."},
+  {"file": "src/modules/review1.ts", "line": 40, "severity": "critical", "confidence": "high", "reason": "onReview1Event가 evt.eventId를 무시하고 매 수신마다 INSERT한다 — contracts.ts L12-14(같은 eventId 최대 5회 재전송, 처리는 멱등 필수) 위반. 재시도만으로 원장에 최대 5중 기록이 쌓여 집계가 오염된다.", "suggestion": "event_id 컬럼에 UNIQUE 제약을 두고 INSERT ... ON CONFLICT DO NOTHING으로 멱등 처리한다."},
+  {"file": "src/modules/review2.ts", "line": 30, "severity": "critical", "confidence": "high", "reason": "archiveReview2에 Session/소유자 검증이 없어 임의 사용자가 임의 id의 리뷰를 아카이브하고 blob을 영구 삭제할 수 있다 — contracts.ts L21-23 위반, 파괴적 연산이라 비가역.", "suggestion": "session: Session을 받아 소유자 또는 admin인지 검증한 후 실행한다."},
+  {"file": "src/modules/asset.ts", "line": 34, "severity": "major", "confidence": "high", "reason": "listAssetsWithOwner가 루프 안에서 owner를 건별 SELECT하는 N+1 패턴 — 요청당 최대 101 쿼리로 목록 크기에 비례해 DB 부하가 배가된다.", "suggestion": "users를 JOIN한 단일 쿼리 또는 owner_id IN (...) 배치 조회로 교체한다."},
+  {"file": "src/modules/invoice3.ts", "line": 27, "severity": "major", "confidence": "high", "reason": "reindexInvoice3s가 missing id로 early return하거나 query/index가 throw하면 pool.release(L30)를 건너뛴다 — 실패 건마다 커넥션이 누수되어 풀 고갈 시 서비스 전체가 멈춘다.", "suggestion": "acquire 직후 try/finally로 감싸 finally에서 release를 보장한다."},
+  {"file": "src/modules/review2.ts", "line": 33, "severity": "major", "confidence": "high", "reason": "blob.remove를 DB UPDATE보다 먼저 실행한다 — remove 성공 후 UPDATE가 실패하면 blob은 소실됐는데 행은 미아카이브 상태로 남는 비가역 불일치가 생기고, catch가 원인을 삼켜 archive_failed로만 보고한다.", "suggestion": "archived=1 UPDATE를 먼저 커밋한 뒤 blob을 삭제하고, blob 삭제 실패는 재시도 큐로 넘기며 오류를 로깅한다."},
+  {"file": "src/modules/invoice.ts", "line": 24, "severity": "major", "confidence": "high", "reason": "searchInvoice가 인젝션과 별개로 LIMIT 없이(contracts.ts L8-10 위반) owner 스코프도 없이(L21-23 위반) 전체 invoices를 검색해 타 사용자 제목까지 반환한다.", "suggestion": "AND owner_id = ? 조건과 LIMIT ?(MAX_PAGE_SIZE 상한)를 추가한다."},
+  {"file": "src/modules/invoice1.ts", "line": 39, "severity": "major", "confidence": "medium", "reason": "claimInvoice1이 같은 파일의 다른 뮤테이터와 달리 Session 대신 원시 userId 문자열을 받는다 — 호출 경로가 클라이언트 입력을 그대로 넘기면 타인 명의로 청구를 귀속시킬 수 있다(contracts.ts L21-23의 신뢰 경계 원칙).", "suggestion": "session: Session으로 교체하고 session.userId를 claimed_by에 기록한다."},
+  {"file": "src/modules/asset.ts", "line": 1, "severity": "minor", "confidence": "high", "reason": "80개 모듈 전부가 blob/pool/search/Money/ExternalEvent를 일괄 import하지만 대부분 미사용 — noUnusedLocals 빌드 실패 요인이고 실제 의존성 파악을 방해한다.", "suggestion": "각 파일에서 실제 사용하는 심볼만 import한다(lint --fix로 일괄 정리 가능)."},
+  {"file": "src/modules/review2.ts", "line": 31, "severity": "minor", "confidence": "high", "reason": "rows[0] 부재를 가드하지 않아 없는 id면 rows[0].blob_key에서 TypeError가 나고 catch가 archive_failed로 오보고한다.", "suggestion": "if (!rows[0]) return { ok: false, error: 'not_found' } 가드를 선행한다."},
+  {"file": "src/modules/audit.ts", "line": 15, "severity": "minor", "confidence": "high", "reason": "listAuditEntrys 등 복수형 오타 네이밍(Entrys → Entries)이 audit 계열 파일 전반에 반복된다.", "suggestion": "listAuditEntries로 개명하고 audit1-3의 동일 패턴도 정리한다."},
+  {"file": "src/modules/asset.ts", "line": 5, "severity": "minor", "confidence": "medium", "reason": "get/list/count/rename 보일러플레이트가 테이블명만 바뀐 채 80개 파일에 복사-붙여넣기되어 있다 — 계약 변경 시 80곳을 수정해야 하고, 이번 결함들처럼 일부 파일만 규약에서 이탈하는 드리프트의 원인이다.", "suggestion": "테이블명을 파라미터화한 제네릭 repository 헬퍼로 공통 CRUD를 통합한다."}
+]
+```

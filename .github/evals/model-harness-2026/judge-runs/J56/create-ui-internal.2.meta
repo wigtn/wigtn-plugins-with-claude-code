@@ -1,0 +1,5 @@
+judge=J56
+model=gpt-5.6-sol
+fixture_repeat=create-ui-internal.2
+duration_seconds=22
+exit_code=0

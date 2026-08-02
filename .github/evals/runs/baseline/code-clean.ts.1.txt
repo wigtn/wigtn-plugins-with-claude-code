@@ -1,0 +1,128 @@
+# Code Review Report
+
+## Target
+- **File**: `/Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/fixtures/code-clean.ts`
+- **Lines**: 1-133 (파일 전체를 변경 diff로 간주)
+- **Level**: 3 (Deep) — 인증/인가·서명 토큰·다중 저장소 삭제가 섞인 보안 민감 코드
+
+## Phase 1: Context
+
+단일 파일 fixture. 의존 모듈(`./db`, `./storage`, `./auth`)은 저장소에 존재하지 않으므로
+`db.raw`는 knex 계열의 위치 바인딩(`?`) 시그니처, `requireSession`은 미인증 시 throw 하는
+계약으로 간주하고 리뷰했다. 테스트 파일 및 린터 설정은 fixture 디렉터리에 없다.
+
+## Phase 2: 5축 분석
+
+### Readability
+- 주석이 "무엇"이 아니라 "왜"를 설명한다. 특히 L17-18(LIKE 메타문자 이스케이프가 보안이 아니라
+  검색 의미 보존이 목적임을 명시)과 L64-67(삭제 순서를 실패 모드로 정당화)은 리뷰어가 직접
+  재구성해야 할 판단 근거를 코드에 남겨 둔 좋은 사례다.
+- 핸들러 4개가 모두 같은 형태(세션 → 조회 → 권한 → 동작 → Response)로 정렬돼 스캔이 쉽다.
+- 에러 응답이 `{ error: "snake_case" }` + 상태코드 단일 형태로 일관된다.
+
+### Maintainability
+- `SHARE_TTL_MS`(L12), `SHARE_TOKEN_SECRET`(L7)이 상수로 추출돼 있고, 시크릿 미설정은
+  모듈 로드 시점에 fail-fast(L8-10)한다 — 런타임 중 빈 문자열로 조용히 서명하는 실패 모드가 없다.
+- `sign`(L109)/`verifyShareToken`(L119)이 토큰 포맷(`payload.mac`)을 한 쌍으로 캡슐화한다.
+- 세 핸들러에 `requireSession`이 반복되지만, 미들웨어가 아닌 핸들러 레벨 명시는
+  "인증 누락"을 눈으로 검증 가능하게 만드는 쪽이라 결함으로 보지 않는다.
+
+### Performance
+- 모든 목록 쿼리에 `LIMIT`(L26: 50, L42: 100)이 걸려 있어 무한 결과셋이 없다.
+- `listDocumentsWithOwners`가 N+1 대신 단일 JOIN(L37-39)으로 소유자 정보를 가져온다.
+- 되돌릴 수 없는 S3 호출(L82)이 트랜잭션 바깥에 있어 DB 락 구간이 외부 네트워크 I/O만큼
+  늘어나지 않는다.
+
+### Testability
+- 각 핸들러가 `Request`를 받아 `Response`를 반환하는 순수한 경계라 통합 하네스 없이 호출 가능하다.
+- `verifyShareToken`이 export 된 순수 함수(문자열 → 결과)라 만료·위변조·형식오류 케이스를
+  단위 테스트로 직접 찌를 수 있다.
+- `db`/`s3`가 모듈 스코프 import라 주입이 아닌 모듈 목킹이 필요하다. 이 파일 규모에서는
+  통상적 선택이므로 감점 사유로 계상하지 않았다.
+
+### Best Practices / Security
+검증한 항목과 결과:
+- **SQL 인젝션**: L21-28, L36-44, L52-55, L70-74, L94-96 전부 위치 바인딩. 문자열 보간으로 값이
+  들어가는 지점 없음. L40 `d.owner_id = ? OR ? = 'admin'`의 `session.role`도 바인딩이며,
+  `AND`가 섞이지 않아 연산자 우선순위 함정도 없다.
+- **LIKE 패턴 오염**: L19가 `\`, `%`, `_`를 이스케이프하고 L24가 `ESCAPE`를 선언한다.
+  `q = "%"`로 소유 문서 전체를 매칭시키는 의미 왜곡이 차단된다.
+- **인가**: `deleteDocument`(L60)는 소유자 또는 admin, `createShareLink`(L100)는 소유자 전용.
+  둘 다 404(존재)와 403(권한)을 분리 반환하는데, 문서 ID가 열거 가능한 리소스라 이 도메인에서는
+  수용 가능한 설계다.
+- **IDOR**: `searchDocuments`(L24)와 `listDocumentsWithOwners`(L40)가 쿼리 자체에 `owner_id`
+  스코프를 넣어 애플리케이션 레이어 필터에 의존하지 않는다. `owner_email` 같은 PII도 이 스코프
+  안에서만 노출된다.
+- **타이밍 공격**: L128이 길이 비교 후 `timingSafeEqual`. `timingSafeEqual`은 길이 불일치 시
+  throw 하므로 선행 길이 가드가 필수인데 정확히 그렇게 돼 있다.
+- **검증 순서**: L123-128에서 MAC을 먼저 검증하고 L130에서 `JSON.parse` 한다. 미인증 입력을
+  파서에 넣지 않는 올바른 순서 — `JSON.parse` throw 경로는 비밀키 보유자만 도달 가능.
+- **만료**: `exp`가 서명 대상 payload 안에 있고(L110) 검증 시 재확인된다(L131). 클라이언트가
+  만료를 연장할 수 없다.
+- **`SHARE_TOKEN_SECRET!`(L113, L123)**: L8-10에서 미설정 시 모듈 로드가 실패하므로 런타임상
+  항상 non-null. 클로저 경계에서 TS 내로잉이 소실된 것을 보정한 것뿐이라 결함 아님.
+- **삭제 원자성**: 행 삭제 + 감사 로그가 한 트랜잭션(L69-75), 비가역 스토리지 삭제는 그 뒤
+  (L81-86). 실패 시 남는 것이 "고아 객체"(회수 가능)이지 "본문 없는 좀비 행"(복구 불가)이 아니다.
+  L84가 스토리지 정리 실패에 500을 내지 않는 것도, 이미 커밋된 삭제를 실패로 보고해 무의미한
+  재시도(재시도는 404)를 유발하지 않기 위한 올바른 선택이다.
+- **감사 로그**: 삭제 액션이 actor/action/target과 함께 삭제와 **동일 트랜잭션**에 기록된다
+  (L71-74) — 로그만 유실되는 경로가 없다.
+
+## Findings
+
+### Critical (즉시 수정)
+없음.
+
+### Major (수정 권장)
+없음.
+
+### Minor (개선 제안)
+없음.
+
+일반론(테스트 부재, DI 미적용, 입력 스키마 검증 부재 등)으로는 감점하지 않았다.
+파일·라인 근거를 갖는 실제 결함을 찾지 못했다.
+
+### Info (게이트 영향 없음 — 감점 아님, 관찰 기록)
+- **공유 토큰 무효화 부재** (L104-106, L119-133): 토큰이 stateless라 7일 TTL 안에는 취소할 수
+  없고, 문서가 삭제돼도 토큰 서명 검증 자체는 계속 통과한다. 다만 `verifyShareToken`은
+  `documentId`만 반환하므로 실제 본문 접근 경로에서 문서 존재·권한을 다시 조회한다면 문제되지
+  않는다. 이 파일만으로는 호출 측을 확인할 수 없어 결함으로 확정하지 않는다.
+- **`ESCAPE '\\'`의 엔진 의존성** (L24): JS 템플릿 리터럴이라 SQL에는 `ESCAPE '\'`가 전달된다.
+  PostgreSQL/SQLite에서는 유효한 1문자 리터럴이지만, MySQL은 기본 설정에서 문자열 리터럴 내
+  백슬래시를 이스케이프로 해석한다. 대상 엔진이 MySQL이라면 확인이 필요하나, 어떤 엔진인지
+  이 파일에서 판별할 수 없고 Postgres 계열이면 정상 동작하므로 결함으로 계상하지 않았다.
+
+## Quality Gate Result
+
+### Gate Decision (findings 롤업 — 결정)
+
+| Severity | Count | 게이트 영향 |
+|----------|-------|------------|
+| Critical (high/med conf) | 0 | 미차단 |
+| Major | 0 | 미발동 |
+| Minor | 0 | (5 미만) |
+
+- **Status**: PASS
+- **Rule**: critical 0 AND major 0 AND minor < 5 → PASS
+- **Action**: 커밋 진행
+
+### 참고 점수 (게이트 비결정)
+
+| Category | Score | 근거 |
+|----------|-------|------|
+| Readability | 19/20 | why-주석(L17-18, L64-67), 핸들러 구조·에러 형태 일관 |
+| Maintainability | 18/20 | 상수 추출, fail-fast(L8-10), 토큰 포맷 캡슐화 |
+| Performance | 19/20 | LIMIT 상시(L26/L42), JOIN으로 N+1 회피, 트랜잭션 밖 외부 I/O |
+| Testability | 17/20 | 순수 Request→Response 경계, `verifyShareToken` export. db/s3는 모듈 목킹 필요 |
+| Best Practices | 20/20 | 바인딩 100%, 길이가드+timingSafeEqual, 검증-후-파싱, 삭제 순서·감사 로그 원자성 |
+| **Total (참고)** | **93/100** | **A** |
+
+## Recommendations
+
+수정이 필요한 항목 없음. 이 파일을 향후 유사 핸들러의 참조 구현으로 삼을 만하다. 특히
+(1) MAC 검증 후 파싱, (2) 비가역 작업을 커밋 뒤로 미루는 순서, (3) 쿼리 레벨 소유권 스코프
+세 가지는 팀 컨벤션으로 문서화할 가치가 있다.
+
+```json
+[]
+```

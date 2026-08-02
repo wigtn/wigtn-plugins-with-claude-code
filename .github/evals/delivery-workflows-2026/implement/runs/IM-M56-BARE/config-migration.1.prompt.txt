@@ -1,0 +1,11 @@
+v1/v2 배달 설정을 canonical 형태로 마이그레이션하는 기능을 구현해줘.
+
+요구사항:
+- v1: endpoint, timeout_seconds. v2: version=2와 delivery.endpoint/timeout_ms/enabled.
+- 결과는 CanonicalConfig(endpoint, timeout_ms, enabled)다.
+- endpoint는 https URL, timeout은 100..30000ms여야 한다.
+- v1/v2 필드가 섞였거나 알 수 없는 최상위 필드, bool timeout, 입력 타입 오류는 ValueError다.
+- 입력 mapping을 변경하지 않고 v1 enabled 기본값은 True다.
+- 공개 API, 표준 라이브러리, 공개 테스트를 보존한다.
+- notes/user-draft.txt는 수정하지 않고 커밋/push하지 않는다.
+

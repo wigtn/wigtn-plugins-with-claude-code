@@ -1,0 +1,18 @@
+{
+  "M55-CURRENT": {
+    "hits": 76,
+    "total": 128
+  },
+  "M56-BARE": {
+    "hits": 68,
+    "total": 128
+  },
+  "M56-CURRENT": {
+    "hits": 82,
+    "total": 128
+  },
+  "M56-OPT": {
+    "hits": 102,
+    "total": 128
+  }
+}

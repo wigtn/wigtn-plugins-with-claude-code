@@ -1,0 +1,6 @@
+fixture=review-contract-clean
+repeat=3
+model=gpt-5.6-sol
+reasoning_effort=low
+duration_seconds=125
+exit_code=0

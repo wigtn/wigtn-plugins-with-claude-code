@@ -1,0 +1,52 @@
+{
+  "money-rounding": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "date-range": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "authorization": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "webhook-signature": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "pagination": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "retry-backoff": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "safe-path": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "state-transition": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "event-dedupe": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ],
+  "csv-injection": [
+    "TASK.md",
+    "implementation.py",
+    "test_implementation.py"
+  ]
+}

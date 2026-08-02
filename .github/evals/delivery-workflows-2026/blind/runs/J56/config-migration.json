@@ -1,0 +1,78 @@
+{
+  "task": "config-migration",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "config/migrate.py::_validate_endpoint",
+          "finding": "URL validation checks only scheme and netloc. It accepts malformed HTTPS endpoints such as invalid ports and URLs containing whitespace.",
+          "impact": "Invalid or unsafe delivery destinations can enter the canonical configuration despite the HTTPS URL invariant."
+        },
+        {
+          "location": "config/migrate.py::migrate_config, version check",
+          "finding": "The comparison raw[\"version\"] != 2 accepts values such as 2.0 instead of enforcing the v2 version field's integer type.",
+          "impact": "Some input type errors are silently accepted, weakening schema validation."
+        }
+      ],
+      "summary": "Core migration, timeout bounds, bool rejection, immutability, and exact field sets are implemented, but endpoint validation is materially weaker than the other candidates and version typing is permissive."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Complete and project-native implementation with exact schemas, strict version and timeout types, robust HTTPS parsing, bounds enforcement, no input mutation, and successful visible and hidden tests."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "config/migrate.py::migrate_config, version validation",
+          "finding": "The condition checks bool and equality but not isinstance(version, int), so 2.0 and other values comparing equal to 2 are accepted.",
+          "impact": "The v2 schema does not consistently reject erroneous version-field types."
+        }
+      ],
+      "summary": "Strong validation and clean structure overall, including defensive field-name handling and strict v2 timeout validation. Its main gap is permissive version typing."
+    },
+    {
+      "label": "D",
+      "completeness": 3,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "config/migrate.py::_validate_timeout and v2 call site",
+          "finding": "The shared Real-based validator accepts v2 timeout_ms values such as 500.0 and converts them to int.",
+          "impact": "A type-invalid v2 field is normalized rather than rejected, contrary to strict input-type validation for a millisecond field."
+        }
+      ],
+      "summary": "Robust endpoint and version validation with correct bounds and immutability, but sharing a permissive numeric validator between v1 seconds and v2 milliseconds weakens the v2 schema."
+    }
+  ],
+  "ranking_best_to_worst": [
+    "B",
+    "C",
+    "D",
+    "A"
+  ]
+}

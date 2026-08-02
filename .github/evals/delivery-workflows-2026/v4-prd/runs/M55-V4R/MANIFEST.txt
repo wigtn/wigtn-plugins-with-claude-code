@@ -1,0 +1,10 @@
+created_utc=2026-07-27T10:26:36Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+model=gpt-5.5
+effort=medium
+a3e44b6278a456ee381ca8ab09d34e9929c135c756a87d0d61f67250efa5de0a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/v4-prd/ROBUSTNESS-PROTOCOL.md
+ca60b72ac6f6cea376fd814dd144e3d8276238c263ce13f3a584cbf2bd17fbf6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/v4-prd/run-robustness.sh
+370081ae67dbaad972044a477a218f691d351e9210f3ab62d3ce26975834bb3b  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/v4-prd/score-robustness.py
+29f85147f938e05a91b4ea87b71b230aced38acb49dedf76701fcc73a6613bb6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+ec31b9f711ebc2da763c219f73757fa5f73bd179513f457d44f9d844cfb73fb8  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-contract.md
+4eb67c4269a172fe12848491ace477a4b51b16607c5a81a207ae2c06d081f724  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-universal.txt

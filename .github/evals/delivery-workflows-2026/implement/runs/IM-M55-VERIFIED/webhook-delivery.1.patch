@@ -1,0 +1,56 @@
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..50d47df 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,23 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        existing = self.events.get(event_id)
++        if existing is None:
++            self.events[event_id] = payload
++            return True
++        if existing == payload:
++            return False
++        raise ValueError("event_id already exists with different payload")
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++    if 200 <= status_code <= 299:
++        return None
++
++    delays = {
++        1: 0,
++        2: 60,
++        3: 300,
++    }
++    return delays.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..9349e48 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,20 @@
++import hashlib
++import hmac
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    prefix = "sha256="
++    if not isinstance(header, str) or not header.startswith(prefix):
++        return False
++
++    digest = header[len(prefix):]
++    if len(digest) != hashlib.sha256().digest_size * 2:
++        return False
++
++    try:
++        provided = bytes.fromhex(digest)
++    except ValueError:
++        return False
++
++    expected = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(provided, expected)

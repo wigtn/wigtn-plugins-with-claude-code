@@ -1,0 +1,9 @@
+arm=M56-BARE
+fixture=create-backend-webhook
+repeat=1
+model=gpt-5.6-sol
+reasoning_effort=medium
+started_epoch=1785083622
+finished_epoch=1785083749
+duration_seconds=127
+exit_code=0

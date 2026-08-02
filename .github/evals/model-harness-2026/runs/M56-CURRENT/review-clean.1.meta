@@ -1,0 +1,9 @@
+arm=M56-CURRENT
+fixture=review-clean
+repeat=1
+model=gpt-5.6-sol
+reasoning_effort=medium
+started_epoch=1785088891
+finished_epoch=1785088930
+duration_seconds=39
+exit_code=0

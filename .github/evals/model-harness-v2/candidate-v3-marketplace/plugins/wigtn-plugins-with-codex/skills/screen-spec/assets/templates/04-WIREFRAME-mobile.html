@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>화면정의서 (Mobile) — {feature-name}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Wireframe = grayscale + semantic state colors only. */
+    /* Brand/aesthetic styling belongs in the mockup stage, not here. */
+    :root {
+      --wf-bg: #fafafa;
+      --wf-border: #d4d4d8;
+      --wf-fg: #18181b;
+      --wf-muted: #71717a;
+    }
+    .wf-box {
+      border: 2px dashed var(--wf-border);
+      background: white;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+    }
+    .wf-label {
+      font-size: 0.7rem;
+      color: var(--wf-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    /* iPhone 15 frame ~ 393 x 852, iPhone SE ~ 375 x 667 */
+    .device-frame {
+      width: 393px;
+      min-height: 600px;
+      border: 1px solid #18181b;
+      border-radius: 2rem;
+      padding: 0;
+      overflow: hidden;
+      background: white;
+      position: relative;
+    }
+    .device-frame-se {
+      width: 375px;
+      min-height: 520px;
+      border: 1px solid #18181b;
+      border-radius: 2rem;
+      padding: 0;
+      overflow: hidden;
+      background: white;
+    }
+    .safe-area-top {
+      height: 2.5rem;
+      background: #18181b;
+      color: white;
+      font-size: 0.7rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 0.1em;
+    }
+    .safe-area-bottom {
+      height: 1.25rem;
+      background: white;
+      border-top: 1px solid var(--wf-border);
+    }
+  </style>
+</head>
+<body class="bg-neutral-50 text-neutral-900">
+
+  <header class="sticky top-0 z-50 bg-white border-b">
+    <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-6" aria-label="화면 목록">
+      <span class="font-semibold">{feature-name} — Mobile Wireframe</span>
+      <div class="flex gap-4 text-sm">
+        <a href="#screen-home" class="hover:underline">Home</a>
+        <a href="#screen-detail" class="hover:underline">Detail</a>
+        <a href="#screen-form" class="hover:underline">Form</a>
+        <a href="#nav-patterns" class="hover:underline">Navigation</a>
+      </div>
+      <span class="ml-auto text-xs text-neutral-500">Lo-fi Mobile Wireframe</span>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8 space-y-16">
+
+    <!-- ============================ -->
+    <!-- Navigation patterns          -->
+    <!-- ============================ -->
+    <section id="nav-patterns" class="border rounded-lg p-6 bg-white" aria-labelledby="nav-patterns-title">
+      <h2 id="nav-patterns-title" class="text-xl font-semibold mb-4">Navigation Patterns</h2>
+      <p class="text-sm text-neutral-600 mb-4">선택한 패턴 1개를 03-SCREEN-SPEC.md에 명시. 변경 시 안내 추가.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Bottom Tab -->
+        <div>
+          <p class="wf-label mb-2">Bottom Tab</p>
+          <div class="device-frame-se mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="p-3 space-y-2 min-h-[420px]">
+              <div class="wf-box bg-neutral-100 text-xs">[Screen content]</div>
+            </div>
+            <div class="border-t flex">
+              <div class="flex-1 text-center py-2 text-xs">[Home]</div>
+              <div class="flex-1 text-center py-2 text-xs">[Search]</div>
+              <div class="flex-1 text-center py-2 text-xs">[Me]</div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+
+        <!-- Stack -->
+        <div>
+          <p class="wf-label mb-2">Stack (push/pop)</p>
+          <div class="device-frame-se mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="px-3 py-2 border-b flex items-center gap-2 text-xs">
+              <span>[ ← Back ]</span><span>Detail</span>
+            </div>
+            <div class="p-3 space-y-2 min-h-[400px]">
+              <div class="wf-box bg-neutral-100 text-xs">[Pushed screen]</div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+
+        <!-- Drawer -->
+        <div>
+          <p class="wf-label mb-2">Drawer</p>
+          <div class="device-frame-se mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="flex min-h-[460px]">
+              <div class="w-2/5 border-r bg-neutral-100 p-2 text-xs space-y-2">
+                <div class="wf-box">[Menu 1]</div>
+                <div class="wf-box">[Menu 2]</div>
+                <div class="wf-box">[Menu 3]</div>
+              </div>
+              <div class="flex-1 p-2">
+                <div class="wf-box bg-neutral-100 text-xs">[Active]</div>
+              </div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ -->
+    <!-- Screen: Home                 -->
+    <!-- ============================ -->
+    <section id="screen-home" class="border rounded-lg p-6 bg-white" aria-labelledby="screen-home-title">
+      <header class="mb-4 flex items-baseline gap-3">
+        <h2 id="screen-home-title" class="text-xl font-semibold">Home</h2>
+        <span class="wf-label">Audience: {audience} · Auth: {auth}</span>
+      </header>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- iPhone 15 -->
+        <div>
+          <p class="wf-label mb-2">iPhone 15 (393×852)</p>
+          <div class="device-frame mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="p-3 space-y-3 min-h-[480px]">
+              <div class="wf-box bg-neutral-100 text-sm">[Header / 제목]</div>
+              <div class="wf-box bg-neutral-100 text-sm h-24">[Hero / 핵심 후크]</div>
+              <div class="wf-box bg-neutral-100 text-sm">[List item 1]</div>
+              <div class="wf-box bg-neutral-100 text-sm">[List item 2]</div>
+              <div class="wf-box bg-neutral-100 text-sm">[List item 3]</div>
+              <div class="wf-box bg-neutral-800 text-white text-center text-sm">[Primary CTA]</div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+
+        <!-- iPhone SE -->
+        <div>
+          <p class="wf-label mb-2">iPhone SE (375×667)</p>
+          <div class="device-frame-se mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="p-3 space-y-2 min-h-[400px]">
+              <div class="wf-box bg-neutral-100 text-xs">[Header]</div>
+              <div class="wf-box bg-neutral-100 text-xs h-16">[Hero]</div>
+              <div class="wf-box bg-neutral-100 text-xs">[List]</div>
+              <div class="wf-box bg-neutral-800 text-white text-center text-xs">[CTA]</div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+      </div>
+
+      <details class="mt-6">
+        <summary class="cursor-pointer text-sm underline">States</summary>
+        <div class="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+          <div class="wf-box bg-neutral-50">[loading] 스켈레톤</div>
+          <div class="wf-box bg-neutral-100">[empty] 첫 사용 CTA</div>
+          <div class="wf-box bg-red-50">[error] 재시도 버튼</div>
+          <div class="wf-box bg-green-50">[success] 리스트 표시</div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================ -->
+    <!-- Screen: Detail (push)        -->
+    <!-- ============================ -->
+    <section id="screen-detail" class="border rounded-lg p-6 bg-white" aria-labelledby="screen-detail-title">
+      <header class="mb-4 flex items-baseline gap-3">
+        <h2 id="screen-detail-title" class="text-xl font-semibold">Detail</h2>
+        <span class="wf-label">Navigation: Push from Home</span>
+      </header>
+
+      <div class="device-frame mx-auto">
+        <div class="safe-area-top">9:41</div>
+        <div class="px-3 py-2 border-b flex items-center gap-2 text-sm">
+          <span>[ ← Back ]</span><span class="font-medium">Detail</span><span class="ml-auto">[ ⋯ ]</span>
+        </div>
+        <div class="p-3 space-y-3 min-h-[440px]">
+          <div class="wf-box bg-neutral-100 text-sm h-32">[Image / Hero]</div>
+          <div class="wf-box bg-neutral-100 text-sm">[Title]</div>
+          <div class="wf-box bg-neutral-100 text-sm h-20">[Body]</div>
+          <div class="wf-box bg-neutral-100 text-xs">[Bottom sheet trigger]</div>
+        </div>
+        <div class="border-t p-2">
+          <div class="wf-box bg-neutral-800 text-white text-center text-sm">[Action]</div>
+        </div>
+        <div class="safe-area-bottom"></div>
+      </div>
+
+      <details class="mt-6">
+        <summary class="cursor-pointer text-sm underline">Bottom Sheet / Action Sheet 패턴</summary>
+        <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <p class="wf-label mb-1">Bottom Sheet (선택 액션)</p>
+            <div class="wf-box bg-neutral-50 text-xs space-y-1">
+              <div class="text-center text-neutral-400">━━━</div>
+              <div class="wf-box bg-white">[Option 1]</div>
+              <div class="wf-box bg-white">[Option 2]</div>
+              <div class="wf-box bg-white">[Option 3]</div>
+            </div>
+          </div>
+          <div>
+            <p class="wf-label mb-1">Action Sheet (파괴적 액션)</p>
+            <div class="wf-box bg-neutral-50 text-xs space-y-1">
+              <div class="wf-box bg-white">[Edit]</div>
+              <div class="wf-box bg-red-50 text-red-700">[Delete]</div>
+              <div class="wf-box bg-white text-center">[Cancel]</div>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================ -->
+    <!-- Screen: Form                 -->
+    <!-- ============================ -->
+    <section id="screen-form" class="border rounded-lg p-6 bg-white" aria-labelledby="screen-form-title">
+      <header class="mb-4 flex items-baseline gap-3">
+        <h2 id="screen-form-title" class="text-xl font-semibold">Form</h2>
+        <span class="wf-label">Keyboard 노출 시 ≥ 50% 화면 가림 주의</span>
+      </header>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <p class="wf-label mb-2">기본 (keyboard 닫힘)</p>
+          <div class="device-frame mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="p-3 space-y-3 min-h-[480px]">
+              <div class="wf-box bg-neutral-100 text-sm">[Input: title]</div>
+              <div class="wf-box bg-neutral-100 text-sm h-24">[Textarea]</div>
+              <div class="wf-box bg-neutral-100 text-sm">[Select]</div>
+              <div class="wf-box bg-neutral-800 text-white text-center text-sm">[Submit]</div>
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+
+        <div>
+          <p class="wf-label mb-2">Keyboard 노출 (textarea 포커스)</p>
+          <div class="device-frame mx-auto">
+            <div class="safe-area-top">9:41</div>
+            <div class="p-3 space-y-3 min-h-[200px]">
+              <div class="wf-box bg-neutral-100 text-sm">[Input: title]</div>
+              <div class="wf-box bg-amber-50 text-sm h-24">[Textarea — focused]</div>
+              <div class="wf-box bg-neutral-800 text-white text-center text-sm">[Submit (sticky above keyboard)]</div>
+            </div>
+            <div class="bg-neutral-200 text-center py-8 text-xs text-neutral-600 border-t">
+              [Native Keyboard area]
+            </div>
+            <div class="safe-area-bottom"></div>
+          </div>
+        </div>
+      </div>
+
+      <details class="mt-6">
+        <summary class="cursor-pointer text-sm underline">States</summary>
+        <div class="mt-3 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+          <div class="wf-box bg-neutral-50">[loading] 스피너 + disabled</div>
+          <div class="wf-box bg-red-50">[error] inline + 상단 배너</div>
+          <div class="wf-box bg-green-50">[success] 화면 전환 + toast</div>
+          <div class="wf-box bg-amber-50">[no-permission] 안내 화면</div>
+        </div>
+      </details>
+    </section>
+
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-4 py-8 text-xs text-neutral-500 border-t">
+    Generated by /screen-spec --platform=mobile · {YYYY-MM-DD} · Lo-fi Mobile Wireframe (grayscale + semantic state colors)
+  </footer>
+
+</body>
+</html>

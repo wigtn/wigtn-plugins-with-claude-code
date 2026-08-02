@@ -1,0 +1,7 @@
+arm=M56-V2
+task=state-transition
+model_exit=0
+test_exit=0
+test_integrity=intact
+duration_seconds=35
+wigtn_skill_loaded=no

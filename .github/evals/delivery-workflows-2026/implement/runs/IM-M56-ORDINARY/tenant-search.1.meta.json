@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M56-ORDINARY",
+  "task": "tenant-search",
+  "repeat": 1,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 0,
+  "duration_seconds": 136,
+  "patch_lines": 143
+}

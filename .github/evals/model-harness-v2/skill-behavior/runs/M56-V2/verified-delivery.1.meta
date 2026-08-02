@@ -1,0 +1,9 @@
+arm=M56-V2
+task=verified-delivery
+repeat=1
+model_exit=0
+test_exit=0
+tree_changed=yes
+head_changed=no
+skill_loaded=yes
+duration_seconds=69

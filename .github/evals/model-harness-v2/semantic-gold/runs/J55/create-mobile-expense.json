@@ -1,0 +1,61 @@
+{
+  "fixture": "create-mobile-expense",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Most implementation-ready candidate. It covers roles, state transitions, offline sync, upload failure, duplicate prevention, permission changes, concurrency, security, accessibility, metrics, assumptions, open decisions, and acceptance criteria with strong requirement traceability. It is long, but most detail is useful."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 4,
+      "concision": 2,
+      "blockers": [],
+      "high": [
+        {
+          "location": "FR-023 / OD-002",
+          "finding": "FR-023 makes rejected-request edit and resubmission a Must, while OD-002 says submitted-edit policy is undecided and defaults to forbidding edits until rejection.",
+          "impact": "The lifecycle and implementation contract are internally unstable, creating rework in state transitions, UI, audit handling, and acceptance tests."
+        },
+        {
+          "location": "OD-003: submitted team retained",
+          "finding": "The recommended authority model keeps approval with the team at submission time, while other sections say current authority and permission changes must be enforced.",
+          "impact": "A team-transfer case could be implemented inconsistently, risking approval by a manager who no longer owns the employee's request."
+        }
+      ],
+      "summary": "Broad and testable, with good coverage of security, concurrency, sync, and acceptance criteria. Quality is reduced by internal policy inconsistency around edit/rejection flow and team-transfer authority, plus some needless ceremony."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 3,
+      "concision": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "FR-9: approval team fixed to submission team",
+          "finding": "The PRD fixes approval authority to the employee's team at submission time despite the brief requiring handling permission changes and managers approving only their own team's requests.",
+          "impact": "Employee transfer scenarios may allow stale-team approval unless further policy is resolved, creating authorization and audit risk."
+        },
+        {
+          "location": "FR-5: same image reuse blocked",
+          "finding": "The PRD automatically blocks same-image reuse as a definitive duplicate while also saying heuristic duplicate detection should not automatically block normal submissions.",
+          "impact": "Legitimate correction or resubmission flows could be blocked, requiring exception handling not fully specified."
+        }
+      ],
+      "summary": "Strong practical specification with good data, API, security, accessibility, and operational coverage. It is less traceable than A or B because acceptance criteria are not tied to stable requirement IDs, and it has policy risks around team-transfer authority and duplicate blocking."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C"]
+}

@@ -1,0 +1,121 @@
+diff --git a/search/cursor.py b/search/cursor.py
+index 3662433..fcd0bb1 100644
+--- a/search/cursor.py
++++ b/search/cursor.py
+@@ -1,5 +1,73 @@
++import base64
++import binascii
++import hashlib
++import hmac
++import json
++
++
++_CURSOR_KEY = b"tenant-search-cursor-v1"
++_SIGNATURE_SIZE = hashlib.sha256().digest_size
++
++
++def _urlsafe_decode(value: str) -> bytes:
++    if not isinstance(value, str) or not value:
++        raise ValueError("invalid cursor")
++
++    try:
++        raw = value.encode("ascii")
++        padding = b"=" * (-len(raw) % 4)
++        decoded = base64.b64decode(raw + padding, altchars=b"-_", validate=True)
++    except (UnicodeEncodeError, binascii.Error, ValueError) as exc:
++        raise ValueError("invalid cursor") from exc
++
++    canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
++    if canonical != value:
++        raise ValueError("invalid cursor")
++    return decoded
++
++
+ def encode_cursor(tenant_id: str, created_at: int, record_id: str) -> str:
+-    raise NotImplementedError
++    payload = json.dumps(
++        {
++            "created_at": created_at,
++            "id": record_id,
++            "tenant_id": tenant_id,
++            "version": 1,
++        },
++        ensure_ascii=False,
++        separators=(",", ":"),
++        sort_keys=True,
++    ).encode("utf-8")
++    signature = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()
++    return base64.urlsafe_b64encode(payload + signature).rstrip(b"=").decode("ascii")
++
+ 
+ def decode_cursor(value: str, tenant_id: str):
+-    raise NotImplementedError
++    packed = _urlsafe_decode(value)
++    if len(packed) <= _SIGNATURE_SIZE:
++        raise ValueError("invalid cursor")
++
++    payload, signature = packed[:-_SIGNATURE_SIZE], packed[-_SIGNATURE_SIZE:]
++    expected = hmac.new(_CURSOR_KEY, payload, hashlib.sha256).digest()
++    if not hmac.compare_digest(signature, expected):
++        raise ValueError("invalid cursor")
++
++    try:
++        data = json.loads(payload.decode("utf-8"))
++    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
++        raise ValueError("invalid cursor") from exc
++
++    if (
++        not isinstance(data, dict)
++        or set(data) != {"created_at", "id", "tenant_id", "version"}
++        or data["version"] != 1
++        or not isinstance(data["created_at"], int)
++        or isinstance(data["created_at"], bool)
++        or not isinstance(data["id"], str)
++        or not isinstance(data["tenant_id"], str)
++    ):
++        raise ValueError("invalid cursor")
++    if data["tenant_id"] != tenant_id:
++        raise ValueError("cursor belongs to another tenant")
++
++    return data["created_at"], data["id"]
+diff --git a/search/service.py b/search/service.py
+index f8a1da0..72d6476 100644
+--- a/search/service.py
++++ b/search/service.py
+@@ -1,4 +1,35 @@
+ from .cursor import encode_cursor, decode_cursor
+ 
++
+ def search(records, tenant_id, query, limit, cursor=None):
+-    raise NotImplementedError
++    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 50:
++        raise ValueError("limit must be an integer between 1 and 50")
++
++    folded_query = query.casefold()
++    matches = [
++        record
++        for record in records
++        if record["tenant_id"] == tenant_id
++        and folded_query in record["name"].casefold()
++    ]
++    matches.sort(key=lambda record: (-record["created_at"], record["id"]))
++
++    if cursor is not None:
++        last_created_at, last_id = decode_cursor(cursor, tenant_id)
++        matches = [
++            record
++            for record in matches
++            if record["created_at"] < last_created_at
++            or (
++                record["created_at"] == last_created_at
++                and record["id"] > last_id
++            )
++        ]
++
++    page = matches[:limit]
++    if len(matches) <= limit:
++        return page, None
++
++    last = page[-1]
++    next_cursor = encode_cursor(tenant_id, last["created_at"], last["id"])
++    return page, next_cursor

@@ -1,0 +1,9 @@
+arm=M56-OPT
+fixture=review-convention
+repeat=2
+model=gpt-5.6-sol
+reasoning_effort=medium
+started_epoch=1785084792
+finished_epoch=1785088925
+duration_seconds=4133
+exit_code=0

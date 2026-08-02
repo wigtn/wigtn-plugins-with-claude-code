@@ -1,0 +1,6 @@
+fixture=review-universal
+repeat=3
+model=gpt-5.6-sol
+reasoning_effort=low
+duration_seconds=88
+exit_code=0

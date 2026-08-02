@@ -1,0 +1,54 @@
+{
+  "fixture": "create-backend-webhook",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 2,
+      "blockers": [],
+      "high": [],
+      "summary": "보안, 테넌트 격리, 내구성, 재시도, 관측성, 미결정 사항과 출시 조건을 매우 충실하게 연결한 구현 가능한 PRD다. 다만 같은 계약이 목표·기능 요구사항·비기능 요구사항·수용 기준·위험·출시 조건에서 반복되어 문서 길이에 비해 추가 정보량이 낮다."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "브리프의 핵심 계약을 빠짐없이 다루면서 요구사항, 열린 결정, 위험 및 관찰 가능한 인수 기준을 효율적으로 연결한다. 미확정 수치를 만들지 않고 서명, rotation, 재시도 종료, endpoint 변경 및 보존 정책을 명시적인 결정 항목으로 남겨 세 후보 중 정보 밀도와 구현 준비도의 균형이 가장 좋다."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "A-006의 “모든 저장된 이벤트에 최소 한 번 요청을 시도”와 FR-005/AC-004의 endpoint 부재 시 외부 요청 금지",
+          "finding": "저장된 모든 이벤트에 실제 요청을 최소 한 번 수행한다는 정의와, endpoint가 없거나 비활성인 이벤트에는 요청을 전혀 수행하지 않는다는 요구사항이 직접 충돌한다.",
+          "impact": "최소 1회 보장의 적용 대상을 구현자와 검증자가 서로 다르게 해석할 수 있어 상태 모델, 미등록 endpoint 보관 정책 및 인수 테스트를 재작성해야 한다."
+        },
+        {
+          "location": "Users, roles, and permissions의 “endpoint 등록 내부 API ... 서명에 필요한 secret 정보를 제공한다”",
+          "finding": "브리프는 기존 내부 API가 endpoint 등록을 담당한다고만 했는데, 후보는 이 API가 서명 secret까지 제공하는 것으로 신뢰 경계와 책임을 확장했다.",
+          "impact": "실제 secret 관리 주체가 별도 비밀 저장소라면 API 계약과 권한 모델을 크게 변경해야 하며, 그대로 구현하면 secret 노출 범위가 불필요하게 확대될 수 있다."
+        }
+      ],
+      "summary": "대부분의 제품·보안·전달 계약과 수용 기준은 강하고 추적 가능하다. 그러나 최소 1회 의미에 관한 내부 모순과 기존 endpoint API에 secret 제공 책임을 부여한 근거 없는 결합이 구현 및 보안 설계에 실질적인 재작업 위험을 만든다."
+    }
+  ],
+  "ranking_best_to_worst": [
+    "B",
+    "A",
+    "C"
+  ]
+}

@@ -1,0 +1,109 @@
+diff --git a/expense/repository.py b/expense/repository.py
+index 63be58c..b136251 100644
+--- a/expense/repository.py
++++ b/expense/repository.py
+@@ -1,5 +1,9 @@
++from threading import RLock
++
++
+ class Repository:
+     def __init__(self):
+         self.expenses = {}
+         self.idempotency = {}
+         self.audit = []
++        self.lock = RLock()
+diff --git a/expense/service.py b/expense/service.py
+index 9cb4658..b2ec4ee 100644
+--- a/expense/service.py
++++ b/expense/service.py
+@@ -1,11 +1,88 @@
++from uuid import uuid4
++
++from .domain import Expense
+ from .repository import Repository
+ 
++
+ class ExpenseService:
+     def __init__(self, repository: Repository):
+         self.repository = repository
+ 
+     def submit(self, owner_id, team_id, amount, idempotency_key):
+-        raise NotImplementedError
++        if not isinstance(amount, (int, float)) or isinstance(amount, bool) or amount <= 0:
++            raise ValueError("amount must be positive")
++
++        scope = (owner_id, idempotency_key)
++        payload = (team_id, amount)
++
++        with self.repository.lock:
++            previous = self.repository.idempotency.get(scope)
++            if previous is not None:
++                previous_payload, expense_id = previous
++                if previous_payload != payload:
++                    raise ValueError("idempotency key was used with a different payload")
++                return self.repository.expenses[expense_id]
++
++            expense = Expense(
++                id=str(uuid4()),
++                owner_id=owner_id,
++                team_id=team_id,
++                amount=amount,
++            )
++            self.repository.expenses[expense.id] = expense
++            self.repository.idempotency[scope] = (payload, expense.id)
++            self.repository.audit.append(
++                {
++                    "actor": owner_id,
++                    "action": "SUBMIT",
++                    "before": None,
++                    "after": "PENDING",
++                }
++            )
++            return expense
+ 
+     def decide(self, actor_id, actor_team, expense_id, action, reason=None):
+-        raise NotImplementedError
++        transitions = {
++            "APPROVE": "APPROVED",
++            "REJECT": "REJECTED",
++        }
++        if action not in transitions:
++            raise ValueError("action must be APPROVE or REJECT")
++        if action == "REJECT" and (
++            not isinstance(reason, str) or not reason.strip()
++        ):
++            raise ValueError("a non-empty reason is required when rejecting")
++
++        with self.repository.lock:
++            expense = self.repository.expenses[expense_id]
++
++            if actor_team != expense.team_id:
++                raise PermissionError("only a manager from the same team may decide")
++            if actor_id == expense.owner_id:
++                raise PermissionError("owners cannot decide their own expenses")
++
++            target_status = transitions[action]
++            target_reason = reason if action == "REJECT" else None
++
++            # An exact retry is idempotent: it returns the original result and
++            # must not create another audit record.
++            if (
++                expense.status == target_status
++                and expense.reason == target_reason
++            ):
++                return expense
++            if expense.status != "PENDING":
++                raise ValueError("expense has already been decided")
++
++            before = expense.status
++            expense.status = target_status
++            expense.reason = target_reason
++            self.repository.audit.append(
++                {
++                    "actor": actor_id,
++                    "action": action,
++                    "before": before,
++                    "after": target_status,
++                }
++            )
++            return expense

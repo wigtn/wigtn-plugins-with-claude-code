@@ -1,0 +1,5 @@
+judge=J56
+model=gpt-5.6-sol
+fixture_repeat=review-clean.1
+duration_seconds=75
+exit_code=0

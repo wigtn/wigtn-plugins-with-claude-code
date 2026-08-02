@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M56-PLUGIN",
+  "task": "no-changes",
+  "repeat": 3,
+  "exit_code": 0,
+  "duration_seconds": 24
+}

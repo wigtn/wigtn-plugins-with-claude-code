@@ -1,0 +1,126 @@
+당신은 익명화된 네 후보를 비교하는 엄격한 제품·엔지니어링 평가자다.
+
+각 후보를 서로 독립적으로 0~4점으로 채점하라.
+- task_fidelity: 요청한 산출물과 범위 준수
+- correctness: 논리·보안·상태·요구사항 정확성
+- specificity_traceability: 구현·검증 가능한 구체성과 추적성
+- restraint: 근거 없는 SLA/아키텍처/범위/finding을 만들지 않는 절제
+- usability: 실제 제품·개발팀이 바로 쓸 수 있는 정도
+
+긴 출력, finding 개수, 화려한 형식에는 가점을 주지 마라. 리뷰에서는 실제 근거가 있는 finding만 보상하고, 생성에서는 브리프 밖 사실을 발명하면 감점하라. 동일 점수와 공동 순위를 허용한다. 후보 정체나 모델을 추측하지 마라.
+
+JSON만 반환하라:
+{"ranking":[["A"],["B","C"],["D"]],"scores":{"A":{"task_fidelity":0,"correctness":0,"specificity_traceability":0,"restraint":0,"usability":0,"total":0},"B":{},"C":{},"D":{}},"material_errors":{"A":[],"B":[],"C":[],"D":{}},"reason":"100자 이내"}
+total은 다섯 점수의 합이어야 한다.
+
+## 원 요청
+아래 PRD를 검토해줘. 실제 blocker/high 수준의 누락·모순·검증 불가능성·보안 문제만 findings-first로 보고해줘. 중요한 문제가 없다면 없다고 명시해. 원문을 다시 쓰지 말고 파일을 만들거나 저장소를 탐색하지 마.
+
+# 프로필 표시 이름 변경 PRD
+
+## Applicability
+| Contract | Required / N/A | Reason |
+|---|---|---|
+| Pages/routes | 필수 | 기존 모바일 프로필 화면에서 제공 |
+| State matrix | 필수 | 저장 요청의 사용자 가시 상태가 있음 |
+| User flow | 해당 없음 | 단일 화면의 단일 저장 동작이며 별도 생명주기가 없음 |
+| Quantitative performance target | 해당 없음 | 기존 프로필 API 운영 SLO를 변경 없이 적용 |
+
+## Context and problem
+직원이 프로필에 보이는 표시 이름의 오타를 본인 계정에서 수정할 수 있어야 한다.
+
+## Goals
+- 로그인한 직원이 본인의 표시 이름을 안전하게 변경한다.
+
+## Non-goals
+- 법적 이름, 로그인 ID, 이메일, 다른 사용자의 프로필 변경
+
+## Users, roles, and permissions
+| Role | Goal | Allowed actions | Forbidden actions |
+|---|---|---|---|
+| 로그인 직원 | 본인 표시 이름 수정 | 자기 프로필 조회·수정 | 다른 사용자 조회·수정 |
+
+## Functional requirements
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-101 | 서버는 입력을 Unicode NFC로 정규화하고 앞뒤 공백을 제거한 뒤 2~40 grapheme cluster인지 검사해 저장한다. | P0 |
+| FR-102 | 서버의 `PATCH /me/profile`은 인증 세션의 사용자만 대상으로 하며 대상 사용자 ID 입력을 받지 않는다. 알 수 없는 필드는 400으로 거부한다. | P0 |
+| FR-103 | 정규화·trim 결과가 빈 값, 2자 미만, 40자 초과이거나 제어문자를 포함하면 422로 거부하고 기존 값을 유지한다. 이름 내부 일반 공백은 허용한다. | P0 |
+
+## Pages and routes
+| Page | Route | Allowed roles | Primary action |
+|---|---|---|---|
+| 프로필 편집 | `/me/profile` | 로그인 직원 | 표시 이름 저장 |
+
+## State matrix
+| Surface | Empty | Loading | Error | Success | Recovery |
+|---|---|---|---|---|---|
+| 이름 폼 | 기존 이름이 없으면 placeholder | 저장 버튼 비활성·spinner | 서버 메시지와 재시도 안내 | 저장된 정규화 이름과 완료 toast | 사용자가 입력한 원문을 유지하고 재시도 |
+
+## Authorization and data boundaries
+`PATCH /me/profile`은 인증이 없으면 401이다. 서버는 세션 사용자 ID로만 레코드를 찾고 요청 body의 허용 필드는 `displayName` 하나다. 다른 필드가 있으면 400이며 어떤 사용자 데이터도 바뀌지 않는다.
+
+## Non-functional requirements
+- 기존 프로필 API의 운영 SLO, 감사, 모니터링 정책을 그대로 적용하며 새 수치 목표는 만들지 않는다.
+- 저장 성공·검증 실패·인증 실패를 기존 메트릭에 결과 코드별로 기록하되 이름 원문은 로그에 남기지 않는다.
+
+## Acceptance criteria
+| ID | Requirement | Given | When | Then | Verification |
+|---|---|---|---|---|---|
+| AC-101 | FR-101 | 로그인했고 `"  홍길동  "`을 입력 | 저장 | NFC 정규화된 `"홍길동"`이 본인 프로필에 저장되고 성공 상태 표시 | 통합 테스트 |
+| AC-102 | FR-102 | 비로그인 요청 | `/me/profile` 저장 | 401이고 데이터 불변 | 인증 통합 테스트 |
+| AC-103 | FR-102 | 로그인했고 body에 `displayName`과 `userId`를 함께 전송 | 저장 | 400이고 본인과 다른 사용자 데이터 모두 불변 | 입력 허용목록 테스트 |
+| AC-104 | FR-103 | trim 후 1 또는 41 grapheme cluster, 공백뿐인 값, 제어문자 중 하나 | 저장 | 422와 필드 오류이며 기존 값 유지 | 경계값 테스트 |
+| AC-105 | FR-103 | 내부 일반 공백을 포함한 2~40 grapheme cluster 이름 | 저장 | 공백을 유지해 저장 | 경계값 테스트 |
+
+## Assumptions and open decisions
+- 기존 프로필 API SLO와 모니터링 정책의 소유자는 Platform 팀이다.
+- 제품 범위에 영향을 주는 열린 결정은 없다.
+
+## Risks and mitigations
+- Unicode 표현 차이는 NFC 정규화와 grapheme cluster 기준으로 클라이언트·서버 계약을 통일한다.
+- 개인정보 노출은 이름 원문을 로그·메트릭에 기록하지 않는 것으로 완화한다.
+
+## Delivery outline
+| Phase | Requirement IDs | Verifiable exit condition |
+|---|---|---|
+| Phase 1 | FR-101, FR-103 | 정규화·공백·길이·제어문자 경계값 테스트 통과 |
+| Phase 2 | FR-102 | 인증·입력 허용목록·데이터 불변 통합 테스트 통과 |
+
+
+## 후보 A
+
+Blocker/High findings: 없음.
+
+제공된 PRD 기준으로는 본인 범위 제한, 허용 필드 제한, 인증 실패, 검증 실패 시 데이터 불변, Unicode 정규화/길이/제어문자 처리, 원문 로그 금지까지 핵심 보안·검증 가능성이 P0 요구사항과 AC에 연결되어 있습니다.
+
+검토 범위는 사용자가 제공한 PRD 원문만이며, 저장소나 기존 API 정책의 실제 존재 여부는 확인하지 않았습니다.
+
+## 후보 B
+
+## Findings
+
+- **High — FR-101과 FR-103의 처리 순서가 모순됩니다.** FR-101은 trim 후 검증하도록 하지만, FR-103은 입력에 제어문자가 포함되면 거부하도록 합니다. 탭·개행처럼 trim 대상이 될 수 있는 제어문자가 앞뒤에 있으면 제거 후 허용할지, 원문 기준으로 422 처리할지 결정할 수 없습니다. 제어문자 검사를 원문/정규화 후/trim 후 중 어느 단계에서 수행하는지 명시해야 합니다.
+
+- **High — Unicode 허용 범위가 표시 이름 사칭을 막지 못합니다.** “제어문자”가 Unicode `Cc`만 의미한다면 bidi override/isolate, zero-width 문자 등 `Cf` 문자가 허용되어 화면상 이름을 숨기거나 순서를 조작할 수 있습니다. 직원 표시 이름이라는 신뢰 경계상 사칭 위험이 있으므로, 금지할 Unicode 범주 또는 bidi/default-ignorable 문자 정책과 해당 보안 테스트가 필요합니다.
+
+- **High — 핵심 입력 계약을 동일하게 구현·검증할 기준이 부족합니다.** “공백/trim”, “제어문자”, “grapheme cluster”의 규범과 Unicode 버전이 지정되지 않았습니다. 런타임·클라이언트·서버별로 NBSP 같은 공백 처리와 grapheme 분할 결과가 달라질 수 있어, 위험 완화에 적힌 “클라이언트·서버 계약 통일”을 검증할 수 없습니다. 적용할 Unicode 표준/버전과 trim 문자 집합을 고정해야 합니다.
+
+그 외에는 blocker/high 수준의 누락이나 모순이 보이지 않습니다.
+
+## 후보 C
+
+## High
+
+- **세션 기반 변경 요청의 CSRF 방어 계약이 없습니다.** (`FR-102`, `Authorization and data boundaries`, `AC-102~103`)  
+  현재 요구사항은 인증·IDOR·허용 필드만 검증합니다. 쿠키 기반 세션이라면 외부 사이트가 로그인된 사용자의 이름 변경 요청을 유도할 수 있으며, 구현은 모든 AC를 통과하고도 취약할 수 있습니다. 기존 플랫폼 공통 방어를 적용한다면 그 의존성을 명시하고, CSRF 토큰 또는 `Origin` 검증 실패 시 거부·데이터 불변을 검증하는 AC가 필요합니다.
+
+**Blocker는 없습니다.** 그 외 내용에서는 요청하신 blocker/high 수준의 누락·모순·검증 불가능성은 발견되지 않았습니다.
+
+## 후보 D
+
+- **High — Unicode 검증 계약이 결정적이지 않아 구현·검증이 일치한다고 보장할 수 없습니다.** FR-101/103은 grapheme cluster, 앞뒤 공백, 일반 공백, 제어문자를 사용하지만 Unicode 버전과 분할 규칙(UAX #29), trim 대상 코드 포인트, 금지 문자 범위를 정의하지 않습니다. 특히 bidi 제어·format 문자(`Cf`)는 일반적인 “제어문자” 검사에서 빠져 표시 이름 스푸핑을 허용할 수 있습니다. 클라이언트·서버가 서로 다른 라이브러리나 Unicode 버전을 쓰면 동일 입력의 길이 판정도 달라집니다. 현재 AC-104/105만으로는 이 계약을 재현성 있게 검증할 수 없습니다.
+
+- **High — 이름 원문 비기록 요구가 검증 및 전달 범위에서 누락됐습니다.** 비기능 요구사항은 이름을 로그에 남기지 않도록 하지만, 요청 body 로깅, APM/트레이싱, 오류 캡처, 감사 로그까지 포함되는지 불명확하고 이를 확인하는 acceptance criterion이나 exit condition이 없습니다. 기존 감사 정책을 그대로 적용한다는 요구와 변경 전·후 값을 기록하는 감사 정책이 충돌할 가능성도 해소되지 않았습니다. 표시 이름은 개인정보이므로 자동 요청 로깅 계층까지 포함한 비기록 범위와 검증 방법이 없으면 보안 요구 충족을 입증할 수 없습니다.
+
+**Blocker 수준의 문제는 없으며, 위 두 건 외에 High 수준의 누락·모순은 보이지 않습니다.**

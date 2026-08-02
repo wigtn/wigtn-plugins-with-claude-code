@@ -1,0 +1,50 @@
+{
+  "task": "webhook-delivery",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "모든 요구사항을 간결하게 충족한다. 서명 형식과 길이를 검증하고 바이트 디코딩 후 constant-time 비교를 수행하며, 저장 및 재시도 규칙도 정확하다. 공개·숨김 테스트 통과 증거와 패치가 일치한다."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "요구된 bytes 입력에서는 정확히 동작하고 모든 테스트를 통과한다. 다만 WebhookStore.accept에서 dict.get의 None을 미존재 sentinel로 겸용하므로, 공개된 events가 외부에서 변경되거나 계약 밖의 None 값이 들어오면 존재 여부 판단이 흐려진다. 현재 명시된 계약에는 영향이 없다."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "전체 동작이 정확하고 malformed header도 엄격하게 거부한다. 정규식 fullmatch와 패턴의 \\Z를 함께 사용한 부분은 중복이며 단순 접두사·길이·hex 검증보다 약간 복잡하지만 기능상 문제는 없다."
+    },
+    {
+      "label": "D",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "요구된 서명 검증, 중복 처리, 충돌 거부 및 재시도 일정을 모두 올바르게 구현했고 테스트도 모두 통과한다. 서명 파싱에 정규식을 도입한 것은 이 작은 형식에는 다소 무겁지만 fullmatch 사용으로 형식 검증은 정확하다."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C", "D"]
+}

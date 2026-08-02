@@ -1,0 +1,7 @@
+arm=M55-V3
+fixture=review-universal
+repeat=5
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=52
+exit_code=0

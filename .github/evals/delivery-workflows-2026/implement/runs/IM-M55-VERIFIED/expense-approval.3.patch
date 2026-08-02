@@ -1,0 +1,86 @@
+diff --git a/expense/service.py b/expense/service.py
+index 9cb4658..cfbe226 100644
+--- a/expense/service.py
++++ b/expense/service.py
+@@ -1,11 +1,79 @@
+ from .repository import Repository
++from .domain import Expense
+ 
+ class ExpenseService:
+     def __init__(self, repository: Repository):
+         self.repository = repository
+ 
+     def submit(self, owner_id, team_id, amount, idempotency_key):
+-        raise NotImplementedError
++        if amount <= 0:
++            raise ValueError("amount must be positive")
++
++        payload = (team_id, amount)
++        idempotency_scope = (owner_id, idempotency_key)
++        existing = self.repository.idempotency.get(idempotency_scope)
++        if existing is not None:
++            existing_payload, expense_id = existing
++            if existing_payload != payload:
++                raise ValueError("idempotency key reused with different payload")
++            return self.repository.expenses[expense_id]
++
++        expense_id = f"exp-{len(self.repository.expenses) + 1}"
++        expense = Expense(
++            id=expense_id,
++            owner_id=owner_id,
++            team_id=team_id,
++            amount=amount,
++        )
++        self.repository.expenses[expense_id] = expense
++        self.repository.idempotency[idempotency_scope] = (payload, expense_id)
++        self.repository.audit.append({
++            "actor": owner_id,
++            "action": "SUBMIT",
++            "expense_id": expense_id,
++            "before": None,
++            "after": "PENDING",
++        })
++        return expense
+ 
+     def decide(self, actor_id, actor_team, expense_id, action, reason=None):
+-        raise NotImplementedError
++        expense = self.repository.expenses[expense_id]
++        decision = self._normalize_decision(action)
++
++        if not self._is_manager(actor_id):
++            raise PermissionError("only managers can decide expenses")
++        if actor_team != expense.team_id:
++            raise PermissionError("manager must belong to the expense team")
++        if actor_id == expense.owner_id:
++            raise PermissionError("owners cannot decide their own expenses")
++        if expense.status != "PENDING":
++            raise ValueError("expense has already been decided")
++        if decision == "REJECTED" and (reason is None or not reason.strip()):
++            raise ValueError("rejected expenses require a reason")
++
++        before = expense.status
++        expense.status = decision
++        expense.reason = reason if decision == "REJECTED" else None
++        self.repository.audit.append({
++            "actor": actor_id,
++            "action": decision,
++            "expense_id": expense_id,
++            "before": before,
++            "after": expense.status,
++        })
++        return expense
++
++    def _normalize_decision(self, action):
++        actions = {
++            "APPROVE": "APPROVED",
++            "APPROVED": "APPROVED",
++            "REJECT": "REJECTED",
++            "REJECTED": "REJECTED",
++        }
++        try:
++            return actions[action]
++        except KeyError as exc:
++            raise ValueError("action must be APPROVE/APPROVED or REJECT/REJECTED") from exc
++
++    def _is_manager(self, actor_id):
++        return str(actor_id).startswith("m")

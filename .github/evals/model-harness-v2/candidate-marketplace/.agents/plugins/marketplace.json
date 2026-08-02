@@ -1,0 +1,20 @@
+{
+  "name": "wigtn",
+  "interface": {
+    "displayName": "WIGTN Plugins"
+  },
+  "plugins": [
+    {
+      "name": "wigtn-plugins-with-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/wigtn-plugins-with-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

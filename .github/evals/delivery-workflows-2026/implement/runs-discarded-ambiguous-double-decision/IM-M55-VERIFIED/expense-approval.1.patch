@@ -1,0 +1,121 @@
+diff --git a/expense/service.py b/expense/service.py
+index 9cb4658..a172fae 100644
+--- a/expense/service.py
++++ b/expense/service.py
+@@ -1,11 +1,114 @@
+ from .repository import Repository
++from .domain import Expense
++
+ 
+ class ExpenseService:
+     def __init__(self, repository: Repository):
+         self.repository = repository
+ 
+     def submit(self, owner_id, team_id, amount, idempotency_key):
+-        raise NotImplementedError
++        if amount <= 0:
++            raise ValueError("amount must be positive")
++
++        payload = (team_id, amount)
++        key = (owner_id, idempotency_key)
++        existing = self.repository.idempotency.get(key)
++        if existing is not None:
++            expense_id, existing_payload = existing
++            if existing_payload != payload:
++                raise ValueError("idempotency key already used with different payload")
++            return self.repository.expenses[expense_id]
++
++        expense_id = self._next_expense_id()
++        expense = Expense(
++            id=expense_id,
++            owner_id=owner_id,
++            team_id=team_id,
++            amount=amount,
++            status="PENDING",
++        )
++        self.repository.expenses[expense_id] = expense
++        self.repository.idempotency[key] = (expense_id, payload)
++        self._audit(actor=owner_id, action="SUBMIT", before=None, after=self._snapshot(expense))
++        return expense
+ 
+     def decide(self, actor_id, actor_team, expense_id, action, reason=None):
+-        raise NotImplementedError
++        expense = self.repository.expenses.get(expense_id)
++        if expense is None:
++            raise KeyError(expense_id)
++
++        target_status = self._target_status(action)
++        normalized_reason = self._normalize_reason(target_status, reason)
++
++        if not self._is_manager(actor_id, actor_team):
++            raise PermissionError("only managers can decide expenses")
++        if actor_team != expense.team_id:
++            raise PermissionError("manager must be in the same team")
++        if actor_id == expense.owner_id:
++            raise PermissionError("owner cannot decide their own expense")
++
++        if expense.status != "PENDING":
++            if expense.status == target_status and expense.reason == normalized_reason:
++                return expense
++            raise ValueError("expense has already been decided")
++
++        before = self._snapshot(expense)
++        expense.status = target_status
++        expense.reason = normalized_reason
++        self._audit(
++            actor=actor_id,
++            action=target_status,
++            before=before,
++            after=self._snapshot(expense),
++        )
++        return expense
++
++    def _next_expense_id(self):
++        return f"exp-{len(self.repository.expenses) + 1}"
++
++    def _snapshot(self, expense):
++        return {
++            "id": expense.id,
++            "owner_id": expense.owner_id,
++            "team_id": expense.team_id,
++            "amount": expense.amount,
++            "status": expense.status,
++            "reason": expense.reason,
++        }
++
++    def _audit(self, actor, action, before, after):
++        self.repository.audit.append(
++            {
++                "actor": actor,
++                "action": action,
++                "before": before,
++                "after": after,
++            }
++        )
++
++    def _target_status(self, action):
++        actions = {
++            "APPROVE": "APPROVED",
++            "APPROVED": "APPROVED",
++            "REJECT": "REJECTED",
++            "REJECTED": "REJECTED",
++        }
++        try:
++            return actions[action]
++        except KeyError:
++            raise ValueError("action must be APPROVE or REJECT") from None
++
++    def _normalize_reason(self, target_status, reason):
++        if target_status != "REJECTED":
++            return None
++        if reason is None or not str(reason).strip():
++            raise ValueError("rejection reason is required")
++        return str(reason)
++
++    def _is_manager(self, actor_id, actor_team):
++        managers = getattr(self.repository, "managers", None)
++        if managers is None:
++            return str(actor_id).startswith("m")
++        if isinstance(managers, dict):
++            return managers.get(actor_id) == actor_team
++        return actor_id in managers

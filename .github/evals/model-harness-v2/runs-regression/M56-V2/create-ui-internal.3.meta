@@ -1,0 +1,7 @@
+arm=M56-V2
+fixture=create-ui-internal
+repeat=3
+model=gpt-5.6-sol
+reasoning_effort=medium
+duration_seconds=128
+exit_code=0

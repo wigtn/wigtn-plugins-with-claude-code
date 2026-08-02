@@ -1,0 +1,14 @@
+$wigtn-plugins-with-codex:verified-delivery
+
+멀티테넌트 검색과 cursor pagination을 구현해줘.
+
+요구사항:
+- search(records, tenant_id, query, limit, cursor=None)는 요청 tenant의 레코드만 반환한다.
+- query는 name의 Unicode casefold 부분 일치다.
+- 정렬은 created_at 내림차순, 동률은 id 오름차순이다.
+- limit은 bool이 아닌 정수 1..50만 허용한다.
+- cursor는 opaque URL-safe 값이며 tenant와 마지막 정렬 키를 포함하고 변조·다른 tenant 사용은 ValueError다.
+- 다음 페이지에 중복이나 누락이 없어야 하며 입력 records를 변경하지 않는다.
+- 표준 라이브러리만 사용하고 공개 테스트를 실행한다.
+- notes/user-draft.txt는 수정하지 않고 커밋/push하지 않는다.
+

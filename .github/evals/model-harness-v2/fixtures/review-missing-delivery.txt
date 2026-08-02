@@ -1,0 +1,86 @@
+아래 PRD를 검토해줘. 먼저 프로젝트 산출물 계약의 존재·적용성을 표로 감사하고, 그 다음 실제 누락·모순·검증 불가능성·보안 문제를 findings-first로 영향도·근거·수정 방향과 함께 보고해줘. 원문을 다시 쓰지 말고 파일을 만들거나 저장소를 탐색하지 마.
+
+# 휴가 승인 PRD
+
+## Applicability
+| Contract | Required / N/A | Evidence |
+|---|---|---|
+| Pages/routes | Required | 직원 신청과 팀장 처리 화면이 있다 |
+| State matrix | Required | 목록·폼·처리의 사용자 가시 상태가 있다 |
+| User flow | Required | 신청부터 최종 결정까지 다단계 생명주기다 |
+## Context and problem
+직원이 일 단위 휴가를 신청하고 현재 소속 팀의 팀장이 처리한다.
+
+## Goals
+- 신청부터 최종 결정까지 상태, 권한, 감사 이력을 일관되게 관리한다.
+
+## Non-goals
+- 반차·시간차, 급여 시스템 연동, 최종 결정 번복
+
+## Users, roles, and permissions
+| Role | Allowed | Forbidden |
+|---|---|---|
+| 직원 | 본인 신청 생성·목록·상세·대기 취소 | 타인 신청 조회·처리 |
+| 팀장 | 현재 팀 직원 신청 조회·승인·반려 | 타 팀 처리, 본인 신청 처리 |
+| 감사자 | 조직 내 감사 이벤트 읽기 | 휴가 사유 전문 읽기, 상태 변경 |
+
+## Functional requirements
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-101 | 직원은 KST 달력일의 시작일·종료일·1~500자 사유로 신청한다. 날짜는 양끝을 포함하고 시작일은 종료일보다 늦을 수 없으며 PENDING·APPROVED 신청과 겹칠 수 없다. | P0 |
+| FR-102 | 상태는 PENDING, APPROVED, REJECTED, CANCELLED이며 PENDING에서만 나머지 상태로 한 번 전이한다. | P0 |
+| FR-103 | 팀장은 승인 시점 인사 시스템의 현재 팀 직원 PENDING 신청만 처리한다. 본인 신청은 처리하지 못하며 반려 사유는 1~500자다. | P0 |
+| FR-104 | 서버는 조직·현재 팀·신청 소유자·현재 상태를 작업별로 검사한다. 직원 이동 후에는 새 팀장이 PENDING 신청을 처리하고 이전 팀장은 접근을 잃는다. | P0 |
+| FR-105 | 생성·승인·반려·취소와 권한 거부를 actor, request ID, 이전/이후 상태, timestamp로 기록한다. 생성의 이전 상태는 null이다. 휴가 사유 전문은 기록하지 않는다. | P0 |
+| FR-106 | 모든 생성·상태 명령은 idempotency key와 조건부 갱신을 사용한다. 상태와 감사 이벤트는 같은 트랜잭션 또는 transactional outbox로 원자성을 보장한다. | P0 |
+
+## Pages and routes
+| Page | Route | Allowed roles | Primary action |
+|---|---|---|---|
+| 내 휴가 | `/leave` | 직원 | 목록·신청 |
+| 휴가 상세 | `/leave/:id` | 소유 직원, 현재 팀장 | 조회·취소·처리 |
+| 팀 승인함 | `/team/leave` | 팀장 | 대기 신청 조회 |
+| 감사 이력 | `/audit/leave` | 감사자 | 이벤트 조회 |
+## State matrix
+| Surface | Empty | Loading | Error | Success | Recovery |
+|---|---|---|---|---|---|
+| 내 휴가 | 신청 안내 | skeleton | 조회 오류 | 목록 | 재시도 |
+| 신청 폼 | 기본값 | 제출 잠금 | 필드·충돌 오류 | PENDING 상세 | 입력 유지 후 재시도 |
+| 승인 상세 | 대기 없음 안내 | 처리 잠금 | 403·409·일시 오류 | 최종 상태 | 사유 유지 후 새로고침·재시도 |
+## User flow
+```mermaid
+flowchart TD
+  A[직원 신청] --> B{서버 검증}
+  B -->|실패| C[입력 유지와 오류]
+  B -->|성공| D[PENDING]
+  D -->|직원 취소| E[CANCELLED]
+  D -->|현재 팀장 승인| F[APPROVED]
+  D -->|현재 팀장 반려| G[REJECTED]
+```
+## Authorization and data boundaries
+서버는 작업별로 세션 조직, 신청 소유자, 현재 팀장 관계, 현재 상태를 검사한다. 조직 ID는 클라이언트 입력이 아니라 세션에서 결정한다. 인사 시스템이 실패하면 처리 요청은 fail-closed 503이고 상태는 유지된다.
+
+## Non-functional requirements
+- 정의된 모든 성공 상태 변경에서 감사 이벤트 존재를 장애 주입 통합 테스트로 검증한다.
+- API 지연 목표는 내부 베타 측정 후 제품 책임자가 정식 출시 전에 결정한다.
+
+## Acceptance criteria
+| ID | Requirement | Given | When | Then | Verification |
+|---|---|---|---|---|---|
+| AC-101 | FR-101 | 겹치지 않는 유효 기간과 사유 | 신청 | PENDING 한 건과 감사 이벤트 한 건 | API·감사 통합 테스트 |
+| AC-102 | FR-101 | PENDING 또는 APPROVED 기간과 겹침 | 신청 | 409, 신청·성공 감사 이벤트 없음 | 충돌 테스트 |
+| AC-103 | FR-103 | 현재 팀장과 PENDING 신청 | 승인 | APPROVED와 감사 이벤트 한 건 | 권한·상태 통합 테스트 |
+| AC-104 | FR-103 | 현재 팀장, PENDING, 유효 반려 사유 | 반려 | REJECTED와 감사 이벤트 한 건 | 권한·상태 통합 테스트 |
+| AC-105 | FR-104 | 다른 팀장 또는 팀장 본인 신청 | 처리 | 403, 상태 불변, 권한 거부 감사 | 권한 통합 테스트 |
+| AC-106 | FR-102, FR-106 | 승인과 취소 동시 요청 | 처리 | 한 건만 성공, 다른 건 409, 최종 이벤트 한 건 | 동시성 테스트 |
+| AC-107 | FR-104 | 신청 후 직원 팀 이동 | 새·이전 팀장 조회·처리 | 새 팀장만 접근·처리 | 인사 이동 통합 테스트 |
+| AC-108 | FR-106 | 같은 idempotency key 재시도 | 신청 | 같은 신청 ID, 중복 이벤트 없음 | 멱등성 테스트 |
+## Assumptions and open decisions
+- 현재 팀 소속의 진실 공급원은 People Platform이며 소유자는 People Platform 팀이다.
+- API 지연 목표는 내부 베타 종료일까지 제품 책임자가 결정한다.
+
+## Risks and mitigations
+- 동시 요청은 조건부 갱신과 멱등성 키로 한 건만 성공시킨다.
+- 인사 시스템 장애에는 fail-closed하고 입력을 유지한다.
+- 휴가 사유는 직원 본인과 현재 팀장만 읽으며 로그·감사 이벤트에 넣지 않는다.
+

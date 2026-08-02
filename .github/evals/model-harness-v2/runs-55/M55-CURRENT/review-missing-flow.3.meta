@@ -1,0 +1,7 @@
+arm=M55-CURRENT
+fixture=review-missing-flow
+repeat=3
+model=gpt-5.5
+reasoning_effort=medium
+duration_seconds=71
+exit_code=0

@@ -1,0 +1,56 @@
+{
+  "fixture": "create-ui-internal",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Strongest PRD. It covers product scope, permissions, states, security boundaries, open decisions, acceptance criteria, and the 4-week beta plan while preserving the brief's uncertainty around the 2-second target and member-management scope. Slightly verbose, but the extra detail is mostly useful."
+    },
+    {
+      "label": "B",
+      "completeness": 3,
+      "correctness": 3,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "Non-goals: 프로젝트 구성원 초대·제거 UI 및 API",
+          "finding": "The brief states that project admins can invite and remove members, but the PRD excludes both UI and API from first release and only treats this as an assumption/open decision.",
+          "impact": "If invite/remove is required for the product contract rather than only future scope, this creates material scope and permission-flow rework."
+        }
+      ],
+      "summary": "Clear and implementable with good acceptance criteria and security boundaries. Its main weakness is narrowing the admin member-management requirement more aggressively than the brief supports, though it does flag the decision."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 4,
+      "concision": 2,
+      "blockers": [],
+      "high": [
+        {
+          "location": "Scope excluded: 프로젝트 구성원 초대·제거 UI / FR-124 Future/Decision",
+          "finding": "Admin invite/remove is demoted to future or decision scope despite being a stated feature in the brief.",
+          "impact": "The delivery team may omit a required admin capability or need late rework once the product owner clarifies scope."
+        },
+        {
+          "location": "FR-123 / Data requirements: audit events / Accessibility / pagination recommendations",
+          "finding": "Adds several Must/Should-level implementation obligations not requested by the brief.",
+          "impact": "These additions increase 4-week beta scope and could distract from the required upload, list, download, delete, permission, and state behavior."
+        }
+      ],
+      "summary": "Thorough and traceable, with useful edge cases and security thinking. It is less concise and introduces extra delivery obligations, making it somewhat heavier and less feasible for the 4-week internal beta."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C"]
+}

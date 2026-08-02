@@ -1,0 +1,110 @@
+{
+  "create-ui-internal.1": {
+    "A": "M56-BARE",
+    "B": "M55-CURRENT",
+    "C": "M56-OPT",
+    "D": "M56-CURRENT"
+  },
+  "create-ui-internal.2": {
+    "A": "M56-CURRENT",
+    "B": "M56-BARE",
+    "C": "M56-OPT",
+    "D": "M55-CURRENT"
+  },
+  "create-backend-webhook.1": {
+    "A": "M56-CURRENT",
+    "B": "M56-BARE",
+    "C": "M56-OPT",
+    "D": "M55-CURRENT"
+  },
+  "create-backend-webhook.2": {
+    "A": "M56-OPT",
+    "B": "M55-CURRENT",
+    "C": "M56-CURRENT",
+    "D": "M56-BARE"
+  },
+  "create-mobile-expense.1": {
+    "A": "M56-OPT",
+    "B": "M56-CURRENT",
+    "C": "M55-CURRENT",
+    "D": "M56-BARE"
+  },
+  "create-mobile-expense.2": {
+    "A": "M56-OPT",
+    "B": "M55-CURRENT",
+    "C": "M56-BARE",
+    "D": "M56-CURRENT"
+  },
+  "review-universal.1": {
+    "A": "M56-BARE",
+    "B": "M56-CURRENT",
+    "C": "M56-OPT",
+    "D": "M55-CURRENT"
+  },
+  "review-universal.2": {
+    "A": "M56-BARE",
+    "B": "M55-CURRENT",
+    "C": "M56-OPT",
+    "D": "M56-CURRENT"
+  },
+  "review-convention.1": {
+    "A": "M55-CURRENT",
+    "B": "M56-CURRENT",
+    "C": "M56-BARE",
+    "D": "M56-OPT"
+  },
+  "review-convention.2": {
+    "A": "M56-BARE",
+    "B": "M55-CURRENT",
+    "C": "M56-OPT",
+    "D": "M56-CURRENT"
+  },
+  "review-clean.1": {
+    "A": "M56-OPT",
+    "B": "M55-CURRENT",
+    "C": "M56-CURRENT",
+    "D": "M56-BARE"
+  },
+  "review-clean.2": {
+    "A": "M56-OPT",
+    "B": "M56-CURRENT",
+    "C": "M55-CURRENT",
+    "D": "M56-BARE"
+  },
+  "screen-admin.1": {
+    "A": "M56-BARE",
+    "B": "M56-OPT",
+    "C": "M55-CURRENT",
+    "D": "M56-CURRENT"
+  },
+  "screen-admin.2": {
+    "A": "M56-BARE",
+    "B": "M56-CURRENT",
+    "C": "M55-CURRENT",
+    "D": "M56-OPT"
+  },
+  "review-convention-v2.1": {
+    "A": "M56-CURRENT",
+    "B": "M56-BARE",
+    "C": "M56-OPT",
+    "D": "M55-CURRENT"
+  },
+  "review-convention-v2.2": {
+    "A": "M55-CURRENT",
+    "B": "M56-OPT",
+    "C": "M56-BARE",
+    "D": "M56-CURRENT"
+  },
+  "review-clean-v2.1": {
+    "A": "M56-OPT",
+    "B": "M56-CURRENT",
+    "C": "M56-BARE",
+    "D": "M55-CURRENT"
+  },
+  "review-clean-v2.2": {
+    "A": "M55-CURRENT",
+    "B": "M56-CURRENT",
+    "C": "M56-OPT",
+    "D": "M56-BARE"
+  }
+}

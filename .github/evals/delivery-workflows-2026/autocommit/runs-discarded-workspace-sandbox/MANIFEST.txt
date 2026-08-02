@@ -1,0 +1,11 @@
+created_utc=2026-07-27T08:28:53Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repetitions=3
+effort=medium
+2ddb3cbfbbe9235801429526d87bf2cf020cac5fbcf978949b2a7a0f681e12ef  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/PROTOCOL.md
+ebbbd7bedd2a24a1a4d2939dbdc8adf4c8697f9635948844ea45a10d1c76cd7a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/autocommit/collect_state.py
+b27ef7a23fd04a1fc3967eadccf7f0e56c82c55fef0e0c6736191eb760b4151a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/autocommit/score.py
+69900a98cdc86cf63e252ac0186866eb33c0abfa88d439d4687a65e7f75545ed  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/autocommit/setup_repo.py
+a6e2c89e6e84d347cb82a7950f2a8e7eb5f314289a77d6d89c8abd309c1371d0  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/autocommit/run.sh
+9909f288b7bae2e084801ccbd0c2fcf9938e20a52951b25e907a392974f9bb4f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/release-readiness/SKILL.md
+68c7a9db961fd269bb484ab55b66451e87110b116b55c51455a1df53ca7fcdcc  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.codex-plugin-staging/plugins/wigtn-plugins-with-codex/skills/release-readiness/references/git-safety.md

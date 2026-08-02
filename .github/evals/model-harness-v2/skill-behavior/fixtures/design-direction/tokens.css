@@ -1,0 +1,2 @@
+:root { --color-ink:#1E1E28; --color-accent:#9B51E0; --surface:#FAFAFA; --space-2:8px; --space-4:16px; --radius-card:12px; }
+.card{padding:var(--space-4);border-radius:var(--radius-card);}

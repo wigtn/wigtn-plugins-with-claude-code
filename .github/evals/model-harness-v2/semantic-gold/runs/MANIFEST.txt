@@ -1,0 +1,10 @@
+created_utc=2026-07-27T06:11:47Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+effort=medium
+e2573f9f7ecfcee2e985ceaa460774a59084fb1f774eb41f710ee5293193fbba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/EXTENSION-PROTOCOL.md
+7f1eda9bc8e5f60e8930fac185b7565a8f61cbce317e90aae09542ae910b467f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/make_prompts.py
+ff943639ca3aff0a7505d5f6cea25720fda67a17d57bd51adf1adc4fc85712c5  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/score.py
+40ac50ba1e3e0d8d10efc7c6471e309d3fa0be37cc1afab6961c86ab93c94fe5  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/BLIND-MAP.json
+a8b79e841ddeb8e0a5a880f4d1ee571f70d4485ee46c4e12d9aba898ed98e0f7  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/prompts/create-backend-webhook.txt
+0a68c2b9b10d97c069e355af3a4a821c516376000ab510d709619e9793bfd2d6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/prompts/create-mobile-expense.txt
+59057ba7d2e91ff77847396b4c3d07000c32151c9de8a8c10f2b7cdd2ba87f50  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-v2/semantic-gold/prompts/create-ui-internal.txt

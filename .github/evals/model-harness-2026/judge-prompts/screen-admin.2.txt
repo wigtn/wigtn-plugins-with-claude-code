@@ -1,0 +1,3130 @@
+당신은 익명화된 네 후보를 비교하는 엄격한 제품·엔지니어링 평가자다.
+
+각 후보를 서로 독립적으로 0~4점으로 채점하라.
+- task_fidelity: 요청한 산출물과 범위 준수
+- correctness: 논리·보안·상태·요구사항 정확성
+- specificity_traceability: 구현·검증 가능한 구체성과 추적성
+- restraint: 근거 없는 SLA/아키텍처/범위/finding을 만들지 않는 절제
+- usability: 실제 제품·개발팀이 바로 쓸 수 있는 정도
+
+긴 출력, finding 개수, 화려한 형식에는 가점을 주지 마라. 리뷰에서는 실제 근거가 있는 finding만 보상하고, 생성에서는 브리프 밖 사실을 발명하면 감점하라. 동일 점수와 공동 순위를 허용한다. 후보 정체나 모델을 추측하지 마라.
+
+JSON만 반환하라:
+{"ranking":[["A"],["B","C"],["D"]],"scores":{"A":{"task_fidelity":0,"correctness":0,"specificity_traceability":0,"restraint":0,"usability":0,"total":0},"B":{},"C":{},"D":{}},"material_errors":{"A":[],"B":[],"C":[],"D":{}},"reason":"100자 이내"}
+total은 다섯 점수의 합이어야 한다.
+
+## 원 요청
+아래 PRD를 바탕으로 구현팀에 넘길 화면정의서를 만들어줘. 결과는 이 응답 하나에 담되, IA, User Flow, Screen Spec, lo-fi HTML Wireframe, Dev Handoff의 다섯 산출물을 명확히 구분해줘. 파일을 만들거나 저장소를 탐색하지 마.
+
+# 공급업체 승인 PRD
+
+## 역할
+- 요청자: 공급업체 등록 요청 작성
+- 승인자: 자기 사업부 요청 승인·반려
+- 감사자: 읽기 전용 이력 조회
+
+## 요구사항
+- FR-101: 요청자는 업체명, 사업자번호, 담당자 이메일을 입력하고 제출한다.
+- FR-102: 중복 사업자번호가 있으면 제출을 막고 기존 업체 링크를 보여준다.
+- FR-103: 승인자는 자기 사업부의 대기 요청을 승인하거나 사유와 함께 반려한다.
+- FR-104: 서버는 사업부 권한을 확인한다.
+- FR-105: 모든 상태 변경을 감사 이력에 남긴다.
+
+## 상태
+초안 → 대기 → 승인 또는 반려. 반려된 요청은 수정 후 다시 제출할 수 있다.
+
+## 화면
+요청 목록, 요청 작성/편집, 요청 상세/승인, 감사 이력.
+
+## 수용 기준
+- 권한 없는 승인 시 403이고 상태가 바뀌지 않는다.
+- 중복 사업자번호에서는 제출되지 않는다.
+- 네트워크 실패 시 입력과 반려 사유를 보존하고 재시도할 수 있다.
+- 모바일에서는 승인 상세가 단일 열로 재배치된다.
+
+
+## 후보 A
+
+아래 문서는 별도 디자인 해석 없이 구현에 착수할 수 있도록 화면, 권한, 상태 전이, 오류 처리와 API 계약까지 연결한 화면정의서다.
+
+## 1. IA
+
+### 1.1 정보 구조
+
+```text
+공급업체 승인
+├─ 요청 목록
+│  ├─ 상태/검색 필터
+│  ├─ 요청 작성
+│  └─ 요청 상세
+├─ 요청 작성/편집
+│  ├─ 업체 정보
+│  ├─ 중복 업체 확인
+│  └─ 임시 저장/제출/재제출
+├─ 요청 상세/승인
+│  ├─ 업체 및 요청 정보
+│  ├─ 승인/반려
+│  └─ 상태 변경 이력
+└─ 감사 이력
+   ├─ 이력 검색/필터
+   └─ 변경 상세
+```
+
+### 1.2 역할별 접근 권한
+
+| 기능 | 요청자 | 승인자 | 감사자 |
+|---|---:|---:|---:|
+| 본인 요청 목록 조회 | 가능 | 선택적으로 가능 | 읽기 전용 |
+| 요청 작성 | 가능 | 불가 | 불가 |
+| 초안 수정 | 본인 요청만 | 불가 | 불가 |
+| 반려 요청 수정/재제출 | 본인 요청만 | 불가 | 불가 |
+| 대기 요청 상세 조회 | 본인 요청 | 자기 사업부 | 읽기 전용 |
+| 승인/반려 | 불가 | 자기 사업부 대기 요청만 | 불가 |
+| 감사 이력 조회 | 본인 요청 범위 | 자기 사업부 범위 | 전체 또는 부여된 감사 범위 |
+| 상태 변경 | 제출/재제출 | 승인/반려 | 불가 |
+
+화면에서 버튼을 숨기는 것과 별개로, 모든 읽기·쓰기 권한은 서버에서 다시 검증한다.
+
+### 1.3 상태와 허용 동작
+
+| 현재 상태 | 요청자 동작 | 승인자 동작 | 다음 상태 |
+|---|---|---|---|
+| 초안 | 수정, 제출 | 없음 | 대기 |
+| 대기 | 조회 | 승인, 반려 | 승인 또는 반려 |
+| 반려 | 수정, 재제출 | 조회 | 대기 |
+| 승인 | 조회 | 조회 | 변경 없음 |
+
+상태 코드 권장값은 `DRAFT`, `PENDING`, `APPROVED`, `REJECTED`이다.
+
+---
+
+## 2. User Flow
+
+### 2.1 요청 등록 및 중복 확인
+
+```text
+요청 목록
+  → [새 요청]
+  → 업체명/사업자번호/담당자 이메일 입력
+  → [제출]
+      ├─ 입력 오류
+      │    → 필드 오류 표시 → 수정
+      ├─ 중복 사업자번호
+      │    → 제출 중단 → 기존 업체 링크 표시
+      ├─ 네트워크 실패
+      │    → 입력 보존 → [다시 시도]
+      └─ 성공
+           → 상태를 대기로 변경
+           → 감사 이력 기록
+           → 요청 상세로 이동
+```
+
+중복 검사는 사업자번호 입력 완료 시 사전 확인할 수 있으나, 제출 시 서버가 반드시 최종 확인해야 한다.
+
+### 2.2 승인
+
+```text
+승인자 요청 목록
+  → 자기 사업부의 대기 요청 선택
+  → 요청 상세 검토
+  → [승인]
+  → 확인 다이얼로그
+      ├─ 403 권한 오류
+      │    → 상태 유지 → 권한 오류 표시
+      ├─ 네트워크 실패
+      │    → 상태 유지 → [다시 시도]
+      └─ 성공
+           → 승인 상태
+           → 감사 이력 기록
+```
+
+### 2.3 반려
+
+```text
+요청 상세
+  → [반려]
+  → 반려 사유 입력
+  → [반려 확정]
+      ├─ 사유 없음 → 제출 차단
+      ├─ 403 → 상태 및 사유 입력값 유지
+      ├─ 네트워크 실패 → 사유 유지 → [다시 시도]
+      └─ 성공 → 반려 상태 → 감사 이력 기록
+
+요청자
+  → 반려 요청 상세
+  → [수정]
+  → 내용 수정
+  → [재제출]
+  → 대기 상태 + 감사 이력 기록
+```
+
+### 2.4 동시 변경 처리
+
+승인자가 상세 화면을 연 뒤 다른 사용자가 먼저 처리한 경우:
+
+1. 서버가 `409 Conflict`를 반환한다.
+2. 승인/반려를 적용하지 않는다.
+3. “이미 처리된 요청입니다”를 표시한다.
+4. 최신 상세 및 감사 이력을 다시 조회한다.
+
+---
+
+## 3. Screen Spec
+
+공통 표기:
+
+- 필수 필드는 라벨과 함께 `*` 및 스크린리더용 필수 정보를 제공한다.
+- 날짜는 화면에서 `YYYY-MM-DD HH:mm`, API에서는 ISO 8601을 사용한다.
+- 사업자번호는 화면에서 `000-00-00000`, 서버 전송 시 숫자 10자리 사용을 권장한다.
+- 로딩 중 중복 요청을 막기 위해 주요 실행 버튼을 비활성화한다.
+- 성공 메시지는 토스트로 제공하되, 변경된 상태는 본문에도 표시한다.
+
+### S-01 요청 목록
+
+**목적:** 접근 가능한 요청을 상태별로 조회하고 다음 업무로 진입한다.
+
+| 영역 | 명세 |
+|---|---|
+| 헤더 | 화면명, 사용자 역할, 사업부 표시 |
+| 주요 액션 | 요청자에게만 `새 요청` 표시 |
+| 검색 | 업체명, 사업자번호, 요청 ID |
+| 필터 | 상태, 요청일 범위. 승인자의 기본 상태는 `대기` |
+| 목록 열 | 요청 ID, 업체명, 사업자번호, 사업부, 요청자, 상태, 최종 변경일 |
+| 정렬 | 기본값 `최종 변경일 내림차순` |
+| 행 동작 | 행 선택 시 상세 이동 |
+| 페이지 처리 | 페이지네이션 또는 커서 기반 더보기 |
+| 빈 상태 | “조건에 맞는 요청이 없습니다”와 필터 초기화 제공 |
+| 오류 상태 | 목록 재조회 버튼 제공 |
+
+역할별 데이터 범위는 서버가 적용한다. 클라이언트가 사업부 ID를 임의로 바꿔 조회 범위를 확대할 수 없어야 한다.
+
+### S-02 요청 작성/편집
+
+**진입 조건:**
+
+- 신규 작성
+- 본인의 `DRAFT`
+- 본인의 `REJECTED`
+
+| 필드 | 필수 | 규칙 |
+|---|---:|---|
+| 업체명 | 예 | 앞뒤 공백 제거, 1~100자 |
+| 사업자번호 | 예 | 숫자 10자리, 하이픈 자동 표시 |
+| 담당자 이메일 | 예 | 이메일 형식, 최대 254자 |
+| 요청 사업부 | 서버 결정 | 로그인 사용자 기준, 읽기 전용 표시 |
+
+**버튼:**
+
+- `임시 저장`: 작성 중인 내용을 `DRAFT`로 저장한다.
+- `제출`: 신규/초안에서 `PENDING`으로 전환한다.
+- `재제출`: 반려 요청에서만 표시하고 `PENDING`으로 전환한다.
+- `취소`: 변경 사항이 있으면 이탈 확인 다이얼로그를 표시한다.
+
+**중복 사업자번호:**
+
+- 입력 완료 또는 포커스 이탈 시 선택적으로 사전 검사한다.
+- 중복이면 사업자번호 아래 오류를 표시한다.
+- “이미 등록된 업체입니다: {업체명}”과 `기존 업체 보기` 링크를 제공한다.
+- 중복 상태에서는 제출/재제출하지 않는다.
+- 최종 판단은 제출 API의 서버 검사 결과를 따른다.
+
+**네트워크 실패:**
+
+- 모든 입력값을 화면 상태에 보존한다.
+- 오류 배너와 `다시 시도`를 제공한다.
+- 재시도는 같은 입력값과 동일한 idempotency key를 사용한다.
+- 사용자가 새로고침할 가능성까지 고려하면 세션 저장소 기반 복구를 권장한다. 민감정보 보존 정책은 조직 보안 정책을 따른다.
+
+### S-03 요청 상세/승인
+
+**상단 요약:**
+
+- 요청 ID
+- 현재 상태
+- 업체명
+- 사업자번호
+- 담당자 이메일
+- 요청 사업부
+- 요청자
+- 요청일 및 최종 변경일
+
+**승인자 액션 노출 조건:**
+
+```text
+role = APPROVER
+AND request.businessUnitId = session.businessUnitId
+AND request.status = PENDING
+```
+
+이는 UI 조건일 뿐이며 서버는 동일한 조건을 독립적으로 검증한다.
+
+#### 승인
+
+- `승인` 선택 시 업체명과 승인 결과를 포함한 확인 다이얼로그를 표시한다.
+- 성공 후 상태 배지를 `승인`으로 변경하고 액션 버튼을 제거한다.
+- 실패 시 상세 데이터를 유지한다.
+
+#### 반려
+
+| 항목 | 명세 |
+|---|---|
+| 입력 방식 | 반려 다이얼로그 또는 인라인 패널 |
+| 사유 | 필수, 앞뒤 공백 제거, 1~500자 |
+| 버튼 | 취소, 반려 확정 |
+| 실패 처리 | 입력한 사유를 그대로 보존하고 재시도 제공 |
+| 성공 처리 | 상태를 반려로 갱신하고 사유를 상세에 표시 |
+
+#### 오류 코드별 UI
+
+| 응답 | UI 동작 |
+|---|---|
+| `400` | 입력 또는 상태 오류를 해당 영역에 표시 |
+| `403` | “이 요청을 처리할 권한이 없습니다” 표시, 상태 유지 |
+| `404` | 요청 없음 또는 접근 불가 안내 후 목록 이동 제공 |
+| `409` | 이미 변경된 요청 안내 후 최신 데이터 다시 조회 |
+| `5xx`/네트워크 오류 | 입력 보존, 재시도 제공 |
+
+**반응형:**
+
+- 데스크톱: 요청 정보와 승인 영역을 2열로 표시한다.
+- 모바일: 정보 → 반려 사유/이력 → 승인 액션 순서의 단일 열로 재배치한다.
+- 모바일 하단 액션이 고정되는 경우 콘텐츠를 가리지 않도록 하단 여백을 확보한다.
+
+### S-04 감사 이력
+
+| 항목 | 명세 |
+|---|---|
+| 검색 | 요청 ID, 업체명, 사업자번호 |
+| 필터 | 변경 상태, 수행자, 사업부, 기간 |
+| 목록 열 | 발생 시각, 요청 ID, 업체명, 이전 상태, 이후 상태, 수행자, 사업부, 사유 |
+| 정렬 | 발생 시각 내림차순 |
+| 상세 | 이벤트 ID, 수행자 ID, 역할, 변경 전후 값, 반려 사유, 요청 추적 ID |
+| 동작 | 읽기 전용, 수정/삭제 기능 없음 |
+
+감사 이력은 최소한 다음 이벤트를 기록한다.
+
+- 초안 생성
+- 제출
+- 승인
+- 반려
+- 반려 요청 수정
+- 재제출
+
+권한 없는 승인 시도는 요청의 상태 변경 이력에는 포함하지 않는다. 별도의 보안 감사 로그가 있다면 실패한 권한 검사도 기록하는 것을 권장한다.
+
+---
+
+## 4. Lo-fi HTML Wireframe
+
+다음은 네 화면과 모바일 단일 열 재배치를 한 파일에서 확인할 수 있는 정적 와이어프레임이다. 실제 구현에서는 각 `<section>`을 별도 라우트로 분리한다.
+
+```html
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>공급업체 승인 와이어프레임</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #222;
+      background: #f5f5f5;
+      font: 14px/1.5 system-ui, sans-serif;
+    }
+    header, main { max-width: 1120px; margin: auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      padding: 20px 16px;
+      background: #fff;
+      border-bottom: 1px solid #bbb;
+    }
+    nav { padding-top: 8px; }
+    nav a { margin-left: 16px; color: #222; }
+    main { padding: 24px 16px; }
+    section {
+      margin-bottom: 32px;
+      padding: 20px;
+      background: #fff;
+      border: 1px solid #aaa;
+    }
+    .toolbar, .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      margin: 16px 0;
+    }
+    .fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    label { display: block; font-weight: 700; }
+    input, select, textarea, button {
+      width: 100%;
+      min-height: 40px;
+      margin-top: 6px;
+      padding: 8px;
+      font: inherit;
+    }
+    button { width: auto; border: 1px solid #555; background: #eee; }
+    .primary { color: #fff; background: #333; }
+    .danger { color: #fff; background: #777; }
+    .error {
+      margin-top: 6px;
+      color: #8b0000;
+      font-weight: 400;
+    }
+    .banner {
+      margin: 12px 0;
+      padding: 12px;
+      border: 2px solid #555;
+      background: #fafafa;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+    }
+    .panel { padding: 16px; border: 1px solid #aaa; }
+    dl {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 10px;
+    }
+    dt { font-weight: 700; }
+    dd { margin: 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border: 1px solid #aaa;
+    }
+    .status { padding: 3px 8px; border: 1px solid #555; }
+    .muted { color: #666; }
+    @media (max-width: 720px) {
+      header { display: block; }
+      nav a { margin: 0 12px 0 0; }
+      .fields, .detail-grid { grid-template-columns: 1fr; }
+      dl { grid-template-columns: 1fr; gap: 2px; }
+      dd { margin-bottom: 10px; }
+      table { display: block; overflow-x: auto; }
+      .approval-panel { order: 2; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>공급업체 승인</strong>
+      <div class="muted">구매사업부 · 승인자 홍길동</div>
+    </div>
+    <nav aria-label="주 메뉴">
+      <a href="#list">요청 목록</a>
+      <a href="#form">요청 작성</a>
+      <a href="#detail">요청 상세</a>
+      <a href="#audit">감사 이력</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="list">
+      <h1>요청 목록</h1>
+
+      <div class="toolbar">
+        <div>
+          <label>
+            검색
+            <input type="search" placeholder="업체명, 사업자번호, 요청 ID">
+          </label>
+        </div>
+        <div>
+          <label>
+            상태
+            <select>
+              <option>전체</option>
+              <option selected>대기</option>
+              <option>초안</option>
+              <option>승인</option>
+              <option>반려</option>
+            </select>
+          </label>
+        </div>
+        <button class="primary" type="button">새 요청</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>요청 ID</th>
+            <th>업체명</th>
+            <th>사업자번호</th>
+            <th>사업부</th>
+            <th>상태</th>
+            <th>최종 변경일</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="#detail">VR-2026-0142</a></td>
+            <td>대한부품</td>
+            <td>123-45-67890</td>
+            <td>구매사업부</td>
+            <td><span class="status">대기</span></td>
+            <td>2026-07-27 10:30</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="form">
+      <h1>공급업체 요청 작성</h1>
+      <p><span aria-hidden="true">*</span> 표시는 필수 입력 항목입니다.</p>
+
+      <form>
+        <div class="fields">
+          <label>
+            업체명 *
+            <input required value="대한부품">
+          </label>
+
+          <label>
+            사업자번호 *
+            <input required inputmode="numeric"
+                   aria-describedby="duplicate-error"
+                   value="123-45-67890">
+            <span id="duplicate-error" class="error">
+              이미 등록된 사업자번호입니다.
+              <a href="/vendors/V-0091">기존 업체 보기</a>
+            </span>
+          </label>
+
+          <label>
+            담당자 이메일 *
+            <input required type="email" value="vendor@example.com">
+          </label>
+
+          <label>
+            요청 사업부
+            <input readonly value="구매사업부">
+          </label>
+        </div>
+
+        <div class="banner" role="alert">
+          네트워크 연결에 실패했습니다. 입력 내용은 보존되었습니다.
+          <button type="button">다시 시도</button>
+        </div>
+
+        <div class="actions">
+          <button type="button">취소</button>
+          <div>
+            <button type="button">임시 저장</button>
+            <button class="primary" type="submit" disabled>
+              제출
+            </button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <section id="detail">
+      <h1>
+        요청 상세
+        <span class="status">대기</span>
+      </h1>
+
+      <div class="detail-grid">
+        <article class="panel">
+          <h2>요청 정보</h2>
+          <dl>
+            <dt>요청 ID</dt><dd>VR-2026-0142</dd>
+            <dt>업체명</dt><dd>대한부품</dd>
+            <dt>사업자번호</dt><dd>123-45-67890</dd>
+            <dt>담당자 이메일</dt><dd>vendor@example.com</dd>
+            <dt>사업부</dt><dd>구매사업부</dd>
+            <dt>요청자</dt><dd>김요청</dd>
+            <dt>요청일</dt><dd>2026-07-27 10:30</dd>
+          </dl>
+
+          <h2>최근 이력</h2>
+          <ol>
+            <li>2026-07-27 10:30 · 제출 · 김요청</li>
+            <li>2026-07-27 10:12 · 초안 생성 · 김요청</li>
+          </ol>
+        </article>
+
+        <aside class="panel approval-panel">
+          <h2>승인 처리</h2>
+          <p>처리 결과는 감사 이력에 기록됩니다.</p>
+
+          <label>
+            반려 사유
+            <textarea rows="5"
+                      placeholder="반려 시 사유를 입력하세요"></textarea>
+          </label>
+
+          <div class="banner" role="alert">
+            처리에 실패하면 입력한 반려 사유를 유지하고
+            다시 시도 버튼을 표시합니다.
+          </div>
+
+          <div class="actions">
+            <button class="danger" type="button">반려</button>
+            <button class="primary" type="button">승인</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="audit">
+      <h1>감사 이력</h1>
+
+      <div class="toolbar">
+        <label>
+          요청 검색
+          <input type="search" placeholder="요청 ID, 업체명, 사업자번호">
+        </label>
+        <label>
+          변경 상태
+          <select>
+            <option>전체</option>
+            <option>제출</option>
+            <option>승인</option>
+            <option>반려</option>
+            <option>재제출</option>
+          </select>
+        </label>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>발생 시각</th>
+            <th>요청 ID</th>
+            <th>이전 → 이후</th>
+            <th>수행자</th>
+            <th>사업부</th>
+            <th>사유</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2026-07-27 10:30</td>
+            <td><a href="#detail">VR-2026-0142</a></td>
+            <td>초안 → 대기</td>
+            <td>김요청</td>
+            <td>구매사업부</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
+```
+
+---
+
+## 5. Dev Handoff
+
+### 5.1 권장 라우트
+
+| 화면 | 라우트 |
+|---|---|
+| 요청 목록 | `/vendor-requests` |
+| 요청 작성 | `/vendor-requests/new` |
+| 요청 편집 | `/vendor-requests/:requestId/edit` |
+| 요청 상세/승인 | `/vendor-requests/:requestId` |
+| 감사 이력 | `/audit/vendor-requests` |
+| 기존 업체 상세 | `/vendors/:vendorId` |
+
+### 5.2 API 계약 예시
+
+| 기능 | 메서드 및 경로 | 핵심 응답 |
+|---|---|---|
+| 목록 조회 | `GET /api/vendor-requests` | 역할/사업부로 필터링된 목록 |
+| 상세 조회 | `GET /api/vendor-requests/:id` | 상세, 권한, 가능한 동작 |
+| 초안 생성 | `POST /api/vendor-requests` | 생성된 요청 |
+| 초안/반려 수정 | `PATCH /api/vendor-requests/:id` | 수정된 요청 |
+| 중복 확인 | `GET /api/vendors/by-registration-number/:number` | 기존 업체 또는 `404` |
+| 제출/재제출 | `POST /api/vendor-requests/:id/submit` | `PENDING` 요청 |
+| 승인 | `POST /api/vendor-requests/:id/approve` | `APPROVED` 요청 |
+| 반려 | `POST /api/vendor-requests/:id/reject` | `REJECTED` 요청 |
+| 감사 이력 | `GET /api/audit/vendor-requests` | 읽기 전용 이벤트 목록 |
+
+상세 응답에 클라이언트의 권한 추론을 줄이는 다음 필드를 포함하는 방식을 권장한다.
+
+```json
+{
+  "id": "VR-2026-0142",
+  "status": "PENDING",
+  "version": 3,
+  "permissions": {
+    "canEdit": false,
+    "canSubmit": false,
+    "canApprove": true,
+    "canReject": true
+  }
+}
+```
+
+### 5.3 오류 응답 규격
+
+```json
+{
+  "code": "DUPLICATE_REGISTRATION_NUMBER",
+  "message": "이미 등록된 사업자번호입니다.",
+  "field": "registrationNumber",
+  "existingVendor": {
+    "id": "V-0091",
+    "name": "대한부품",
+    "url": "/vendors/V-0091"
+  },
+  "traceId": "tr_01J..."
+}
+```
+
+주요 오류 코드:
+
+- `VALIDATION_ERROR`
+- `DUPLICATE_REGISTRATION_NUMBER`
+- `FORBIDDEN_BUSINESS_UNIT`
+- `INVALID_STATE_TRANSITION`
+- `REQUEST_VERSION_CONFLICT`
+- `REQUEST_NOT_FOUND`
+
+### 5.4 서버 구현 필수사항
+
+- 승인/반려 시 로그인 사용자의 역할과 사업부를 서버에서 검사한다.
+- 사업부 불일치 시 `403`을 반환하고 요청 상태를 변경하지 않는다.
+- 사업자번호는 정규화한 숫자 10자리를 기준으로 유일성을 검사한다.
+- 중복 업체 생성 방지를 위해 DB unique constraint를 함께 둔다.
+- 상태 변경과 감사 이벤트 저장은 하나의 트랜잭션으로 처리한다.
+- 상태 변경 API는 현재 상태와 `version`을 함께 검사해 동시 처리를 방지한다.
+- 재시도 중 중복 변경을 막기 위해 idempotency key를 지원한다.
+- 감사 이벤트는 수정·삭제할 수 없는 append-only 구조를 권장한다.
+- 반려 사유는 `REJECTED` 전환에서만 필수로 검증한다.
+
+### 5.5 감사 이벤트 최소 스키마
+
+```json
+{
+  "eventId": "AE-9021",
+  "requestId": "VR-2026-0142",
+  "action": "REJECTED",
+  "fromStatus": "PENDING",
+  "toStatus": "REJECTED",
+  "actorId": "U-102",
+  "actorRole": "APPROVER",
+  "businessUnitId": "BU-20",
+  "reason": "계좌 정보 확인 필요",
+  "occurredAt": "2026-07-27T10:45:00+09:00",
+  "traceId": "tr_01J..."
+}
+```
+
+### 5.6 QA 체크리스트
+
+- 동일 사업자번호 제출 시 요청이 `PENDING`으로 바뀌지 않고 기존 업체 링크가 표시된다.
+- 타 사업부 승인자가 승인/반려하면 `403`이며 상태와 감사 상태 변경 이력이 생기지 않는다.
+- 제출 성공 시 요청 상태와 감사 이력이 함께 저장된다.
+- 감사 이력 저장 실패 시 요청 상태도 변경되지 않는다.
+- 반려 사유 없이 반려할 수 없다.
+- 네트워크 실패 후 업체 입력값과 반려 사유가 유지된다.
+- 재시도 또는 더블클릭으로 상태 변경이 두 번 기록되지 않는다.
+- 두 승인자가 동시에 처리하면 한 건만 성공하고 다른 요청은 `409`를 받는다.
+- 반려 요청은 요청자만 수정·재제출할 수 있다.
+- 승인 요청은 더 이상 수정하거나 상태 변경할 수 없다.
+- 모바일 너비에서 상세 정보와 승인 패널이 단일 열로 표시된다.
+- 키보드만으로 필드, 오류, 기존 업체 링크, 승인/반려 다이얼로그를 조작할 수 있다.
+- 오류 메시지가 색상만으로 전달되지 않고 입력 필드와 프로그램적으로 연결된다.
+
+## 후보 B
+
+# 공급업체 승인 화면정의서
+
+문서 상태: 구현 전달용 Draft  
+기준일: 2026-07-27
+
+## 전제 및 안전한 추론
+
+- 요청자의 사업부는 폼에서 선택하지 않고 로그인 사용자 프로필에서 서버가 결정한다.
+- `초안` 상태를 지원하기 위해 명시적인 `초안 저장` 기능을 둔다.
+- 요청자는 자신이 작성한 요청만 조회·편집할 수 있다.
+- 승인자는 자기 사업부 요청만 조회하며, `대기` 상태에서만 승인·반려할 수 있다.
+- 감사 이력 화면은 감사자 전용으로 정의한다.
+- 사업자번호 중복 여부는 입력 중 사전 확인할 수 있지만, 제출 시 서버가 반드시 다시 검사한다.
+- 기존 업체 링크는 현재 사용자가 해당 업체를 조회할 권한이 있을 때만 상세 링크로 제공한다. 권한이 없으면 업체명과 “관리자 문의” 안내만 제공한다.
+- 승인과 반려는 즉시 상태를 낙관적으로 변경하지 않는다. 서버 성공 응답 이후 화면에 반영한다.
+- API 경로와 기술 스택은 구현 예시이며 프로젝트 표준에 맞게 조정할 수 있다.
+
+---
+
+# 1. IA
+
+## 1.1 페이지 계층
+
+```mermaid
+flowchart LR
+  Root((공급업체 승인))
+  Root --> Requests[요청 관리]
+  Root --> Audit[감사]
+
+  Requests --> S01["S-01 요청 목록<br>/vendor-requests"]
+  Requests --> S02N["S-02 요청 작성<br>/vendor-requests/new"]
+  Requests --> S02E["S-02 요청 편집<br>/vendor-requests/:id/edit"]
+  Requests --> S03["S-03 요청 상세 및 승인<br>/vendor-requests/:id"]
+
+  Audit --> S04["S-04 감사 이력<br>/audit/vendor-requests"]
+
+  S01 --> S02N
+  S01 --> S02E
+  S01 --> S03
+  S04 --> S03
+```
+
+`/vendors/:vendorId`는 중복 업체 안내에서 이동하는 기존 업체 시스템의 목적지이며 이번 구현 화면 범위에는 포함하지 않는다.
+
+## 1.2 내비게이션
+
+로그인 후 상단 내비게이션:
+
+- 요청자: `공급업체 요청`
+- 승인자: `승인 대기`
+- 감사자: `감사 이력`
+- 복수 역할 사용자는 보유 역할에 해당하는 메뉴를 모두 표시한다.
+- 권한 없는 메뉴는 숨기되, URL 직접 접근에 대해서도 서버 권한 검사를 수행한다.
+
+보조 내비게이션:
+
+- 목록 → 상세: `공급업체 요청 > 요청 상세`
+- 목록 → 작성: `공급업체 요청 > 새 요청`
+- 상세 → 편집: `공급업체 요청 > 요청 상세 > 요청 편집`
+- 감사 이력 → 상세: `감사 이력 > 요청 상세`
+
+## 1.3 역할별 접근 권한
+
+| 화면 | 요청자 | 승인자 | 감사자 |
+|---|---:|---:|---:|
+| S-01 요청 목록 | 본인 요청 | 자기 사업부 요청 | 접근 불가 |
+| S-02 작성 | 허용 | 요청자 역할도 보유한 경우 | 접근 불가 |
+| S-02 편집 | 본인의 초안·반려 요청 | 접근 불가 | 접근 불가 |
+| S-03 상세 | 본인 요청, 읽기 전용 | 자기 사업부 요청 | 감사 이력에서 읽기 전용 |
+| S-03 승인·반려 | 불가 | 자기 사업부의 대기 요청만 | 불가 |
+| S-04 감사 이력 | 접근 불가 | 접근 불가 | 전체 읽기 전용 |
+
+권한이 없는 직접 접근은 별도 권한 안내 화면을 표시하며 mutation API는 `403`을 반환한다.
+
+## 1.4 FR–화면 매핑
+
+| 요구사항 | 관련 화면 | 적용 내용 |
+|---|---|---|
+| FR-101 | S-02, S-03 | 필수 정보 입력, 제출, 제출 결과 확인 |
+| FR-102 | S-02 | 중복 제출 차단, 기존 업체 링크 |
+| FR-103 | S-01, S-03 | 자기 사업부 대기 요청 조회·승인·사유 포함 반려 |
+| FR-104 | S-03 | 서버 권한 검사, 403 처리, 상태 유지 |
+| FR-105 | S-03, S-04 | 상태 변경 이력 생성 및 읽기 전용 조회 |
+
+---
+
+# 2. User Flow
+
+## Flow A — 요청 작성 및 제출
+
+```mermaid
+flowchart TD
+  A([요청 목록]) --> B[새 요청 작성]
+  B --> C[업체명·사업자번호·이메일 입력]
+  C --> D{클라이언트 검증}
+  D -->|실패| C
+  D -->|통과| E{사용자 행동}
+
+  E -->|초안 저장| F{저장 응답}
+  F -->|성공| G[초안 상세]
+  F -->|네트워크 실패| H[입력 보존 및 재시도]
+  H --> F
+
+  E -->|제출| I{서버 중복 검사}
+  I -->|중복| J[제출 차단 및 기존 업체 링크]
+  J --> C
+  I -->|중복 없음| K[초안 또는 반려 → 대기]
+  K --> L[상태 변경 감사 이력 생성]
+  L --> M[대기 상태 상세]
+```
+
+중복 검사는 입력 필드의 포커스 이탈 시 사전 수행할 수 있지만, 제출 시 검사가 최종 기준이다.
+
+## Flow B — 반려 요청 수정 후 재제출
+
+```mermaid
+flowchart TD
+  A([요청 목록]) --> B[반려 요청 선택]
+  B --> C[상세에서 반려 사유 확인]
+  C --> D[수정하기]
+  D --> E[기존 입력값으로 편집 화면 표시]
+  E --> F{다시 제출}
+  F -->|중복 발견| G[제출 차단 및 기존 업체 링크]
+  F -->|네트워크 실패| H[입력 보존 및 재시도]
+  F -->|성공| I[반려 → 대기]
+  I --> J[재제출 감사 이력 생성]
+```
+
+## Flow C — 승인자의 승인
+
+```mermaid
+flowchart TD
+  A([승인 대기 목록]) --> B[자기 사업부 요청 선택]
+  B --> C[요청 상세 확인]
+  C --> D[승인하기]
+  D --> E{확인 대화상자}
+  E -->|취소| C
+  E -->|확인| F{서버 권한·현재 상태 검사}
+  F -->|성공| G[대기 → 승인]
+  G --> H[승인 감사 이력 생성]
+  H --> I[승인 완료 상세]
+  F -->|403| J[권한 없음 안내]
+  J --> K[서버 상태 재조회]
+  F -->|409| L[다른 사용자가 처리함 안내]
+  L --> K
+  F -->|네트워크 실패| M[상태 미변경 및 재시도]
+```
+
+## Flow D — 승인자의 반려
+
+```mermaid
+flowchart TD
+  A([대기 요청 상세]) --> B[반려하기]
+  B --> C[반려 사유 모달]
+  C --> D{사유 검증}
+  D -->|비어 있음| C
+  D -->|통과| E{서버 권한·현재 상태 검사}
+  E -->|성공| F[대기 → 반려]
+  F --> G[사유 포함 감사 이력 생성]
+  E -->|403| H[권한 없음, 상태 미변경]
+  E -->|409| I[이미 처리된 요청 안내]
+  E -->|네트워크 실패| J[모달과 사유 보존]
+  J --> E
+```
+
+모달을 사용자가 직접 닫을 때만 사유를 폐기한다. 네트워크 오류나 재인증 과정에서는 보존한다.
+
+## Flow E — 감사 이력 조회
+
+```mermaid
+flowchart TD
+  A([감사 이력 진입]) --> B{감사자 권한 검사}
+  B -->|없음| C[권한 안내]
+  B -->|있음| D[이력 목록]
+  D --> E[조건 검색 및 필터]
+  E --> F[이력 행 선택]
+  F --> G[요청 상세 읽기 전용 조회]
+```
+
+## 수용 기준 커버리지
+
+| 수용 기준 | 관련 Flow | 검증 결과 |
+|---|---|---|
+| 권한 없는 승인 시 403, 상태 불변 | C, D | 실패 시 상세를 재조회하고 성공 상태를 표시하지 않음 |
+| 중복 사업자번호에서 제출 차단 | A, B | 서버 중복 검사 실패 시 대기 상태로 전이하지 않음 |
+| 네트워크 실패 시 입력·반려 사유 보존 | A, B, D | 현재 폼 또는 모달 상태를 유지하고 재시도 제공 |
+| 모바일 승인 상세 단일 열 | C, D | S-03 모바일 명세에 반영 |
+
+---
+
+# 3. Screen Spec
+
+## 공통 규칙
+
+### 상태와 상태 전이
+
+| 현재 상태 | 허용 액션 | 다음 상태 |
+|---|---|---|
+| 초안 | 편집, 초안 저장 | 초안 |
+| 초안 | 제출 | 대기 |
+| 대기 | 승인자가 승인 | 승인 |
+| 대기 | 승인자가 사유와 함께 반려 | 반려 |
+| 반려 | 요청자가 편집·저장 | 반려 |
+| 반려 | 요청자가 재제출 | 대기 |
+| 승인 | 없음 | 승인 |
+
+그 외 전이는 서버에서 거부한다. 승인·반려·재제출은 현재 버전 또는 `updatedAt`을 함께 보내 동시 처리 충돌을 검사한다.
+
+### 공통 상태 표현
+
+- `초안`: 중립 회색 배지
+- `대기`: 주의색 배지
+- `승인`: 성공색 배지
+- `반려`: 오류색 배지와 반려 사유
+- 목록·상세 로딩은 실제 레이아웃 형태의 스켈레톤을 사용한다.
+- mutation 버튼은 처리 중 비활성화하고 `저장 중…`, `제출 중…`, `승인 중…`, `반려 중…`으로 변경한다.
+- 네트워크 실패 시 사용자 입력을 초기화하지 않는다.
+- 401은 재인증 후 원래 화면으로 복귀하고 작성 중 데이터를 복원한다.
+- 사용자에게 서버 코드나 내부 예외 메시지를 노출하지 않는다.
+
+---
+
+## S-01 요청 목록
+
+| 항목 | 명세 |
+|---|---|
+| Route | `/vendor-requests` |
+| Audience | 요청자, 승인자 |
+| Auth | 필수 |
+| Linked FR | FR-103 |
+| 레이아웃 | 제목, 역할별 요약, 필터, 요청 목록 |
+| 기본 정렬 | 최근 생성일 또는 최근 상태 변경일 내림차순 |
+| 행 이동 | 행 선택 시 S-03 상세 |
+
+### 역할별 콘텐츠
+
+- 요청자: 본인이 만든 모든 상태의 요청
+- 승인자: 자기 사업부 요청, 기본 필터는 `대기`
+- 복수 역할: `내 요청` / `승인 대기` 탭으로 범위를 명확히 구분
+
+### 컴포넌트
+
+| 슬롯 | 타입 | 규칙/내용 |
+|---|---|---|
+| scope_tabs | tablist | `내 요청`, `승인 대기`; 권한에 따라 표시 |
+| status_filter | select | 전체, 초안, 대기, 승인, 반려 |
+| search | search input | 업체명 또는 사업자번호 검색 |
+| new_request | primary button | 요청자에게만 `새 요청 작성하기` |
+| request_list | table/card list | 업체명, 마스킹 사업자번호, 상태, 사업부, 요청자, 수정일 |
+| pagination | pagination | 서버 페이지네이션 |
+| row_link | link | `요청 상세 보기` 접근 가능한 이름 제공 |
+
+### 화면 상태 및 카피
+
+- Loading: 테이블 헤더와 5개 행 형태의 스켈레톤.
+- Empty, 첫 요청자: `아직 작성한 공급업체 요청이 없습니다.` + `새 요청 작성하기`.
+- Empty, 승인자: `현재 승인 대기 중인 요청이 없습니다.`
+- Empty, 필터 결과: `선택한 조건에 맞는 요청이 없습니다.` + `필터 초기화`.
+- Error: `요청 목록을 불러오지 못했습니다.` + `다시 시도하기`.
+- Success: 목록과 총 건수 표시.
+- No permission: `공급업체 요청을 조회할 권한이 없습니다.` + `홈으로 이동`.
+
+### 반응형
+
+- Desktop ≥1024px: 테이블.
+- Tablet 768–1023px: 중요 열만 유지하고 사업부·요청자는 보조 줄로 이동.
+- Mobile <768px: 카드 목록 단일 열. 검색과 상태 필터를 세로 배치하며 가로 스크롤을 만들지 않는다.
+
+Wireframe anchor: `#screen-request-list`
+
+---
+
+## S-02 요청 작성/편집
+
+| 항목 | 명세 |
+|---|---|
+| Route | `/vendor-requests/new`, `/vendor-requests/:id/edit` |
+| Audience | 요청자 |
+| Auth | 필수 + 소유권 검사 |
+| Linked FR | FR-101, FR-102 |
+| 편집 가능 상태 | 본인의 초안 또는 반려 |
+| 레이아웃 | 최대 720px 단일 폼 |
+
+### 폼 컴포넌트
+
+| 필드 | HTML 타입 | 필수 | 검증 | 예시/도움말 |
+|---|---|---:|---|---|
+| 업체명 | `text` | 예 | trim 후 1–100자 | `예: 위그튼 주식회사` |
+| 사업자번호 | `text`, `inputmode=numeric` | 예 | 숫자 10자리, 표시 시 `000-00-00000` | `예: 123-45-67890` |
+| 담당자 이메일 | `email` | 예 | 유효한 이메일, 최대 254자 | `예: vendor@example.com` |
+| 사업부 | 읽기 전용 | 예 | 로그인 사용자 사업부 | `소속 사업부 기준으로 승인됩니다.` |
+
+### 액션
+
+- `취소`: 입력 변경이 있으면 이탈 확인.
+- `초안 저장`: 클라이언트 검증 통과 후 저장. 중복은 제출 시에만 차단하되 사전 경고는 표시 가능.
+- `제출하기` 또는 `다시 제출하기`: 서버 중복 검사 후 대기로 전환.
+- 제출 중 모든 저장·제출 버튼을 비활성화하여 중복 요청을 방지한다.
+
+### 중복 상태
+
+서버가 중복을 반환하면:
+
+- 상단 배너: `같은 사업자번호로 등록된 업체가 있습니다. 기존 업체를 확인한 후 다시 진행해 주세요.`
+- 사업자번호 필드에 `aria-invalid="true"` 적용.
+- 조회 권한이 있으면 `기존 업체 보기` 링크 제공.
+- 조회 권한이 없으면 `기존 업체 조회 권한이 없습니다. 공급업체 관리자에게 문의해 주세요.` 표시.
+- 폼의 다른 입력값은 그대로 유지.
+- 요청 상태는 변경하지 않음.
+
+### 화면 상태 및 카피
+
+- Loading: 편집 화면 진입 시 필드 형태의 스켈레톤.
+- Validation:
+  - 업체명: `업체명을 입력해 주세요.`
+  - 사업자번호: `사업자번호 10자리를 입력해 주세요.`
+  - 이메일: `올바른 이메일 주소를 입력해 주세요.`
+- Network error: `저장하지 못했습니다. 입력 내용은 유지됩니다.` + `다시 시도하기`.
+- Success, 초안: `초안이 저장되었습니다.`
+- Success, 제출: `승인 요청을 제출했습니다.` 후 S-03으로 이동.
+- No permission: `이 요청을 수정할 권한이 없습니다.` + `목록으로 이동`.
+- Locked status: 대기 또는 승인 상태라면 편집 폼 대신 `현재 상태에서는 수정할 수 없습니다.` 표시 후 상세로 이동.
+
+### 반응형
+
+- Desktop ≥1024px: 중앙 정렬 단일 폼, 하단 액션 우측 정렬.
+- Tablet 768–1023px: 동일한 단일 열.
+- Mobile <768px: 필드 단일 열, 버튼 세로 배치, 각 버튼 최소 높이 44px. 키보드 노출 시 현재 필드가 가려지지 않도록 스크롤한다.
+
+Wireframe anchor: `#screen-request-form`
+
+---
+
+## S-03 요청 상세/승인
+
+| 항목 | 명세 |
+|---|---|
+| Route | `/vendor-requests/:id` |
+| Audience | 요청자, 승인자, 감사자 |
+| Auth | 필수 + 소유권/사업부/감사자 권한 |
+| Linked FR | FR-101, FR-103, FR-104, FR-105 |
+| 레이아웃 | 요청 정보, 상태 정보, 역할별 액션, 최근 이력 |
+| 감사자 모드 | 모든 액션이 없는 읽기 전용 |
+
+### 콘텐츠
+
+| 영역 | 내용 |
+|---|---|
+| summary_header | 업체명, 요청 ID, 상태 배지, 생성·수정 시각 |
+| vendor_info | 업체명, 사업자번호, 담당자 이메일 |
+| request_info | 요청자, 사업부 |
+| rejection_panel | 반려 상태일 때 반려 사유, 반려자, 반려 시각 |
+| recent_history | 최근 상태 변경 이력; 요청자·승인자는 볼 수 있는 범위만 표시 |
+| requester_actions | 초안·반려에서 `수정하기` |
+| approver_actions | 자기 사업부 대기 요청에서 `승인하기`, `반려하기` |
+
+### 승인 확인 대화상자
+
+- 제목: `이 공급업체 요청을 승인할까요?`
+- 설명: `승인 후 요청자는 더 이상 내용을 수정할 수 없습니다.`
+- 버튼: `취소`, `승인하기`
+- 승인 완료 전 화면 상태를 변경하지 않는다.
+
+### 반려 모달
+
+| 항목 | 명세 |
+|---|---|
+| 제목 | `반려 사유 입력` |
+| 필드 | `textarea` |
+| 필수 | 예 |
+| 검증 | trim 후 1–500자 |
+| 안내 | `요청자가 수정할 내용을 알 수 있도록 구체적으로 작성해 주세요.` |
+| 버튼 | `취소`, `반려하기` |
+| 네트워크 실패 | 모달을 유지하고 입력 사유를 보존 |
+| 재시도 | 동일 사유로 다시 요청 가능 |
+
+### 오류와 충돌
+
+- 403:
+  - `이 요청을 승인하거나 반려할 권한이 없습니다.`
+  - 서버 상태를 다시 조회한다.
+  - 상태 배지와 이력을 성공 상태로 변경하지 않는다.
+- 409:
+  - `다른 승인자가 이미 이 요청을 처리했습니다. 최신 상태를 확인해 주세요.`
+  - `최신 상태 보기`로 상세 재조회.
+- Network:
+  - `처리 결과를 확인하지 못했습니다. 요청 상태를 다시 확인한 후 재시도해 주세요.`
+  - 승인 버튼은 다시 활성화하되, 재조회 전 자동 재전송하지 않는다.
+  - 반려 사유는 보존한다.
+- 5xx:
+  - `요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.`
+
+### 화면 상태
+
+- Loading: 헤더, 정보 카드, 이력 영역 스켈레톤.
+- Error: 전체 화면 오류와 `다시 시도하기`.
+- Success: 상태별 상세와 허용 액션 표시.
+- No permission: 권한 안내 화면. 승인 액션 자체를 렌더링하지 않음.
+- Empty history: `아직 표시할 상태 변경 이력이 없습니다.`
+
+### 반응형
+
+- Desktop ≥1024px: 왼쪽 2/3 요청 정보, 오른쪽 1/3 상태·승인 액션.
+- Tablet 768–1023px: 요청 정보와 액션의 2열을 유지하되 간격 축소.
+- Mobile <768px: 반드시 `요청 정보 → 상태/반려 사유 → 액션 → 이력` 순서의 단일 열로 재배치. 승인·반려 버튼은 각각 44px 이상이며 가로 스크롤을 허용하지 않는다.
+
+Wireframe anchor: `#screen-request-detail`
+
+---
+
+## S-04 감사 이력
+
+| 항목 | 명세 |
+|---|---|
+| Route | `/audit/vendor-requests` |
+| Audience | 감사자 |
+| Auth | 필수 + 감사자 권한 |
+| Linked FR | FR-105 |
+| 레이아웃 | 필터, 읽기 전용 이력 테이블, 페이지네이션 |
+| 정렬 | 이벤트 발생 시각 내림차순 |
+
+### 필터와 컬럼
+
+| 슬롯 | 타입 | 내용 |
+|---|---|---|
+| request_search | search | 요청 ID, 업체명, 사업자번호 |
+| event_filter | select | 전체, 제출, 승인, 반려, 재제출 |
+| actor_search | text | 행위자 이름 또는 계정 |
+| department_filter | select | 사업부 |
+| date_from/date_to | date | 발생 기간 |
+| reset | button | `필터 초기화` |
+| audit_table | table | 시각, 요청 ID, 업체명, 이전 상태, 새 상태, 행위, 행위자, 사업부, 반려 사유 |
+| request_link | link | S-03 읽기 전용 상세 |
+
+사업자번호, 이메일 등 개인정보성 정보는 조직의 마스킹 정책에 따라 표시한다. 감사 이력은 수정·삭제 UI를 제공하지 않는다.
+
+### 화면 상태 및 카피
+
+- Loading: 필터는 유지하고 이력 행 스켈레톤 표시.
+- Empty, 전체: `아직 기록된 상태 변경 이력이 없습니다.`
+- Empty, 필터: `선택한 조건에 맞는 이력이 없습니다.` + `필터 초기화`.
+- Error: `감사 이력을 불러오지 못했습니다.` + `다시 시도하기`.
+- Success: 조회 건수와 이력 목록.
+- No permission: `감사 이력을 조회할 권한이 없습니다.` + `홈으로 이동`.
+
+### 반응형
+
+- Desktop ≥1024px: 전체 컬럼 테이블.
+- Tablet 768–1023px: 반려 사유를 행 확장 영역으로 이동.
+- Mobile <768px: 이력을 단일 열 카드로 표시하고 필터는 접이식 패널로 제공한다.
+
+Wireframe anchor: `#screen-audit-history`
+
+---
+
+# 4. Lo-fi HTML Wireframe
+
+아래 코드는 독립 HTML 파일로 복사해 브라우저에서 열 수 있다. 브랜드 표현 없이 회색조와 상태 의미색만 사용한다.
+
+```html
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>공급업체 승인 Lo-fi Wireframe</title>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --surface: #fff;
+      --text: #171717;
+      --muted: #666;
+      --line: #b8b8b8;
+      --soft: #ededed;
+      --danger: #9f1d1d;
+      --danger-bg: #fff0f0;
+      --success: #176b35;
+      --success-bg: #edf9f0;
+      --warning: #785500;
+      --warning-bg: #fff7dc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text); background: var(--bg);
+      font: 15px/1.5 system-ui, sans-serif;
+    }
+    a { color: inherit; }
+    button, input, select, textarea { font: inherit; }
+    button, input, select, textarea {
+      min-height: 44px; border: 1px solid #777; border-radius: 4px;
+    }
+    button { padding: 0 16px; background: white; cursor: pointer; }
+    button.primary { color: white; background: #222; }
+    button.danger { color: white; background: var(--danger); }
+    button:disabled { cursor: wait; opacity: .55; }
+    :focus-visible { outline: 3px solid #111; outline-offset: 2px; }
+    header.site-header {
+      position: sticky; top: 0; z-index: 10; background: white;
+      border-bottom: 1px solid var(--line);
+    }
+    nav {
+      max-width: 1180px; margin: auto; padding: 12px 20px;
+      display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+    }
+    nav .links { display: flex; gap: 16px; flex-wrap: wrap; }
+    main { max-width: 1180px; margin: auto; padding: 24px 20px 64px; }
+    section.screen {
+      margin: 0 0 48px; padding: 24px; background: white;
+      border: 2px dashed var(--line); border-radius: 8px;
+    }
+    .meta { color: var(--muted); font-size: 13px; }
+    .toolbar, .actions {
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: end;
+    }
+    .toolbar { margin: 18px 0; }
+    .field { display: grid; gap: 6px; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 10px; background: white;
+    }
+    .field textarea { min-height: 110px; resize: vertical; }
+    .box {
+      padding: 16px; background: var(--soft);
+      border: 1px dashed #888; border-radius: 6px;
+    }
+    .stack { display: grid; gap: 14px; }
+    .form { max-width: 720px; }
+    .detail-grid {
+      display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+      gap: 20px;
+    }
+    .status {
+      display: inline-block; padding: 3px 9px; border-radius: 99px;
+      border: 1px solid currentColor; font-size: 13px;
+    }
+    .waiting { color: var(--warning); background: var(--warning-bg); }
+    .approved { color: var(--success); background: var(--success-bg); }
+    .rejected { color: var(--danger); background: var(--danger-bg); }
+    .alert {
+      padding: 12px; border-left: 4px solid; border-radius: 3px;
+    }
+    .alert.error { color: var(--danger); background: var(--danger-bg); }
+    .alert.success { color: var(--success); background: var(--success-bg); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td {
+      padding: 12px; border: 1px solid var(--line);
+      text-align: left; vertical-align: top;
+    }
+    .cards { display: none; gap: 10px; }
+    dialog { width: min(520px, calc(100% - 32px)); border: 1px solid #444; }
+    dialog::backdrop { background: rgb(0 0 0 / .45); }
+    footer { padding: 24px; color: var(--muted); text-align: center; }
+
+    @media (max-width: 1023px) {
+      .detail-grid { grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr); }
+    }
+    @media (max-width: 767px) {
+      body { font-size: 14px; }
+      main { padding: 16px 12px 48px; }
+      section.screen { padding: 16px; }
+      nav { align-items: flex-start; }
+      nav .links { width: 100%; }
+      .detail-grid { display: flex; flex-direction: column; }
+      .detail-main { order: 1; }
+      .detail-side { order: 2; }
+      .detail-actions { order: 3; }
+      .detail-history { order: 4; }
+      .actions > button, .actions > a { width: 100%; }
+      .desktop-table { display: none; }
+      .cards { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav aria-label="주요 메뉴">
+      <strong>공급업체 승인</strong>
+      <div class="links">
+        <a href="#screen-request-list">요청 목록</a>
+        <a href="#screen-request-form">요청 작성</a>
+        <a href="#screen-request-detail">요청 상세</a>
+        <a href="#screen-audit-history">감사 이력</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="screen-request-list" class="screen"
+      aria-labelledby="request-list-title">
+      <h1 id="request-list-title">S-01 요청 목록</h1>
+      <p class="meta">요청자: 내 요청 / 승인자: 자기 사업부 승인 대기</p>
+
+      <div class="toolbar" role="search">
+        <div class="field">
+          <label for="scope">조회 범위</label>
+          <select id="scope">
+            <option>내 요청</option>
+            <option>승인 대기</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="status">상태</label>
+          <select id="status">
+            <option>전체</option><option>초안</option><option>대기</option>
+            <option>승인</option><option>반려</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="search">업체명 또는 사업자번호</label>
+          <input id="search" type="search" placeholder="예: 위그튼 또는 123-45-67890">
+        </div>
+        <button type="button">검색하기</button>
+        <button type="button" class="primary"
+          onclick="location.hash='screen-request-form'">새 요청 작성하기</button>
+      </div>
+
+      <div class="table-wrap desktop-table">
+        <table>
+          <thead>
+            <tr><th>업체명</th><th>사업자번호</th><th>상태</th><th>사업부</th><th>수정일</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#screen-request-detail">위그튼 주식회사</a></td>
+              <td>123-**-*****</td>
+              <td><span class="status waiting">대기</span></td>
+              <td>플랫폼사업부</td><td>2026-07-27 10:20</td>
+            </tr>
+            <tr>
+              <td><a href="#screen-request-form">샘플상사</a></td>
+              <td>555-**-*****</td>
+              <td><span class="status rejected">반려</span></td>
+              <td>플랫폼사업부</td><td>2026-07-26 16:10</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards" aria-label="모바일 요청 목록">
+        <article class="box">
+          <strong>위그튼 주식회사</strong>
+          <p>123-**-***** · 플랫폼사업부</p>
+          <span class="status waiting">대기</span>
+          <p><a href="#screen-request-detail">요청 상세 보기</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="screen-request-form" class="screen"
+      aria-labelledby="request-form-title">
+      <h1 id="request-form-title">S-02 요청 작성/편집</h1>
+      <p class="meta">초안과 반려 요청만 편집 가능</p>
+
+      <form class="form stack" onsubmit="return false">
+        <div class="field">
+          <label for="company">업체명 *</label>
+          <input id="company" required maxlength="100"
+            placeholder="예: 위그튼 주식회사">
+        </div>
+        <div class="field">
+          <label for="business-number">사업자번호 *</label>
+          <input id="business-number" required inputmode="numeric"
+            placeholder="예: 123-45-67890"
+            aria-describedby="business-help">
+          <small id="business-help">숫자 10자리를 입력해 주세요.</small>
+        </div>
+        <div class="alert error" role="alert">
+          같은 사업자번호로 등록된 업체가 있습니다.
+          <a href="/vendors/vendor-001">기존 업체 보기</a>
+        </div>
+        <div class="field">
+          <label for="email">담당자 이메일 *</label>
+          <input id="email" type="email" required maxlength="254"
+            placeholder="예: vendor@example.com">
+        </div>
+        <div class="field">
+          <label for="department">사업부</label>
+          <input id="department" value="플랫폼사업부" readonly>
+          <small>로그인 사용자의 소속 사업부가 적용됩니다.</small>
+        </div>
+        <div class="actions">
+          <button type="button">취소하기</button>
+          <button type="button">초안 저장하기</button>
+          <button type="submit" class="primary">제출하기</button>
+        </div>
+        <div class="alert error" role="alert">
+          저장하지 못했습니다. 입력 내용은 유지됩니다.
+          <button type="button">다시 시도하기</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="screen-request-detail" class="screen"
+      aria-labelledby="request-detail-title">
+      <h1 id="request-detail-title">S-03 요청 상세/승인</h1>
+      <p><span class="status waiting">대기</span> 요청 ID VR-2026-0042</p>
+
+      <div class="detail-grid">
+        <div class="detail-main stack">
+          <article class="box">
+            <h2>공급업체 정보</h2>
+            <dl>
+              <dt>업체명</dt><dd>위그튼 주식회사</dd>
+              <dt>사업자번호</dt><dd>123-45-67890</dd>
+              <dt>담당자 이메일</dt><dd>vendor@example.com</dd>
+            </dl>
+          </article>
+          <article class="box">
+            <h2>요청 정보</h2>
+            <p>요청자: 홍길동</p>
+            <p>사업부: 플랫폼사업부</p>
+          </article>
+        </div>
+
+        <aside class="detail-side box" aria-labelledby="approval-title">
+          <h2 id="approval-title">승인 처리</h2>
+          <p>자기 사업부의 대기 요청만 처리할 수 있습니다.</p>
+          <div class="actions detail-actions">
+            <button type="button" class="primary"
+              onclick="document.querySelector('#approve-dialog').showModal()">
+              승인하기
+            </button>
+            <button type="button" class="danger"
+              onclick="document.querySelector('#reject-dialog').showModal()">
+              반려하기
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <article class="box detail-history" style="margin-top:20px">
+        <h2>최근 상태 변경</h2>
+        <ol>
+          <li>2026-07-27 10:20 · 초안 → 대기 · 홍길동</li>
+          <li>2026-07-27 09:55 · 초안 생성 · 홍길동</li>
+        </ol>
+      </article>
+    </section>
+
+    <section id="screen-audit-history" class="screen"
+      aria-labelledby="audit-title">
+      <h1 id="audit-title">S-04 감사 이력</h1>
+      <p class="meta">감사자 전용 · 읽기 전용</p>
+
+      <div class="toolbar" role="search">
+        <div class="field">
+          <label for="event">상태 변경</label>
+          <select id="event">
+            <option>전체</option><option>제출</option><option>승인</option>
+            <option>반려</option><option>재제출</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="actor">행위자</label>
+          <input id="actor" placeholder="이름 또는 계정">
+        </div>
+        <div class="field">
+          <label for="date-from">시작일</label>
+          <input id="date-from" type="date">
+        </div>
+        <button type="button">조회하기</button>
+        <button type="button">필터 초기화</button>
+      </div>
+
+      <div class="table-wrap desktop-table">
+        <table>
+          <thead>
+            <tr>
+              <th>시각</th><th>요청</th><th>이전</th><th>변경</th>
+              <th>행위자</th><th>사업부</th><th>사유</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2026-07-27 10:20</td>
+              <td><a href="#screen-request-detail">VR-2026-0042</a></td>
+              <td>초안</td><td>대기</td><td>홍길동</td>
+              <td>플랫폼사업부</td><td>-</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards">
+        <article class="box">
+          <strong>VR-2026-0042 · 초안 → 대기</strong>
+          <p>2026-07-27 10:20 · 홍길동 · 플랫폼사업부</p>
+          <a href="#screen-request-detail">요청 상세 보기</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="approve-dialog" aria-labelledby="approve-dialog-title">
+    <form method="dialog" class="stack">
+      <h2 id="approve-dialog-title">이 공급업체 요청을 승인할까요?</h2>
+      <p>승인 후 요청자는 더 이상 내용을 수정할 수 없습니다.</p>
+      <div class="actions">
+        <button value="cancel">취소하기</button>
+        <button value="approve" class="primary">승인하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="reject-dialog" aria-labelledby="reject-dialog-title">
+    <form method="dialog" class="stack">
+      <h2 id="reject-dialog-title">반려 사유 입력</h2>
+      <div class="field">
+        <label for="reason">반려 사유 *</label>
+        <textarea id="reason" required maxlength="500"
+          placeholder="요청자가 수정할 내용을 구체적으로 작성해 주세요."></textarea>
+      </div>
+      <div class="alert error" role="alert">
+        반려하지 못했습니다. 입력한 사유는 유지됩니다.
+      </div>
+      <div class="actions">
+        <button value="cancel">취소하기</button>
+        <button type="button">다시 시도하기</button>
+        <button value="reject" class="danger">반려하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <footer>공급업체 승인 · Lo-fi Wireframe</footer>
+</body>
+</html>
+```
+
+---
+
+# 5. Dev Handoff
+
+## 5.1 데이터 모델
+
+### VendorRequest
+
+```ts
+type VendorRequestStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+
+interface VendorRequest {
+  id: string;
+  vendorName: string;
+  businessNumber: string;
+  contactEmail: string;
+  departmentId: string;
+  requesterId: string;
+  status: VendorRequestStatus;
+  rejectionReason: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### AuditEvent
+
+```ts
+type AuditAction =
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "RESUBMITTED";
+
+interface AuditEvent {
+  id: string;
+  requestId: string;
+  action: AuditAction;
+  fromStatus: VendorRequestStatus;
+  toStatus: VendorRequestStatus;
+  actorId: string;
+  actorDepartmentId: string;
+  reason: string | null;
+  occurredAt: string;
+}
+```
+
+감사 레코드에는 필요한 범위의 요청 스냅샷이나 변경 전후 값을 보존해야 한다. 클라이언트가 전달한 행위자·사업부 값은 신뢰하지 않고 인증 세션에서 생성한다.
+
+## 5.2 권장 API 계약
+
+| Method / Endpoint | 목적 | 주요 응답 |
+|---|---|---|
+| `GET /api/vendor-requests` | 역할·사업부 범위 목록 조회 | 200, 401, 403 |
+| `POST /api/vendor-requests` | 초안 생성 | 201, 400, 401 |
+| `GET /api/vendor-requests/:id` | 상세 조회 | 200, 403, 404 |
+| `PATCH /api/vendor-requests/:id` | 초안·반려 요청 편집 | 200, 403, 409, 422 |
+| `POST /api/vendor-requests/:id/submit` | 제출·재제출 | 200, 403, 409, 422 |
+| `POST /api/vendor-requests/:id/approve` | 승인 | 200, 403, 409 |
+| `POST /api/vendor-requests/:id/reject` | 반려 | 200, 403, 409, 422 |
+| `GET /api/vendors/duplicate?businessNumber=` | 중복 사전 확인 | 200 |
+| `GET /api/audit/vendor-requests` | 감사 이력 조회 | 200, 403 |
+
+중복 응답 예시:
+
+```json
+{
+  "code": "DUPLICATE_BUSINESS_NUMBER",
+  "message": "같은 사업자번호로 등록된 업체가 있습니다.",
+  "existingVendor": {
+    "id": "vendor-001",
+    "name": "기존 업체명",
+    "url": "/vendors/vendor-001",
+    "canView": true
+  }
+}
+```
+
+`canView`가 false이면 상세 URL을 반환하지 않거나 클라이언트가 링크를 렌더링하지 않는다.
+
+## 5.3 서버 불변 조건
+
+- 제출 시 정규화한 사업자번호에 대해 중복을 원자적으로 검사한다.
+- 데이터베이스에도 정규화 사업자번호의 유일성 또는 동등한 동시성 보호를 둔다.
+- 승인·반려 API는 사용자의 승인자 역할과 `request.departmentId` 일치를 검사한다.
+- 권한 검사는 요청 ID만으로 우회할 수 없도록 서버 쿼리 또는 정책 계층에서 수행한다.
+- 권한 검사가 실패하면 상태와 감사 이력을 모두 변경하지 않고 `403`을 반환한다.
+- 승인·반려는 `PENDING`에서만 허용한다.
+- 재제출은 `DRAFT` 또는 `REJECTED`에서만 허용한다.
+- 상태 변경과 감사 이력 insert는 하나의 트랜잭션으로 처리한다.
+- `version` 또는 `updatedAt` 조건을 사용해 중복 승인 시 `409`를 반환한다.
+- mutation 재시도에 대비해 idempotency key 지원을 권장한다.
+- 로그에 전체 사업자번호, 담당자 이메일, 반려 사유를 불필요하게 기록하지 않는다.
+
+## 5.4 프런트엔드 상태 관리
+
+- 서버 데이터: 프로젝트 표준 query/cache 도구 사용.
+- 폼: 스키마 기반 검증을 권장하되 서버 검증을 최종 기준으로 삼는다.
+- 입력 보존:
+  - mutation 실패 시 폼 값을 reset하지 않는다.
+  - 반려 모달은 성공 또는 사용자의 명시적 취소에만 초기화한다.
+  - 인증 만료 후 복귀가 필요한 경우 session storage에 임시 보존하되 민감정보 정책을 확인한다.
+- 승인·반려 결과는 낙관적 업데이트하지 않는다.
+- 처리 결과가 불명확한 네트워크 오류에서는 mutation을 자동 반복하지 말고 상세 상태를 먼저 재조회한다.
+- 중복 확인 응답은 참고용이며 제출 버튼 활성화 여부의 유일한 기준으로 삼지 않는다.
+
+## 5.5 재사용 컴포넌트
+
+- `StatusBadge`
+- `RequestList`
+- `RequestCard`
+- `VendorRequestForm`
+- `BusinessNumberInput`
+- `DuplicateVendorAlert`
+- `RequestDetailPanel`
+- `ApprovalConfirmDialog`
+- `RejectionDialog`
+- `AuditHistoryTable`
+- `EmptyState`
+- `ErrorBanner`
+- `NoPermissionState`
+- `ResponsiveFilterPanel`
+
+## 5.6 접근성
+
+- 모든 입력에는 연결된 `label`을 제공한다.
+- 오류 입력에는 `aria-invalid="true"`와 오류 설명의 `aria-describedby`를 적용한다.
+- mutation 영역은 `aria-busy`를 제공한다.
+- 동적 오류와 성공 알림은 `role="alert"` 또는 적절한 live region으로 알린다.
+- 모달이 열리면 내부로 포커스를 이동하고 닫을 때 트리거 버튼으로 복귀한다.
+- 모달은 Escape로 닫을 수 있어야 하며 네트워크 오류로 자동 닫지 않는다.
+- 상태는 색상만이 아니라 텍스트 배지로 전달한다.
+- 텍스트 대비 WCAG AA, 터치 타깃 최소 44×44px를 충족한다.
+- 테이블의 모바일 카드 전환 후에도 동일한 정보와 상세 링크를 제공한다.
+
+## 5.7 테스트 우선순위
+
+### 필수 통합 테스트
+
+1. 요청 제출 성공 시 `초안 → 대기`와 감사 이력이 함께 생성된다.
+2. 중복 사업자번호 제출은 `422` 또는 합의된 비즈니스 오류를 반환하고 상태가 변하지 않는다.
+3. 다른 사업부 승인자가 승인 API를 호출하면 `403`이며 요청과 감사 이력이 변하지 않는다.
+4. 승인 성공 시 `대기 → 승인`과 감사 이력이 하나의 트랜잭션으로 반영된다.
+5. 반려 사유가 없으면 서버가 반려를 거부한다.
+6. 반려 성공 시 사유가 감사 이력에 남는다.
+7. 반려 요청 수정 후 재제출하면 `반려 → 대기` 이력이 생성된다.
+8. 두 승인자의 동시 처리 중 하나만 성공하고 다른 요청은 `409`가 된다.
+9. 감사자가 아닌 사용자는 감사 API와 화면에 접근할 수 없다.
+
+### 필수 UI/E2E 테스트
+
+1. 중복 오류 후 업체명과 이메일 값이 보존된다.
+2. 저장·제출 네트워크 실패 후 모든 필드 값과 재시도 버튼이 유지된다.
+3. 반려 네트워크 실패 후 모달과 반려 사유가 유지된다.
+4. 403 승인 응답 후 승인 완료 토스트가 표시되지 않고 기존 상태가 유지된다.
+5. 409 응답 시 최신 상태 조회 행동이 제공된다.
+6. 375px와 767px 화면에서 S-03이 단일 열이며 가로 스크롤이 없다.
+7. 키보드만으로 목록, 폼, 확인 대화상자, 반려 모달을 완료할 수 있다.
+
+## 5.8 구현 순서
+
+1. 상태 모델, 권한 정책, 감사 트랜잭션
+2. 요청 작성·초안 저장·제출 API
+3. 중복 사업자번호 검사와 유일성 보호
+4. S-02 요청 폼
+5. S-01 역할별 목록
+6. S-03 상세, 승인·반려 API와 UI
+7. S-04 감사 이력
+8. 네트워크 복구, 403·409 처리
+9. 모바일 단일 열과 접근성
+10. 수용 기준 통합/E2E 테스트
+
+## 5.9 요구사항 추적성
+
+| FR | 구현 단위 | 검증 |
+|---|---|---|
+| FR-101 | `VendorRequestForm`, create/update/submit API | 필수 필드 및 제출 E2E |
+| FR-102 | `BusinessNumberInput`, `DuplicateVendorAlert`, 서버 중복 검사 | 중복 시 상태 불변 통합 테스트 |
+| FR-103 | 승인자 목록, 승인·반려 다이얼로그와 API | 사업부별 승인·반려 E2E |
+| FR-104 | 서버 RBAC/사업부 정책 | 다른 사업부 호출 403 테스트 |
+| FR-105 | 상태 전이 트랜잭션, 감사 이력 화면 | 모든 전이별 감사 레코드 테스트 |
+
+## 5.10 구현 전 확정 권장사항
+
+- 사업자번호 중복 범위가 전체 조직인지, 사업부별인지
+- 감사 이력의 개인정보 마스킹 및 보존 기간
+- 복수 역할 사용자의 기본 목록 탭
+- 승인 완료 후 되돌리기·취소 기능이 정말 없는지
+- 기존 업체 상세 링크에 대한 별도 조회 권한 정책
+
+위 항목은 핵심 화면 구조를 바꾸지는 않지만 데이터 제약과 권한 테스트 기준에는 영향을 준다.
+
+## 후보 C
+
+아래는 PRD 기반 구현팀 전달용 화면정의서입니다. 파일 생성 없이 응답 본문에만 담았습니다.
+
+**1. IA**
+
+Assumptions:
+- 사용자 세션에는 `role`, `businessUnitId`, `userId`가 포함된다.
+- 요청 작성자는 자기 요청을 작성/수정/재제출할 수 있다.
+- 승인자는 자기 사업부 요청만 승인/반려할 수 있다.
+- 감사자는 전체 또는 허용 범위의 감사 이력을 읽기 전용으로 조회한다.
+- 기존 업체 링크는 `/vendors/{vendorId}`로 이동한다고 가정한다.
+
+Routes:
+| Page ID | 화면 | Route | 주요 역할 | 관련 FR |
+|---|---|---|---|---|
+| `REQ_LIST` | 요청 목록 | `/vendor-requests` | 요청자, 승인자, 감사자 | FR-103 |
+| `REQ_FORM` | 요청 작성/편집 | `/vendor-requests/new`, `/vendor-requests/{id}/edit` | 요청자 | FR-101, FR-102 |
+| `REQ_DETAIL` | 요청 상세/승인 | `/vendor-requests/{id}` | 요청자, 승인자, 감사자 | FR-103, FR-104, FR-105 |
+| `AUDIT_LOG` | 감사 이력 | `/vendor-requests/{id}/audit`, `/audit/vendor-requests` | 감사자, 승인자 읽기 | FR-105 |
+
+Navigation:
+- 요청자: 요청 목록 → 새 요청 작성 → 상세 → 반려 상태면 편집/재제출
+- 승인자: 요청 목록 `대기` 필터 → 상세/승인 → 승인 또는 반려
+- 감사자: 감사 이력 목록 → 요청 상세 읽기
+
+Status Model:
+- `DRAFT` 초안
+- `PENDING` 대기
+- `APPROVED` 승인
+- `REJECTED` 반려
+- Allowed transitions:
+  - `DRAFT → PENDING`
+  - `PENDING → APPROVED`
+  - `PENDING → REJECTED`
+  - `REJECTED → PENDING`
+
+**2. User Flow**
+
+Flow A: 요청 제출, FR-101/FR-102
+1. 요청자가 `/vendor-requests/new` 진입
+2. 업체명, 사업자번호, 담당자 이메일 입력
+3. `제출하기` 클릭
+4. 클라이언트 필수값/형식 검증
+5. 서버가 사업자번호 중복 확인
+6. 중복 없음: 요청 생성 또는 업데이트 후 `PENDING` 전환, 상세 화면 이동
+7. 중복 있음: 제출 중단, 기존 업체 링크 표시, 입력값 보존
+
+Flow B: 반려 후 재제출
+1. 요청자가 `REJECTED` 요청 상세 진입
+2. 반려 사유 확인
+3. `수정하기` 클릭
+4. 요청 작성/편집 화면에서 값 수정
+5. `다시 제출하기` 클릭
+6. 서버 검증 통과 시 `PENDING` 전환, 감사 이력 기록
+
+Flow C: 승인자 승인/반려, FR-103/FR-104/FR-105
+1. 승인자가 요청 목록에서 `대기` 필터 선택
+2. 자기 사업부 대기 요청 클릭
+3. 상세 확인
+4. 승인 시 `승인하기` 클릭 → 확인 모달 → 서버 권한 확인 → `APPROVED`
+5. 반려 시 반려 사유 입력 → `반려하기` 클릭 → 서버 권한 확인 → `REJECTED`
+6. 모든 상태 변경은 감사 이력에 기록
+
+Flow D: 권한 없는 승인, Acceptance
+1. 승인자가 다른 사업부 요청 승인 API 호출
+2. 서버가 `businessUnitId` 불일치 확인
+3. `403 Forbidden` 반환
+4. 클라이언트는 “승인 권한이 없습니다” 표시
+5. 요청 상태는 기존 상태 유지
+
+Flow E: 네트워크 실패, Acceptance
+1. 제출/승인/반려 요청 중 네트워크 실패
+2. 입력값 또는 반려 사유 유지
+3. 상단 오류 배너와 `재시도` 버튼 표시
+4. 재시도 성공 시 정상 전환
+
+**3. Screen Spec**
+
+`REQ_LIST` 요청 목록
+- Purpose: 역할별 요청 조회와 다음 행동 진입
+- Components: 상태 탭, 사업부 필터, 검색, 요청 테이블/모바일 리스트, 새 요청 버튼
+- Columns: 업체명, 사업자번호, 상태, 사업부, 요청자, 수정일, 액션
+- Role behavior:
+  - 요청자: 자기 요청 중심, `새 요청` 노출
+  - 승인자: 자기 사업부 `PENDING` 요청 승인 대기 강조
+  - 감사자: 액션 버튼 없이 읽기 전용
+- States:
+  - loading: 목록 skeleton
+  - empty: “조건에 맞는 요청이 없습니다” + 필터 초기화, 요청자는 `새 요청 작성하기`
+  - error: “요청 목록을 불러오지 못했습니다” + 재시도
+  - no-permission: 접근 권한 없으면 권한 안내 화면
+- FR: FR-103
+
+`REQ_FORM` 요청 작성/편집
+- Fields:
+  - 업체명: required, max 100
+  - 사업자번호: required, 숫자/하이픈 허용, 정규화 후 중복 체크
+  - 담당자 이메일: required, email format
+- Buttons:
+  - `임시 저장하기`: `DRAFT`
+  - `제출하기` 또는 `다시 제출하기`: `PENDING`
+  - `취소`
+- Validation:
+  - 필수값 누락 시 필드 하단 inline 오류
+  - 중복 사업자번호 시 제출 차단, 기존 업체 링크 표시
+- Network failure:
+  - 입력값 보존
+  - 버튼 라벨 `재시도하기`
+- States:
+  - loading: 편집 진입 시 form skeleton
+  - validation: 필드별 `aria-invalid`
+  - error: 서버/네트워크 오류 배너
+  - success: 제출 성공 toast 후 상세 이동
+- FR: FR-101, FR-102
+
+`REQ_DETAIL` 요청 상세/승인
+- Sections: 요청 정보, 현재 상태, 반려 사유, 승인 액션, 감사 이력 요약
+- 승인자 actions:
+  - `승인하기`: 확인 모달 필요
+  - `반려하기`: 반려 사유 required, min 5, max 500
+- 요청자 actions:
+  - `REJECTED` 상태에서 `수정하기`
+- 감사자:
+  - 모든 입력/액션 disabled 또는 숨김, 읽기 전용
+- Unauthorized:
+  - 권한 없는 승인/반려 시 403 메시지 표시, 상태 변경 없음
+- Responsive:
+  - Desktop ≥1024: 요청 정보와 승인 패널 2열
+  - Mobile <768: 단일 열, 승인 패널이 요청 정보 아래 배치, 버튼 44px 이상
+- States:
+  - loading: 상세 skeleton
+  - error: “요청 정보를 불러오지 못했습니다”
+  - no-permission: “이 요청을 승인할 권한이 없습니다”
+  - success: 승인/반려 완료 toast
+- FR: FR-103, FR-104, FR-105
+
+`AUDIT_LOG` 감사 이력
+- Purpose: 상태 변경과 주요 이벤트 읽기 전용 조회
+- Fields: 일시, 행위자, 역할, 변경 전 상태, 변경 후 상태, 사유, 요청 ID
+- Filters: 요청 ID, 상태, 행위자, 기간
+- Events:
+  - 생성
+  - 제출
+  - 승인
+  - 반려
+  - 재제출
+- States:
+  - loading: table skeleton
+  - empty: “아직 감사 이력이 없습니다”
+  - error: “감사 이력을 불러오지 못했습니다” + 재시도
+  - no-permission: 감사 조회 권한 안내
+- FR: FR-105
+
+**4. Lo-Fi HTML Wireframe**
+
+```html
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>공급업체 승인 Wireframe</title>
+  <style>
+    body { margin:0; font-family:system-ui,sans-serif; color:#222; background:#f7f7f7; }
+    header, nav, main { padding:16px; }
+    header { background:#fff; border-bottom:1px solid #ccc; }
+    nav a { margin-right:12px; color:#222; }
+    .toolbar, .panel, .card { background:#fff; border:1px solid #ccc; padding:16px; margin-bottom:16px; }
+    .grid { display:grid; grid-template-columns: 1fr 320px; gap:16px; }
+    label { display:block; margin-top:12px; font-weight:600; }
+    input, textarea, select { width:100%; min-height:40px; box-sizing:border-box; margin-top:4px; }
+    button { min-height:44px; padding:0 14px; margin:8px 8px 0 0; }
+    table { width:100%; border-collapse:collapse; background:#fff; }
+    th, td { border:1px solid #ccc; padding:10px; text-align:left; }
+    .status-pending { color:#8a5a00; }
+    .status-approved { color:#0b6b2b; }
+    .status-rejected { color:#a32020; }
+    .error { border-color:#a32020; background:#fff4f4; padding:12px; }
+    .muted { color:#666; }
+    @media (max-width: 767px) {
+      .grid { grid-template-columns:1fr; }
+      table, thead, tbody, tr, th, td { display:block; }
+      th { display:none; }
+      td { border-top:0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>공급업체 등록 요청</h1>
+  </header>
+  <nav aria-label="주요 메뉴">
+    <a href="#list">요청 목록</a>
+    <a href="#form">요청 작성/편집</a>
+    <a href="#detail">요청 상세/승인</a>
+    <a href="#audit">감사 이력</a>
+  </nav>
+  <main>
+    <section id="list" class="panel">
+      <h2>요청 목록</h2>
+      <div class="toolbar">
+        <select aria-label="상태 필터"><option>대기</option><option>초안</option><option>승인</option><option>반려</option></select>
+        <input aria-label="검색" placeholder="업체명 또는 사업자번호" />
+        <button>새 요청 작성하기</button>
+      </div>
+      <table>
+        <thead><tr><th>업체명</th><th>사업자번호</th><th>상태</th><th>사업부</th><th>액션</th></tr></thead>
+        <tbody>
+          <tr><td>예시상사</td><td>123-45-67890</td><td class="status-pending">대기</td><td>구매1팀</td><td><button>상세 보기</button></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="form" class="panel">
+      <h2>요청 작성/편집</h2>
+      <div class="error">중복 사업자번호입니다. <a href="/vendors/123">기존 업체 보기</a></div>
+      <label for="vendorName">업체명</label>
+      <input id="vendorName" placeholder="예: 예시상사" />
+      <label for="businessNo">사업자번호</label>
+      <input id="businessNo" placeholder="예: 123-45-67890" />
+      <label for="email">담당자 이메일</label>
+      <input id="email" type="email" placeholder="name@example.com" />
+      <button>임시 저장하기</button><button>제출하기</button><button>취소</button>
+    </section>
+
+    <section id="detail" class="grid">
+      <div class="panel">
+        <h2>요청 상세</h2>
+        <p><strong>업체명</strong> 예시상사</p>
+        <p><strong>사업자번호</strong> 123-45-67890</p>
+        <p><strong>담당자 이메일</strong> owner@example.com</p>
+        <p><strong>상태</strong> <span class="status-pending">대기</span></p>
+      </div>
+      <aside class="panel" aria-label="승인 처리">
+        <h2>승인 처리</h2>
+        <label for="rejectReason">반려 사유</label>
+        <textarea id="rejectReason" placeholder="반려 시 사유를 입력하세요"></textarea>
+        <button>승인하기</button><button>반려하기</button>
+        <p class="muted">권한 없는 승인 시 403 처리되며 상태는 유지됩니다.</p>
+      </aside>
+    </section>
+
+    <section id="audit" class="panel">
+      <h2>감사 이력</h2>
+      <table>
+        <thead><tr><th>일시</th><th>행위자</th><th>변경</th><th>사유</th></tr></thead>
+        <tbody>
+          <tr><td>2026-07-27 10:00</td><td>approver@corp</td><td>대기 → 반려</td><td>사업자번호 확인 필요</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
+```
+
+**5. Dev Handoff**
+
+API Contracts:
+| Action | Method/Path | Request | Success | Error |
+|---|---|---|---|---|
+| 요청 목록 | `GET /api/vendor-requests` | `status,businessUnitId,query` | `VendorRequest[]` | 401/403/5xx |
+| 요청 생성 | `POST /api/vendor-requests` | `vendorName,businessNo,email,submit:boolean` | `201 VendorRequest` | 409 duplicate |
+| 요청 수정 | `PATCH /api/vendor-requests/{id}` | 변경 필드 | `200 VendorRequest` | 403/409/422 |
+| 제출/재제출 | `POST /api/vendor-requests/{id}/submit` | 없음 | `200 PENDING` | 409 duplicate |
+| 승인 | `POST /api/vendor-requests/{id}/approve` | 없음 | `200 APPROVED` | 403 |
+| 반려 | `POST /api/vendor-requests/{id}/reject` | `reason` | `200 REJECTED` | 403/422 |
+| 감사 이력 | `GET /api/vendor-requests/{id}/audit` | 없음 | `AuditEvent[]` | 403 |
+
+Data Model:
+```ts
+type VendorRequestStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+
+type VendorRequest = {
+  id: string;
+  vendorName: string;
+  businessNo: string;
+  contactEmail: string;
+  businessUnitId: string;
+  requesterId: string;
+  status: VendorRequestStatus;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AuditEvent = {
+  id: string;
+  requestId: string;
+  actorId: string;
+  actorRole: 'REQUESTER' | 'APPROVER' | 'AUDITOR';
+  fromStatus?: VendorRequestStatus;
+  toStatus?: VendorRequestStatus;
+  reason?: string;
+  createdAt: string;
+};
+```
+
+Implementation Notes:
+- FR-104는 반드시 서버에서 검증한다. 클라이언트의 버튼 숨김은 보조 UX일 뿐이다.
+- 중복 사업자번호는 정규화된 값으로 검사한다.
+- `409 duplicate` 응답에는 `existingVendorId`와 표시 가능한 `existingVendorName`을 포함한다.
+- 상태 변경 API는 트랜잭션 안에서 상태 업데이트와 감사 이력 생성을 함께 처리한다.
+- 네트워크 실패 시 form state와 `rejectReason`을 초기화하지 않는다.
+- 승인/반려는 optimistic update를 사용하지 않는다. 실패 시 상태 불일치 위험이 크다.
+- 접근성: 모든 input label 연결, 오류 필드는 `aria-invalid`, 오류 메시지는 `aria-describedby`.
+- 반응형: `REQ_DETAIL`은 desktop 2열, mobile 단일 열 필수.
+- 테스트 우선순위:
+  - 권한 없는 승인 `403` 및 상태 미변경
+  - 중복 사업자번호 제출 차단 및 기존 업체 링크 표시
+  - 네트워크 실패 후 입력값/반려 사유 보존
+  - 모바일 승인 상세 단일 열 배치
+  - 상태 변경 시 감사 이력 생성
+- Requirement Coverage:
+  - FR-101: `REQ_FORM`
+  - FR-102: `REQ_FORM`
+  - FR-103: `REQ_LIST`, `REQ_DETAIL`
+  - FR-104: `REQ_DETAIL`, approval/reject API
+  - FR-105: `REQ_DETAIL`, `AUDIT_LOG`, mutation APIs
+
+## 후보 D
+
+# 공급업체 승인 화면정의서
+
+문서 상태: Draft  
+기준 PRD: FR-101~FR-105  
+대상: 웹, Desktop 우선 + Mobile 대응
+
+## 공통 가정
+
+PRD에 명시되지 않은 부분은 다음과 같이 가정했다.
+
+- 모든 사용자는 로그인된 사내 사용자다.
+- 사용자는 역할을 복수로 가질 수 있다.
+- 요청자는 자신이 작성한 요청만 조회·수정한다.
+- 승인자는 자신이 속한 사업부의 `대기` 요청만 승인·반려할 수 있다.
+- 감사자는 전체 요청과 감사 이력을 읽기 전용으로 조회할 수 있다.
+- 요청 생성 시 작성자의 사업부가 요청에 자동 저장되며 화면에서 변경할 수 없다.
+- 반려 요청을 편집해 저장하면 `반려 → 초안`, 다시 제출하면 `초안 → 대기`로 전이한다.
+- 사업자번호는 화면에서는 `000-00-00000` 형식으로 표시하고, 서버에는 숫자 10자리로 정규화해 전송한다.
+- 중복 확인의 최종 판단은 제출 시 서버가 원자적으로 수행한다. 입력 중 중복 검사는 사용자 편의를 위한 사전 검사다.
+- 기존 업체 링크는 기존 공급업체 상세 화면 `/suppliers/:supplierId`로 연결된다고 가정한다.
+- 목록 페이지네이션, 정렬 기준, 감사 이력 보존 기간은 구현 전 확정이 필요하다.
+
+---
+
+# 1. IA
+
+## 1.1 페이지 구조
+
+```mermaid
+flowchart LR
+  Root((공급업체 승인))
+
+  Root --> Requests[요청 관리]
+  Root --> Audit[감사]
+
+  Requests --> List["S-01 요청 목록<br>/supplier-requests"]
+  Requests --> Create["S-02 요청 작성<br>/supplier-requests/new"]
+  Requests --> Edit["S-02 요청 편집<br>/supplier-requests/:id/edit"]
+  Requests --> Detail["S-03 요청 상세·승인<br>/supplier-requests/:id"]
+
+  Audit --> History["S-04 감사 이력<br>/supplier-audit"]
+
+  List --> Create
+  List --> Detail
+  Detail --> Edit
+  Detail --> History
+```
+
+## 1.2 화면 목록
+
+| ID | 화면 | Route | 주 사용자 | 연결 요구사항 |
+|---|---|---|---|---|
+| S-01 | 요청 목록 | `/supplier-requests` | 요청자, 승인자, 감사자 | FR-103, FR-104 |
+| S-02 | 요청 작성·편집 | `/supplier-requests/new`, `/supplier-requests/:id/edit` | 요청자 | FR-101, FR-102, FR-105 |
+| S-03 | 요청 상세·승인 | `/supplier-requests/:id` | 요청자, 승인자, 감사자 | FR-103, FR-104, FR-105 |
+| S-04 | 감사 이력 | `/supplier-audit` | 감사자 | FR-105 |
+
+FR-104는 모든 보호 화면과 상태 변경 API에 적용되는 서버 요구사항이다.
+
+## 1.3 역할별 접근 권한
+
+| 기능 | 요청자 | 승인자 | 감사자 |
+|---|---:|---:|---:|
+| 자신의 요청 목록 조회 | 허용 | 역할 병행 시 허용 | 읽기 전용 |
+| 요청 작성 | 허용 | 요청자 역할 병행 시 허용 | 불가 |
+| 자신의 초안·반려 요청 편집 | 허용 | 요청자 역할 병행 시 허용 | 불가 |
+| 자기 사업부 대기 목록 조회 | 불가 | 허용 | 읽기 전용 |
+| 요청 승인·반려 | 불가 | 자기 사업부만 허용 | 불가 |
+| 전체 감사 이력 조회 | 불가 | 불가 | 허용 |
+| 감사 이력 변경 | 불가 | 불가 | 불가 |
+
+메뉴는 역할에 따라 숨기되, URL 직접 접근과 API 호출은 서버에서 다시 검사한다.
+
+## 1.4 기본 내비게이션
+
+- 요청자: `요청 목록`, `새 요청`
+- 승인자: `승인 대기`
+- 감사자: `감사 이력`
+- 상세 Breadcrumb: `요청 목록 > 요청 상세`
+- 편집 Breadcrumb: `요청 목록 > 요청 상세 > 요청 편집`
+- 모바일: 상단 메뉴를 축약 메뉴로 전환하고 상세 화면은 단일 열로 표시한다.
+
+## 1.5 상태 모델
+
+```mermaid
+stateDiagram-v2
+  [*] --> 초안: 요청 생성
+  초안 --> 초안: 저장
+  초안 --> 대기: 제출
+  대기 --> 승인: 승인
+  대기 --> 반려: 사유 입력 후 반려
+  반려 --> 초안: 요청자가 편집·저장
+  반려 --> 대기: 편집 후 즉시 재제출
+  승인 --> [*]
+```
+
+허용되지 않은 상태 전이는 `409 Conflict`로 처리하고 화면을 최신 데이터로 다시 불러온다.
+
+---
+
+# 2. User Flow
+
+## 2.1 요청 작성 및 제출
+
+수용 기준: 중복 사업자번호 제출 차단, 네트워크 실패 시 입력 보존
+
+```mermaid
+flowchart TD
+  A["S-01 요청 목록"] --> B["새 요청 선택"]
+  B --> C["S-02 요청 작성"]
+  C --> D["업체명·사업자번호·이메일 입력"]
+  D --> E{클라이언트 검증}
+  E -->|실패| F["필드별 오류 표시"]
+  F --> D
+  E -->|통과| G["사업자번호 중복 사전 확인"]
+  G -->|중복| H["제출 차단 + 기존 업체 링크"]
+  H --> D
+  G -->|중복 아님| I["제출 선택"]
+  I --> J{서버 권한·중복 재검증}
+  J -->|중복 409| H
+  J -->|권한 없음 403| K["권한 안내 · 상태 변경 없음"]
+  J -->|네트워크 실패| L["입력 보존 + 다시 시도"]
+  L --> I
+  J -->|성공| M["상태: 대기"]
+  M --> N["S-03 요청 상세"]
+```
+
+## 2.2 초안 저장 및 반려 요청 재제출
+
+```mermaid
+flowchart TD
+  A["S-01 요청 목록"] --> B["초안 또는 반려 요청 선택"]
+  B --> C["S-03 요청 상세"]
+  C --> D{수정 가능한 상태인가?}
+  D -->|아니요| E["읽기 전용 상세"]
+  D -->|예| F["S-02 요청 편집"]
+  F --> G["내용 수정"]
+  G --> H{사용자 액션}
+  H -->|초안 저장| I{저장 결과}
+  H -->|제출| J{제출 결과}
+  I -->|성공| K["상태: 초안"]
+  I -->|실패| L["입력 보존 + 다시 시도"]
+  J -->|성공| M["상태: 대기"]
+  J -->|중복| N["제출 차단 + 기존 업체 링크"]
+  J -->|네트워크 실패| L
+```
+
+## 2.3 승인
+
+수용 기준: 자기 사업부만 승인, 권한 없는 승인 403 및 상태 불변
+
+```mermaid
+flowchart TD
+  A["S-01 승인 대기 목록"] --> B["대기 요청 선택"]
+  B --> C["S-03 요청 상세"]
+  C --> D["승인 선택"]
+  D --> E["승인 확인 다이얼로그"]
+  E -->|취소| C
+  E -->|확인| F{서버 검사}
+  F -->|자기 사업부 + 대기 상태| G["상태: 승인"]
+  F -->|권한 없음 403| H["권한 없음 안내"]
+  F -->|상태 충돌 409| I["최신 상태 다시 불러오기"]
+  F -->|네트워크 실패| J["현재 상세 유지 + 다시 시도"]
+  H --> K["상태 변경 없음"]
+  G --> L["성공 알림 + 상세 갱신"]
+```
+
+## 2.4 반려
+
+```mermaid
+flowchart TD
+  A["S-03 대기 요청 상세"] --> B["반려 선택"]
+  B --> C["반려 사유 다이얼로그"]
+  C --> D{사유 유효성}
+  D -->|비어 있음| E["사유 입력 오류"]
+  E --> C
+  D -->|유효| F["반려 실행"]
+  F --> G{서버 응답}
+  G -->|성공| H["상태: 반려"]
+  G -->|403| I["권한 없음 · 상태 불변"]
+  G -->|409| J["최신 상태 다시 불러오기"]
+  G -->|네트워크 실패| K["사유 보존 + 다시 시도"]
+  K --> F
+```
+
+## 2.5 감사 이력 조회
+
+```mermaid
+flowchart TD
+  A["S-04 감사 이력 진입"] --> B{감사자 권한}
+  B -->|없음| C["403 권한 안내"]
+  B -->|있음| D["이력 조회"]
+  D --> E["기간·상태·요청 ID 필터"]
+  E --> F["변경 시각·행위자·변경 전후·사유 확인"]
+  F --> G["요청 상세로 이동"]
+```
+
+## 2.6 수용 기준 커버리지
+
+| 수용 기준 | Flow |
+|---|---|
+| 권한 없는 승인 시 403, 상태 불변 | 2.3, 2.4 |
+| 중복 사업자번호에서는 제출되지 않음 | 2.1, 2.2 |
+| 네트워크 실패 시 입력과 반려 사유 보존 | 2.1, 2.2, 2.4 |
+| 모바일 승인 상세 단일 열 | S-03 Screen Spec 및 Wireframe |
+
+---
+
+# 3. Screen Spec
+
+## 3.1 공통 UI 규칙
+
+### 상태 표시
+
+| 상태 | 라벨 | 의미 |
+|---|---|---|
+| `DRAFT` | 초안 | 요청자가 편집·제출 가능 |
+| `PENDING` | 대기 | 승인자의 결정을 기다림 |
+| `APPROVED` | 승인 | 종료 상태, 읽기 전용 |
+| `REJECTED` | 반려 | 요청자가 수정 후 재제출 가능 |
+
+색상만으로 상태를 전달하지 않고 항상 텍스트 라벨을 함께 사용한다.
+
+### 네트워크 실패 보존
+
+- 작성·편집 입력은 페이지 메모리와 `sessionStorage`에 임시 보존한다.
+- 서버 저장 성공 시 해당 임시 데이터를 제거한다.
+- 사용자 로그아웃 시 보안상 임시 데이터를 제거한다.
+- 실패 배너를 닫아도 입력값과 반려 사유는 유지한다.
+- 재시도는 동일한 작업을 다시 호출하되 중복 상태 변경을 막기 위해 idempotency key 또는 서버 측 중복 처리 방어를 사용한다.
+- 실패 후 페이지 이탈 시 “저장되지 않은 변경이 있습니다” 확인을 제공한다.
+
+### 접근성
+
+- 모든 입력에 명시적 `<label>`을 연결한다.
+- 오류 입력은 `aria-invalid="true"`와 오류 설명 `aria-describedby`를 사용한다.
+- 비동기 영역은 `aria-busy`, 결과 알림은 `aria-live`로 전달한다.
+- 다이얼로그 오픈 시 포커스를 내부로 이동하고 닫을 때 실행 버튼으로 복귀시킨다.
+- 터치 영역은 최소 44×44px, 본문 글자는 모바일에서 최소 14px로 한다.
+
+---
+
+## S-01 요청 목록
+
+| 항목 | 정의 |
+|---|---|
+| Route | `/supplier-requests` |
+| 대상 | 요청자, 승인자, 감사자 |
+| 연결 FR | FR-103, FR-104 |
+| Desktop | 필터 바 + 테이블 |
+| Mobile | 필터 접기 + 카드 목록 |
+| Wireframe | `#screen-request-list` |
+
+### 역할별 기본 범위
+
+- 요청자: `내 요청`
+- 승인자: `내 사업부 승인 대기`
+- 감사자: `전체 요청`, 읽기 전용
+- 복수 역할 사용자는 상단 범위 탭으로 전환한다.
+
+### 구성요소
+
+| 슬롯 | 유형 | 동작 |
+|---|---|---|
+| scope_tabs | 탭 | 내 요청 / 승인 대기 / 전체 요청 중 허용 범위만 노출 |
+| status_filter | 다중 선택 | 초안, 대기, 승인, 반려 |
+| keyword | 검색 입력 | 업체명 또는 사업자번호 검색 |
+| reset_filter | 버튼 | 필터 초기화 |
+| create_request | Primary 버튼 | 요청 작성 화면으로 이동, 요청자만 표시 |
+| request_rows | 테이블/카드 | 업체명, 사업자번호, 사업부, 상태, 요청자, 최근 변경일 |
+| pagination | 페이지 이동 | 서버 페이지네이션 |
+
+### 상태
+
+- Loading: 목록 형태의 skeleton을 표시한다.
+- Empty/첫 사용: “아직 작성한 공급업체 요청이 없습니다.” + `새 요청 작성`.
+- Empty/승인 대기: “현재 승인할 요청이 없습니다.”
+- Empty/필터: “조건에 맞는 요청이 없습니다.” + `필터 초기화`.
+- Error: “요청 목록을 불러오지 못했습니다.” + `다시 시도`.
+- No permission: 직접 접근한 범위가 허용되지 않으면 403 안내 후 허용된 기본 범위로 이동한다.
+- Success: 목록 및 현재 필터 조건을 표시한다.
+
+### 주요 인터랙션
+
+- 행 또는 카드를 선택하면 S-03으로 이동한다.
+- 필터는 URL query에 반영해 새로고침과 뒤로가기를 지원한다.
+- 승인자가 목록을 보고 있더라도 실제 처리 권한은 상세 액션 시 서버가 재검사한다.
+
+---
+
+## S-02 요청 작성·편집
+
+| 항목 | 정의 |
+|---|---|
+| Route | `/supplier-requests/new`, `/supplier-requests/:id/edit` |
+| 대상 | 요청자 |
+| 연결 FR | FR-101, FR-102, FR-105 |
+| Desktop | 최대 720px 단일 폼 |
+| Mobile | 전체 너비 단일 열, 하단 액션 영역 |
+| Wireframe | `#screen-request-form` |
+
+### 입력 명세
+
+| 필드 | HTML 타입 | 필수 | 검증 | 카피 |
+|---|---|---:|---|---|
+| 업체명 | `text` | 예 | 공백 제거 후 1자 이상, 서버 허용 길이 이하 | 예: 위지티엔 주식회사 |
+| 사업자번호 | `text`, `inputmode=numeric` | 예 | 숫자 기준 10자리, 표시 중 하이픈 자동 적용 | 예: 123-45-67890 |
+| 담당자 이메일 | `email` | 예 | 공백 제거, 일반 이메일 형식, 서버 허용 길이 이하 | 예: partner@example.com |
+| 사업부 | 읽기 전용 | 예 | 로그인 사용자 사업부에서 자동 설정 | 요청 사업부 |
+
+최대 길이는 백엔드 스키마 확정 후 프런트와 동일하게 맞춘다.
+
+### 액션
+
+- `초안 저장`: 유효한 입력을 초안으로 저장한다.
+- `제출하기`: 필수 검증과 서버 중복 검사를 통과한 경우 `대기`로 전환한다.
+- `취소`: 변경이 있으면 이탈 확인을 표시한다.
+- 편집은 소유자의 `초안` 또는 `반려` 요청만 허용한다.
+
+### 중복 사업자번호
+
+1. 사업자번호가 10자리로 완성되면 debounce 후 사전 검사를 수행한다.
+2. 중복이면 필드를 오류 상태로 만들고 제출 버튼을 비활성화한다.
+3. 다음 메시지와 링크를 표시한다.
+
+> 이미 등록된 사업자번호입니다. [기존 업체 보기]
+
+4. 제출 직전 서버에서 다시 검사한다.
+5. 경쟁 상태로 서버가 중복을 반환해도 요청은 생성·제출되지 않으며 동일 메시지를 표시한다.
+
+### 상태
+
+- Loading: 편집 진입 시 폼 skeleton, 필드 조작 불가.
+- Validation: 필드 아래에 원인과 수정 방법을 표시하고 첫 오류로 포커스를 이동한다.
+- Duplicate checking: 사업자번호 옆 “중복 확인 중…” 표시.
+- Duplicate: 제출 차단 + 기존 업체 링크.
+- Submitting: 버튼 비활성화 + “제출 중…”.
+- Success/save: “초안이 저장되었습니다.”
+- Success/submit: “승인 요청을 제출했습니다.” 후 S-03 이동.
+- Network error: “연결 문제로 저장하지 못했습니다. 입력 내용은 유지됩니다.” + `다시 시도`.
+- 403: “이 요청을 작성하거나 수정할 권한이 없습니다.”
+- 409 state conflict: “다른 사용 또는 화면에서 상태가 변경되었습니다.” + `최신 내용 보기`.
+
+---
+
+## S-03 요청 상세·승인
+
+| 항목 | 정의 |
+|---|---|
+| Route | `/supplier-requests/:id` |
+| 대상 | 요청자, 승인자, 감사자 |
+| 연결 FR | FR-103, FR-104, FR-105 |
+| Desktop | 좌측 요청 정보 + 우측 상태·액션 패널 |
+| Mobile | 모든 영역을 단일 열로 재배치 |
+| Wireframe | `#screen-request-detail` |
+
+### 정보 구조
+
+1. 제목: 업체명, 요청 ID, 상태
+2. 요청 정보: 사업자번호, 담당자 이메일, 사업부
+3. 요청 메타데이터: 요청자, 작성일, 최근 변경일
+4. 반려 정보: 현재 상태가 반려이면 반려자, 반려일, 반려 사유
+5. 최근 감사 이력 요약
+6. 상태별 액션
+
+### 상태별 액션
+
+| 조건 | 제공 액션 |
+|---|---|
+| 본인 소유 + 초안 | 수정하기, 제출하기 |
+| 본인 소유 + 반려 | 수정 후 재제출 |
+| 승인자 + 자기 사업부 + 대기 | 승인, 반려 |
+| 승인자 + 타 사업부 | 액션 없음 |
+| 승인 완료 | 읽기 전용 |
+| 감사자 | 읽기 전용, 감사 이력 보기 |
+
+### 승인
+
+- `승인` 선택 시 확인 다이얼로그를 표시한다.
+- 문구: “이 공급업체 요청을 승인하시겠습니까?”
+- 확인 전 상태는 변경하지 않는다.
+- 서버 성공 응답 후에만 화면 상태를 `승인`으로 변경한다.
+- 권한 없는 요청은 403 안내를 표시하고 기존 `대기` 상태를 유지한다.
+- 낙관적 업데이트는 사용하지 않는다.
+
+### 반려
+
+- `반려` 선택 시 사유 입력 다이얼로그를 표시한다.
+- 반려 사유는 필수이며 공백만 입력할 수 없다.
+- 최대 길이는 서버 스키마와 일치시킨다.
+- 네트워크 실패 시 다이얼로그와 입력 사유를 그대로 유지한다.
+- 성공한 경우에만 다이얼로그를 닫고 상태를 `반려`로 갱신한다.
+
+### 상태
+
+- Loading: 제목, 정보 카드, 액션 패널 skeleton.
+- Error/404: “요청을 찾을 수 없습니다.” + `목록으로`.
+- Error/5xx: “요청을 불러오지 못했습니다.” + `다시 시도`.
+- No permission/view: “이 요청을 조회할 권한이 없습니다.” + `목록으로`.
+- No permission/action: “해당 사업부의 요청만 처리할 수 있습니다.” 상태 유지.
+- Conflict/409: 액션을 중단하고 최신 상태를 다시 가져온다.
+- Success: 상태 배지, 토스트, 감사 이력 요약을 갱신한다.
+
+### 반응형
+
+- Desktop ≥1024px: 정보 영역 2/3, 액션 패널 1/3.
+- Tablet 768~1023px: 정보와 액션을 단일 열로 전환할 수 있다.
+- Mobile <768px: 제목 → 상태 → 요청 정보 → 반려 정보 → 이력 → 액션 순서의 단일 열.
+- 모바일 액션은 화면 하단에 표시하되 콘텐츠를 가리지 않도록 안전 여백을 둔다.
+- 모바일에서도 승인과 반려를 시각적으로 구분하고 동시에 Primary로 표현하지 않는다.
+
+---
+
+## S-04 감사 이력
+
+| 항목 | 정의 |
+|---|---|
+| Route | `/supplier-audit` |
+| 대상 | 감사자 |
+| 연결 FR | FR-105 |
+| Desktop | 필터 + 감사 이벤트 테이블 |
+| Mobile | 필터 drawer + 이벤트 카드 |
+| Wireframe | `#screen-audit-history` |
+
+### 필터
+
+| 필터 | 유형 | 설명 |
+|---|---|---|
+| 기간 | 시작일·종료일 | 기본 기간은 정책 확정 필요 |
+| 요청 ID | text | 정확 또는 부분 검색 정책 확정 필요 |
+| 사업자번호 | text | 숫자 기준 검색 |
+| 상태 변경 | select | 생성, 초안 저장, 제출, 승인, 반려, 재제출 |
+| 행위자 | text | 이름 또는 사내 식별자 |
+| 사업부 | select | 감사 범위가 제한될 경우 서버가 허용값만 반환 |
+
+### 감사 이벤트 표시
+
+- 이벤트 ID
+- 요청 ID 및 상세 링크
+- 발생 일시
+- 행위자 ID 및 표시명
+- 행위자 역할
+- 대상 사업부
+- 변경 전 상태
+- 변경 후 상태
+- 반려 사유 또는 변경 사유
+- 요청 추적 ID
+
+민감정보 마스킹과 이력 보존 기간은 보안 정책에 맞춰 확정한다.
+
+### 상태
+
+- Loading: 테이블 skeleton.
+- Empty/default: “아직 기록된 상태 변경이 없습니다.”
+- Empty/filter: “조건에 맞는 감사 이력이 없습니다.” + `필터 초기화`.
+- Error: “감사 이력을 불러오지 못했습니다.” + `다시 시도`.
+- No permission: “감사 이력 조회 권한이 필요합니다.” + `요청 목록으로`.
+- Success: 읽기 전용 이력 표시. 수정·삭제 액션은 제공하지 않는다.
+
+---
+
+# 4. Lo-fi HTML Wireframe
+
+아래 코드는 외부 라이브러리 없이 복사해 브라우저에서 열 수 있는 구조 검증용 와이어프레임이다. 파일을 생성하지 말라는 요청에 따라 실제 브라우저 렌더링 검증은 수행하지 않았다.
+
+```html
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>공급업체 승인 — Lo-fi Wireframe</title>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --surface: #fff;
+      --text: #222;
+      --muted: #666;
+      --line: #bbb;
+      --danger: #9b1c1c;
+      --danger-bg: #fff1f1;
+      --success: #176b38;
+      --success-bg: #edf8f1;
+      --warning: #7a5200;
+      --warning-bg: #fff8df;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font: 14px/1.5 system-ui, sans-serif;
+    }
+
+    button, input, select, textarea { font: inherit; }
+    button, a, input, select, textarea { min-height: 44px; }
+    button:focus-visible, a:focus-visible,
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 3px solid #222;
+      outline-offset: 2px;
+    }
+
+    header, main { max-width: 1180px; margin: auto; }
+    header { padding: 20px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    nav a { color: #222; padding: 10px; }
+
+    main { padding: 0 20px 60px; }
+    section {
+      margin: 24px 0;
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .box {
+      padding: 16px;
+      border: 2px dashed var(--line);
+      background: var(--surface);
+    }
+
+    .stack { display: grid; gap: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .field { display: grid; flex: 1 1 200px; gap: 6px; }
+    .field input, .field select, .field textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #777;
+      background: #fff;
+    }
+
+    .button {
+      padding: 10px 16px;
+      border: 1px solid #333;
+      background: #eee;
+      color: #111;
+      cursor: pointer;
+    }
+
+    .primary { background: #222; color: #fff; }
+    .danger { border-color: var(--danger); color: var(--danger); }
+    .status { display: inline-block; padding: 4px 8px; border: 1px solid; }
+    .pending { color: var(--warning); background: var(--warning-bg); }
+    .approved { color: var(--success); background: var(--success-bg); }
+    .error { color: var(--danger); background: var(--danger-bg); padding: 12px; }
+    .muted { color: var(--muted); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; }
+    th, td { padding: 12px; border: 1px solid var(--line); text-align: left; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+      gap: 20px;
+    }
+
+    .cards { display: none; }
+    .sticky-actions { display: grid; gap: 8px; }
+
+    dialog { width: min(520px, calc(100% - 32px)); border: 1px solid #333; }
+    dialog textarea { width: 100%; min-height: 120px; }
+
+    @media (max-width: 767px) {
+      main, header { padding-left: 12px; padding-right: 12px; }
+      section { padding: 16px; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .table-wrap { display: none; }
+      .cards { display: grid; gap: 12px; }
+      .sticky-actions {
+        position: sticky;
+        bottom: 0;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: #fff;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>공급업체 승인</h1>
+    <nav aria-label="화면 바로가기">
+      <a href="#screen-request-list">요청 목록</a>
+      <a href="#screen-request-form">요청 작성</a>
+      <a href="#screen-request-detail">요청 상세·승인</a>
+      <a href="#screen-audit-history">감사 이력</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="screen-request-list" aria-labelledby="request-list-title">
+      <h2 id="request-list-title">S-01 요청 목록</h2>
+
+      <div class="row" role="tablist" aria-label="목록 범위">
+        <button class="button primary" role="tab" aria-selected="true">내 요청</button>
+        <button class="button" role="tab" aria-selected="false">승인 대기</button>
+        <button class="button" role="tab" aria-selected="false">전체 요청</button>
+      </div>
+
+      <div class="row" style="margin-top:16px">
+        <label class="field">
+          <span>상태</span>
+          <select>
+            <option>전체 상태</option>
+            <option>초안</option>
+            <option>대기</option>
+            <option>승인</option>
+            <option>반려</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>업체명 또는 사업자번호</span>
+          <input type="search" placeholder="검색어 입력">
+        </label>
+
+        <button class="button">필터 초기화</button>
+        <button class="button primary">새 요청 작성</button>
+      </div>
+
+      <div class="table-wrap" style="margin-top:16px">
+        <table>
+          <thead>
+            <tr>
+              <th>업체명</th>
+              <th>사업자번호</th>
+              <th>사업부</th>
+              <th>상태</th>
+              <th>요청자</th>
+              <th>최근 변경</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#screen-request-detail">위지티엔 주식회사</a></td>
+              <td>123-45-67890</td>
+              <td>플랫폼 사업부</td>
+              <td><span class="status pending">대기</span></td>
+              <td>김요청</td>
+              <td>2026-07-27 14:20</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards" aria-label="모바일 요청 목록">
+        <article class="box">
+          <strong>위지티엔 주식회사</strong>
+          <p>123-45-67890</p>
+          <p>플랫폼 사업부 · 김요청</p>
+          <span class="status pending">대기</span>
+          <p><a href="#screen-request-detail">상세 보기</a></p>
+        </article>
+      </div>
+    </section>
+
+    <section id="screen-request-form" aria-labelledby="request-form-title">
+      <h2 id="request-form-title">S-02 요청 작성·편집</h2>
+      <p class="muted">필수 정보를 입력하고 초안으로 저장하거나 제출합니다.</p>
+
+      <form class="stack" aria-busy="false">
+        <label class="field">
+          <span>업체명 *</span>
+          <input required type="text" placeholder="예: 위지티엔 주식회사">
+        </label>
+
+        <label class="field">
+          <span>사업자번호 *</span>
+          <input
+            required
+            type="text"
+            inputmode="numeric"
+            placeholder="123-45-67890"
+            aria-describedby="duplicate-message"
+            aria-invalid="true">
+        </label>
+
+        <div id="duplicate-message" class="error" role="alert">
+          이미 등록된 사업자번호입니다.
+          <a href="/suppliers/example">기존 업체 보기</a>
+        </div>
+
+        <label class="field">
+          <span>담당자 이메일 *</span>
+          <input required type="email" placeholder="partner@example.com">
+        </label>
+
+        <label class="field">
+          <span>요청 사업부</span>
+          <input type="text" value="플랫폼 사업부" readonly>
+        </label>
+
+        <div class="row">
+          <button class="button" type="button">취소</button>
+          <button class="button" type="button">초안 저장</button>
+          <button class="button primary" type="submit" disabled>제출하기</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="screen-request-detail" aria-labelledby="request-detail-title">
+      <h2 id="request-detail-title">S-03 요청 상세·승인</h2>
+
+      <div class="detail-grid">
+        <div class="stack">
+          <div class="box">
+            <div class="row">
+              <h3 style="margin:0">위지티엔 주식회사</h3>
+              <span class="status pending">대기</span>
+            </div>
+            <p class="muted">요청 ID: SR-2026-00128</p>
+          </div>
+
+          <div class="box">
+            <h3>요청 정보</h3>
+            <dl>
+              <dt>사업자번호</dt><dd>123-45-67890</dd>
+              <dt>담당자 이메일</dt><dd>partner@example.com</dd>
+              <dt>사업부</dt><dd>플랫폼 사업부</dd>
+              <dt>요청자</dt><dd>김요청</dd>
+            </dl>
+          </div>
+
+          <div class="box">
+            <h3>최근 감사 이력</h3>
+            <ol>
+              <li>2026-07-27 14:20 — 김요청 — 초안 → 대기</li>
+              <li>2026-07-27 13:55 — 김요청 — 요청 생성</li>
+            </ol>
+          </div>
+        </div>
+
+        <aside class="box" aria-label="승인 액션">
+          <h3>처리</h3>
+          <p>자기 사업부의 대기 요청만 처리할 수 있습니다.</p>
+          <div class="sticky-actions">
+            <button class="button primary" type="button">승인</button>
+            <button class="button danger" type="button">반려</button>
+          </div>
+        </aside>
+      </div>
+
+      <dialog aria-labelledby="reject-dialog-title">
+        <form method="dialog" class="stack">
+          <h3 id="reject-dialog-title">반려 사유 입력</h3>
+          <label class="field">
+            <span>반려 사유 *</span>
+            <textarea required placeholder="요청자가 수정할 내용을 구체적으로 입력하세요."></textarea>
+          </label>
+          <div class="error" role="alert">
+            연결 문제로 반려하지 못했습니다. 입력한 사유는 유지됩니다.
+          </div>
+          <div class="row">
+            <button class="button" value="cancel">취소</button>
+            <button class="button danger" value="retry">다시 시도</button>
+          </div>
+        </form>
+      </dialog>
+    </section>
+
+    <section id="screen-audit-history" aria-labelledby="audit-title">
+      <h2 id="audit-title">S-04 감사 이력</h2>
+
+      <div class="row">
+        <label class="field">
+          <span>시작일</span>
+          <input type="date">
+        </label>
+        <label class="field">
+          <span>종료일</span>
+          <input type="date">
+        </label>
+        <label class="field">
+          <span>상태 변경</span>
+          <select>
+            <option>전체</option>
+            <option>제출</option>
+            <option>승인</option>
+            <option>반려</option>
+            <option>재제출</option>
+          </select>
+        </label>
+        <button class="button">조회</button>
+      </div>
+
+      <div class="table-wrap" style="margin-top:16px">
+        <table>
+          <thead>
+            <tr>
+              <th>일시</th>
+              <th>요청 ID</th>
+              <th>행위자</th>
+              <th>사업부</th>
+              <th>변경 전</th>
+              <th>변경 후</th>
+              <th>사유</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>2026-07-27 14:20</td>
+              <td><a href="#screen-request-detail">SR-2026-00128</a></td>
+              <td>김요청</td>
+              <td>플랫폼 사업부</td>
+              <td>초안</td>
+              <td>대기</td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="cards">
+        <article class="box">
+          <strong>초안 → 대기</strong>
+          <p>SR-2026-00128</p>
+          <p>2026-07-27 14:20 · 김요청</p>
+          <a href="#screen-request-detail">요청 상세 보기</a>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+```
+
+---
+
+# 5. Dev Handoff
+
+## 5.1 FR ↔ 화면 ↔ 컴포넌트
+
+| FR | 화면 | 주요 컴포넌트 | 구현 포인트 |
+|---|---|---|---|
+| FR-101 | S-02 | `SupplierRequestForm` | 필수 입력, 초안 저장, 제출 |
+| FR-102 | S-02 | `BusinessNumberField`, `DuplicateSupplierAlert` | 정규화, 사전 확인, 제출 시 서버 재검증 |
+| FR-103 | S-01, S-03 | `PendingRequestList`, `ApprovalActionPanel`, `RejectDialog` | 자기 사업부 대기 요청만 처리 |
+| FR-104 | S-01~S-04 | 서버 authorization guard | 클라이언트 표시 제어와 별도로 서버 강제 |
+| FR-105 | S-02~S-04 | `AuditTimeline`, `AuditEventList` | 모든 상태 변경을 트랜잭션 안에서 기록 |
+
+모든 FR과 화면이 최소 하나 이상 연결되어 있다.
+
+## 5.2 권장 컴포넌트
+
+### 공통
+
+- `StatusBadge`
+- `PermissionDenied`
+- `ErrorBanner`
+- `EmptyState`
+- `ConfirmDialog`
+- `ResponsiveDataList`
+- `RetryableMutationNotice`
+- `UnsavedChangesGuard`
+
+### 기능 전용
+
+- `SupplierRequestList`
+- `SupplierRequestForm`
+- `BusinessNumberField`
+- `DuplicateSupplierAlert`
+- `SupplierRequestDetail`
+- `ApprovalActionPanel`
+- `RejectDialog`
+- `AuditTimeline`
+- `AuditEventFilter`
+
+## 5.3 클라이언트 상태
+
+| 상태 | 범위 | 요구사항 |
+|---|---|---|
+| 인증 사용자·역할·사업부 | 전역 | UI 노출 제어에 사용하되 보안 판정으로 신뢰하지 않음 |
+| 목록 필터 | URL query | 새로고침 및 링크 공유 지원 |
+| 작성 폼 | 폼 로컬 상태 | 검증, dirty 여부, 제출 상태 |
+| 임시 복구 데이터 | `sessionStorage` | 네트워크 실패·실수 새로고침 복구, 성공/로그아웃 시 삭제 |
+| 반려 사유 | 다이얼로그 로컬 상태 | 실패 시 닫거나 초기화하지 않음 |
+| 서버 데이터 | Query cache | 성공 mutation 후 상세·목록·감사 이력 invalidate |
+
+승인과 반려는 낙관적 업데이트를 사용하지 않는다.
+
+## 5.4 API 계약 제안
+
+프로젝트 표준이 없으므로 엔드포인트 이름은 제안이며, 핵심은 상태 코드와 원자성이다.
+
+| Method | Endpoint | 용도 |
+|---|---|---|
+| `GET` | `/api/supplier-requests` | 역할·사업부 범위가 적용된 목록 |
+| `POST` | `/api/supplier-requests` | 초안 생성 또는 생성 후 제출 |
+| `GET` | `/api/supplier-requests/:id` | 권한 범위 내 상세 |
+| `PATCH` | `/api/supplier-requests/:id` | 초안·반려 요청 편집 |
+| `POST` | `/api/supplier-requests/:id/submit` | 대기 상태로 제출 |
+| `POST` | `/api/supplier-requests/:id/approve` | 승인 |
+| `POST` | `/api/supplier-requests/:id/reject` | 사유와 함께 반려 |
+| `GET` | `/api/suppliers/duplicate?businessNumber=` | 중복 사전 확인 |
+| `GET` | `/api/supplier-audit-events` | 감사자 전용 이력 조회 |
+
+### 응답 규칙
+
+| 코드 | 의미 | UI 처리 |
+|---|---|---|
+| `200/201` | 성공 | 서버 결과로 상태 갱신 |
+| `400/422` | 입력 오류 | 필드 또는 상단 오류 |
+| `401` | 인증 만료 | 재인증 흐름 |
+| `403` | 권한 없음 | 상태 유지, 권한 안내 |
+| `404` | 대상 없음 | 목록 복귀 안내 |
+| `409 DUPLICATE_BUSINESS_NUMBER` | 기존 업체 중복 | 제출 차단 + `existingSupplierId` 링크 |
+| `409 INVALID_STATE_TRANSITION` | 이미 처리된 요청 | 최신 상세 재조회 |
+| `5xx` | 서버 오류 | 입력 보존 + 재시도 |
+
+중복 응답 예:
+
+```json
+{
+  "code": "DUPLICATE_BUSINESS_NUMBER",
+  "message": "이미 등록된 사업자번호입니다.",
+  "existingSupplierId": "SUP-00128"
+}
+```
+
+## 5.5 서버 권한 및 트랜잭션
+
+승인·반려 서버 로직은 다음 순서를 지켜야 한다.
+
+1. 인증 확인
+2. DB에서 대상 요청과 현재 상태 조회
+3. 승인자 역할 및 사업부 일치 확인
+4. 현재 상태가 `PENDING`인지 확인
+5. 상태 변경
+6. 감사 이벤트 생성
+7. 상태 변경과 감사 이벤트를 하나의 DB 트랜잭션으로 commit
+
+권한 검사가 실패하면 `403`을 반환하고 5~7단계를 실행하지 않는다.  
+상태 충돌이면 `409`를 반환하고 기존 상태를 변경하지 않는다.
+
+중복 검사와 요청 제출 역시 단일 트랜잭션 또는 DB unique constraint로 경쟁 상태를 방지한다. 사업자번호는 비교 전에 숫자만 남겨 정규화한다.
+
+## 5.6 감사 이벤트 모델
+
+```ts
+type SupplierAuditEvent = {
+  id: string;
+  requestId: string;
+  eventType:
+    | "CREATED"
+    | "DRAFT_SAVED"
+    | "SUBMITTED"
+    | "APPROVED"
+    | "REJECTED"
+    | "RESUBMITTED";
+  actorId: string;
+  actorRole: string;
+  businessUnitId: string;
+  fromStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | null;
+  toStatus: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+  reason: string | null;
+  occurredAt: string;
+  requestTraceId: string;
+};
+```
+
+감사 이벤트는 애플리케이션의 일반 수정 API로 변경·삭제할 수 없게 한다.
+
+## 5.7 핵심 테스트
+
+### 단위·컴포넌트
+
+- 사업자번호 하이픈 제거 및 10자리 검증
+- 이메일 검증
+- 중복 응답 시 제출 버튼 차단과 기존 업체 링크 노출
+- 반려 사유 공백 입력 차단
+- 네트워크 실패 후 폼 값과 반려 사유 유지
+- 상태·역할별 액션 노출
+- 모바일 상세 단일 열 적용
+
+### API·통합
+
+- 자기 사업부 승인자는 대기 요청을 승인할 수 있다.
+- 타 사업부 승인 요청은 `403`이며 상태와 감사 이력이 변경되지 않는다.
+- 승인자가 아닌 사용자의 승인 호출은 `403`이다.
+- 중복 사업자번호 제출은 `409`이며 새 요청이 제출되지 않는다.
+- 동시에 같은 사업자번호를 제출해도 하나만 성공한다.
+- 이미 처리된 요청의 재승인은 `409`다.
+- 승인·반려와 감사 이벤트는 함께 commit 또는 rollback된다.
+- 반려 시 사유가 감사 이력에 기록된다.
+- 감사자가 아닌 사용자는 감사 API에 접근할 수 없다.
+
+### E2E 수용 기준
+
+```gherkin
+Scenario: 중복 사업자번호 제출 차단
+  Given 기존 업체와 동일한 사업자번호가 존재한다
+  When 요청자가 공급업체 요청을 제출한다
+  Then 요청은 제출되지 않는다
+  And 기존 업체 링크가 표시된다
+
+Scenario: 타 사업부 요청 승인 거부
+  Given 승인자가 다른 사업부의 대기 요청 상세에 접근했다
+  When 승인 API를 호출한다
+  Then 응답은 403이다
+  And 요청 상태는 대기로 유지된다
+  And 승인 감사 이벤트는 생성되지 않는다
+
+Scenario: 네트워크 실패 후 반려 재시도
+  Given 승인자가 반려 사유를 입력했다
+  When 반려 요청 중 네트워크가 실패한다
+  Then 반려 사유가 유지된다
+  And 다시 시도할 수 있다
+
+Scenario: 모바일 승인 상세
+  Given viewport 너비가 767px 이하이다
+  When 승인 상세를 연다
+  Then 정보와 액션 영역은 단일 열로 배치된다
+  And 가로 스크롤이 발생하지 않는다
+```
+
+## 5.8 구현 순서
+
+1. 상태 모델, 정규화 규칙, DB 제약조건 및 감사 이벤트 테이블
+2. 서버 권한 가드와 상태 변경 트랜잭션
+3. S-02 작성·편집 및 중복 처리
+4. S-01 역할별 목록
+5. S-03 상세·승인·반려
+6. S-04 감사 이력
+7. 실패 복구, 접근성, 모바일 반응형
+8. 수용 기준 E2E 및 권한 회귀 테스트
+
+## 5.9 구현 전 확정할 항목
+
+- 요청자·승인자·감사자 역할의 복수 보유 가능 여부
+- 감사자의 조회 범위가 전체인지 특정 사업부인지
+- 업체명, 이메일, 반려 사유의 최대 길이
+- 사업자번호 체크섬까지 클라이언트에서 검증할지 여부
+- 목록 기본 정렬, 페이지 크기 및 감사 이력 기본 조회 기간
+- 감사 데이터 보존 기간과 이메일 등 개인정보 마스킹 정책
+- 반려 요청의 편집 시작만으로 `초안`이 되는지, 저장 시점에 `초안`이 되는지
+
+구조 명세에는 `편집 후 저장 시 반려 → 초안`으로 반영했다.

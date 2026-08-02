@@ -1,0 +1,166 @@
+# Code Review Report
+
+## Target
+- **File**: `.github/evals/fixtures/code-defective.ts`
+- **Lines**: 1-58 (전체 — 이 파일 하나가 리뷰 대상 diff)
+- **Review Level**: 3 (Deep) — 인증/인가/서명/SQL을 다루는 보안 민감 핸들러 코드
+- **Mode**: 순차 (58줄 단일 파일, 병렬 분할 이득 없음)
+
+## Context Analysis
+- `./db`, `./storage` 모듈은 리포지토리에 존재하지 않음 → 픽스처 단독 파일. 외부 계약은 파일 내 사용 패턴으로만 추론.
+- 테스트 파일 없음. 린터/tsconfig 설정 없음 → 언어 관례는 TypeScript 표준 기준으로 평가.
+- 중요 관찰: 같은 파일 line 30/40/45 에서 `db.raw(sql, [params])` 바인딩 형태를 쓰고 있다. 즉 **드라이버가 파라미터 바인딩을 지원한다는 사실이 파일 내부에서 자체 증명**된다. line 14 의 문자열 보간은 "드라이버 한계"로 변호될 수 없다.
+
+---
+
+## Quality Gate Result
+
+### Gate Decision (findings 롤업 — 결정)
+
+| Severity | Count | 게이트 영향 |
+|----------|-------|------------|
+| Critical (high/med conf) | 6 | ❌ 1건 이상 → FAIL |
+| Major | 5 | (critical에 의해 이미 차단) |
+| Minor | 7 | (critical에 의해 이미 차단) |
+
+- **Status**: **FAIL**
+- **Rule**: critical ≥ 1 (high/med confidence) → 커밋 차단
+- **Security Critical 포함**: SQL 인젝션, 하드코딩 시크릿, 위조 가능 서명 → zero-tolerance
+- **Action**: code-formatter로 해소 불가(로직/설계/보안 결함). **수동 수정 필수**. F1~F5를 먼저 고치고 재리뷰할 것.
+
+### 참고 점수 (게이트 비결정)
+
+| Category | Score | Grade | 근거 |
+|----------|-------|-------|------|
+| Readability | 14/20 | C+ | 함수명/구조는 명확하나 반환 타입 미선언, 보안 민감 로직에 주석·의도 설명 전무 |
+| Maintainability | 11/20 | D | 모듈 최상위 `db`/`s3` 하드 의존, 에러 처리 전무, 쿼리 문자열이 핸들러에 인라인 |
+| Performance | 9/20 | F | N+1 (문서당 1쿼리 × 100), 선행 와일드카드 LIKE 풀스캔 |
+| Testability | 9/20 | F | DI 없음 → `db`/`s3` 모의 불가, 테스트 파일 없음, 반환값 전부 `any` |
+| Best Practices | 4/20 | F | SQLi, 평문 시크릿, 서명 아닌 서명 함수, 인가 검증 부재 |
+| **Total (참고)** | **47/100** | **F** | |
+
+> 점수와 롤업이 불일치할 경우 항상 롤업 우선. 여기서는 둘 다 차단 방향으로 일치.
+
+---
+
+## Findings
+
+### Critical (즉시 수정 — 커밋 차단)
+
+**F1. SQL 인젝션 — `searchDocuments` (line 14)** · confidence: high
+```ts
+WHERE title LIKE '%${q}%'
+```
+`q`는 `url.searchParams.get("q")`로 들어온 **완전 비신뢰 입력**이며 아무 이스케이프 없이 쿼리에 보간된다. `?q=%' UNION SELECT id,password_hash,'x','y' FROM users--` 형태로 임의 테이블 유출이 가능하고, 드라이버가 다중 문(multi-statement)을 허용하면 `DROP`까지 이어진다.
+- Refute 시도: "드라이버가 바인딩을 지원하지 않을 수 있다" → 기각. 같은 파일 line 30에서 `db.raw(sql, [doc.owner_id])`로 바인딩을 쓰고 있다.
+- **Suggestion**: `` db.raw(`... WHERE title LIKE ?`, [`%${q}%`]) `` — 와일드카드는 SQL 리터럴이 아니라 **바인딩 값 쪽**에 붙인다.
+
+**F2. 하드코딩된 운영 시크릿 (line 5)** · confidence: high
+```ts
+const SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d";
+```
+서명 키가 소스에 평문으로 박혀 있다. 값 자체가 `prod`를 명시하고 있어 테스트 더미로 볼 수 없다. VCS에 커밋되는 순간 리포 접근 권한자 전원 + 히스토리 영구 노출이며, 로테이션도 배포 없이는 불가능하다.
+- **Suggestion**: `process.env.SHARE_TOKEN_SECRET`으로 이전하고 부팅 시 존재 검증(없으면 fail-fast). 이미 커밋된 값은 **유출 처리하여 즉시 폐기·로테이션**한다.
+
+**F3. 서명이 아닌 "서명" — 토큰 위조 + 시크릿 역추출 (line 56-58, 사용처 line 52)** · confidence: high
+```ts
+return Buffer.from(JSON.stringify(payload) + secret).toString("base64url");
+```
+base64url은 암호화도 해시도 아닌 **가역 인코딩**이다. 두 가지가 동시에 터진다.
+1. **시크릿 유출**: 공유 링크를 한 번이라도 받은 사람은 토큰을 디코드해 뒤에 붙은 `SHARE_TOKEN_SECRET` 평문을 그대로 읽는다.
+2. **완전 위조**: 시크릿을 알았으므로 임의 `documentId`·임의 `exp`로 토큰을 제조할 수 있다 → 전체 문서 무단 열람.
+   심지어 검증 함수가 파일 내 존재하지 않아, 어떤 토큰이든 통과할 가능성도 있다.
+- **Suggestion**: `crypto.createHmac("sha256", secret).update(payloadJson).digest("base64url")`로 payload와 **분리된** MAC을 만들고, 검증 시 `crypto.timingSafeEqual`로 비교한다. 표준 JWT 라이브러리 사용을 권장.
+
+**F4. 삭제 API 소유권/인가 검증 부재 — `deleteDocument` (line 39-48)** · confidence: high
+호출자 식별 정보를 전혀 읽지 않고 `params.id`만으로 S3 객체와 DB 행을 삭제한다. 문서 ID만 알거나 추측하면 **누구나 타인의 문서를 영구 파괴**할 수 있다(IDOR + 데이터 손실).
+- Refute 시도: "라우터 미들웨어가 인증을 처리할 수 있다" → 인증(authn)은 그럴 수 있으나, 핸들러가 호출자와 `owner_id`를 **비교하는 코드가 어디에도 없으므로** 인가(authz)/소유권 검증 부재는 미들웨어로 해소되지 않는다. severity 유지.
+- **Suggestion**: 세션에서 caller id를 받아 `DELETE FROM documents WHERE id = ? AND owner_id = ?`로 좁히고, `affectedRows === 0`이면 404를 반환한다.
+
+**F5. 공유 링크 발급 소유권 검증 부재 — `createShareLink` (line 50-54)** · confidence: high
+`params.id`를 검증 없이 그대로 토큰에 넣는다. 임의 사용자가 **자신이 접근 권한 없는 문서의 공유 링크를 발급**할 수 있다 — 인가 우회를 자기 서비스가 대행해주는 형태.
+- **Suggestion**: 토큰 발급 전에 해당 문서가 caller 소유이거나 공유 권한이 있는지 조회·검증한다.
+
+**F6. 검색 결과에 ACL/테넌트 스코프 없음 — `searchDocuments` (line 11-17)** · confidence: medium
+`documents` 전체에서 조건 없이 조회한다. 소유자·워크스페이스 필터가 없어 **모든 사용자의 문서 제목과 owner_id가 임의 호출자에게 노출**된다. 제목만으로도 상당한 정보 유출이 되며, 노출된 id는 F4/F5의 공격 입력이 된다.
+- confidence medium 사유: 이 서비스가 의도적으로 전역 공개 검색일 가능성을 완전히 배제할 수 없음. 다만 `owner_id`를 함께 반환하는 설계는 그 가정과 배치된다.
+- **Suggestion**: `WHERE (owner_id = ? OR id IN (공유된 문서))` 스코프를 강제한다.
+
+### Major (수정 권장)
+
+**F7. N+1 쿼리 — `listDocumentsWithOwners` (line 28-34)** · confidence: high
+루프 안에서 문서 1건당 `await db.raw(...)` 1회 → 최대 **101회 직렬 왕복**. RTT 5ms만 잡아도 응답에 0.5초가 순수 대기로 쌓이고, DB 커넥션 점유 시간이 그대로 늘어난다.
+- **Suggestion**: JOIN 한 방(`SELECT ... FROM documents d JOIN users u ON u.id = d.owner_id`)으로 바꾸거나, 최소한 `owner_id`를 모아 `WHERE id IN (?)` 한 번으로 배치 조회 후 맵으로 합친다.
+
+**F8. 미존재 문서 시 TypeError 크래시 — `deleteDocument` (line 44)** · confidence: high
+```ts
+await s3.deleteObject({ Key: doc[0].storage_key });
+```
+조회 결과가 비면 `doc[0]`가 `undefined`이고 `.storage_key` 접근이 던진다. 존재하지 않는/이미 삭제된 id에 대해 404 대신 **500과 스택 트레이스**가 나가며, 이는 반복 호출로 손쉬운 소음/DoS 표면이 된다.
+- **Suggestion**: `if (!doc[0]) return Response.json({ error: "Not found" }, { status: 404 });`
+
+**F9. 비원자적 삭제 순서 — 스토리지 선삭제 (line 44-45)** · confidence: medium
+S3 객체를 먼저 지우고 DB 행을 나중에 지운다. 그 사이 DB 삭제가 실패하면 **행은 남고 실제 파일만 사라진 영구 불일치**가 된다(사용자에겐 "문서가 있는데 열리지 않음"). 롤백·보상 트랜잭션도 없다.
+- **Suggestion**: DB 행을 먼저 삭제(또는 soft-delete) 후 스토리지 정리를 수행하고, 스토리지 삭제는 실패해도 재시도 가능한 비동기 정리 작업으로 분리한다.
+
+**F10. 클라이언트가 만료를 통제 — `createShareLink` (line 51-52)** · confidence: high
+`body.exp`를 아무 검증 없이 payload에 넣는다. 타입 검증도, 상한도, 과거값 검사도 없다. 호출자가 `exp`를 100년 뒤로 설정하거나 아예 생략(`undefined`)해 **사실상 무기한 공유 링크**를 만들 수 있다. F3와 결합하면 영구·전역 백도어가 된다.
+- **Suggestion**: 서버가 만료를 계산하되 클라이언트 요청값은 상한(예: 최대 7일)으로 클램프하고, 숫자 타입·미래 시각 여부를 검증한다.
+
+**F11. 인가 없이 PII(이메일) 반환 — `listDocumentsWithOwners` (line 30, 33)** · confidence: medium
+`SELECT id, name, email FROM users`로 소유자 이메일을 조회해 응답에 그대로 실어 보낸다. 호출자 검증이 없는 상태(F6와 동일 맥락)에서 **사용자 이메일 대량 수집(스크래핑) 경로**가 된다.
+- **Suggestion**: 응답에서 `email` 제거. 표시에 필요한 최소 필드(`name`, 아바타)만 노출한다.
+
+### Minor (개선 제안)
+
+**F12. `req.json()` 미보호 (line 51)** · confidence: high — 본문이 비었거나 malformed JSON이면 던져서 500. `try/catch` 후 400 반환 필요.
+
+**F13. 빈 검색어 방어 없음 (line 9)** · confidence: high — `q`가 빈 문자열이면 `LIKE '%%'`로 전건 매칭. 최소 길이 검증과 오프셋/커서 페이지네이션 부재(`LIMIT 50` 고정이라 51번째부터는 도달 불가).
+
+**F14. 암묵적 `any` (line 27, 그리고 모든 `db.raw` 반환)** · confidence: high — `const items = []`는 `any[]`로 추론되고 `noImplicitAny`에서 에러다. 행 타입 인터페이스를 정의하고 `db.raw<DocumentRow>()` 형태로 제네릭을 태울 것. 각 핸들러의 반환 타입(`Promise<Response>`)도 명시 권장.
+
+**F15. 미사용 파라미터 `req` (line 22, 39)** · confidence: medium — `listDocumentsWithOwners`/`deleteDocument`는 `req`를 전혀 쓰지 않는다. 다만 F4~F6을 고치면 **여기서 세션을 읽게 되므로**, 파라미터를 지우기보다 인가 로직을 채우는 방향이 맞다.
+
+**F16. 선행 와일드카드 LIKE (line 14)** · confidence: high — `'%q%'`는 B-tree 인덱스를 못 타서 `documents` 풀스캔. 데이터가 커지면 F1을 고쳐도 성능이 남는다. 전문 검색 인덱스(FTS/trigram) 검토.
+
+**F17. 전역 에러 처리 부재 (line 11, 23, 40, 45)** · confidence: medium — 어떤 핸들러에도 `try/catch`가 없다. DB 드라이버 원문 에러가 그대로 응답/로그에 실리면 스키마 구조가 노출된다.
+
+**F18. DI 부재로 테스트 불가 (line 2-3)** · confidence: medium — `db`/`s3`를 모듈 최상위에서 직접 import해 모듈 모킹 없이는 단위 테스트가 불가능하다. 의존성을 인자나 컨텍스트로 주입하면 F4/F5의 인가 분기 테스트도 함께 쉬워진다.
+
+---
+
+## Recommendations
+
+**차단 해제까지의 최소 경로 (순서 중요)**
+1. **F1** 파라미터 바인딩으로 교체 — 1줄 수정, 가장 치명적, 즉시 가능.
+2. **F2 + F3** 시크릿을 env로 이전하고 **기존 값 폐기**, `sign()`을 HMAC-SHA256으로 교체. 두 개는 한 덩어리로 고쳐야 한다(F3를 고쳐도 F2가 남으면 위조가 계속 가능).
+3. **F4 → F5 → F6** 인가 레이어 도입. caller 신원을 핸들러가 받는 구조를 먼저 만들고, 파괴적 연산(삭제) → 권한 부여(공유) → 조회(검색) 순으로 적용.
+4. 여기까지 완료 후 재리뷰 → critical 0 이 되면 그때 major(F7~F11) 처리.
+
+**구조적 관찰 (개별 결함을 넘어)**
+- 이 파일에는 **인가라는 개념 자체가 없다**. F4/F5/F6/F11은 별개 버그가 아니라 "호출자가 누구인지 아는 계층이 존재하지 않는다"는 하나의 설계 공백이 4곳에서 드러난 것이다. 개별 패치보다 인증 컨텍스트를 핸들러 시그니처에 통합하는 편이 재발을 막는다.
+- 마찬가지로 F3와 F10은 "공유 토큰의 신뢰 경계"가 정의되지 않은 결과다. 토큰 발급/검증을 한 모듈로 묶고 검증 함수까지 함께 작성해야 한다 — 현재 파일에는 발급만 있고 **검증 코드가 아예 없다**는 점이 가장 큰 미완성 신호다.
+- 테스트가 0개다. F1~F5는 전부 회귀 테스트로 고정 가능한 성격(악성 입력, 타인 문서 id, 위조 토큰)이므로 수정과 함께 테스트를 넣을 것을 강력히 권한다.
+
+```json
+[
+  {"id":"F1","file":"code-defective.ts","line":14,"severity":"critical","confidence":"high","reason":"searchDocuments가 비신뢰 쿼리 파라미터 q를 SQL 문자열에 직접 보간한다 (LIKE '%${q}%'). UNION 기반 임의 테이블 유출 및 다중 문 허용 시 파괴적 조작이 가능하다. 같은 파일 line 30에서 바인딩을 쓰고 있어 드라이버 한계로 변호할 수 없다.","suggestion":"db.raw(\"... WHERE title LIKE ?\", [`%${q}%`]) 형태로 파라미터 바인딩을 쓰고, 와일드카드는 SQL 리터럴이 아니라 바인딩 값에 붙인다."},
+  {"id":"F2","file":"code-defective.ts","line":5,"severity":"critical","confidence":"high","reason":"SHARE_TOKEN_SECRET이 소스에 평문 하드코딩되어 있고 값 자체가 'prod'를 명시한다. VCS 커밋 시 리포 접근자 전원과 히스토리에 영구 노출되며 배포 없이는 로테이션 불가.","suggestion":"process.env.SHARE_TOKEN_SECRET으로 이전하고 부팅 시 미설정이면 fail-fast. 이미 커밋된 값은 유출된 것으로 간주해 즉시 폐기·로테이션한다."},
+  {"id":"F3","file":"code-defective.ts","line":57,"severity":"critical","confidence":"high","reason":"sign()이 payload+secret을 base64url로 인코딩할 뿐이다. 가역 인코딩이라 토큰 수신자가 디코드해 시크릿 평문을 그대로 획득하고, 이후 임의 documentId/exp로 토큰을 위조해 전체 문서를 무단 열람할 수 있다. 검증 함수는 파일에 존재하지도 않는다.","suggestion":"crypto.createHmac('sha256', secret).update(payloadJson).digest('base64url')로 payload와 분리된 MAC을 생성하고 검증 시 timingSafeEqual로 비교한다. 표준 JWT 라이브러리 사용을 권장."},
+  {"id":"F4","file":"code-defective.ts","line":39,"severity":"critical","confidence":"high","reason":"deleteDocument가 호출자 신원을 전혀 확인하지 않고 params.id만으로 S3 객체와 DB 행을 삭제한다. 문서 ID를 알거나 추측하면 누구나 타인의 문서를 영구 파괴할 수 있다(IDOR + 데이터 손실). 인증 미들웨어가 있다 해도 소유권 비교 코드가 없어 인가 부재는 해소되지 않는다.","suggestion":"세션에서 caller id를 받아 DELETE FROM documents WHERE id = ? AND owner_id = ? 로 좁히고, affectedRows가 0이면 404를 반환한다."},
+  {"id":"F5","file":"code-defective.ts","line":50,"severity":"critical","confidence":"high","reason":"createShareLink가 params.id의 접근 권한을 검증하지 않고 그대로 공유 토큰을 발급한다. 임의 사용자가 접근 권한 없는 문서의 공유 링크를 만들 수 있어 서비스가 인가 우회를 대행하는 형태가 된다.","suggestion":"토큰 발급 전에 해당 문서가 caller 소유이거나 공유 권한이 있는지 조회·검증하고, 실패 시 403을 반환한다."},
+  {"id":"F6","file":"code-defective.ts","line":11,"severity":"critical","confidence":"medium","reason":"searchDocuments가 소유자/워크스페이스 필터 없이 documents 전체를 조회해 모든 사용자의 문서 제목과 owner_id를 임의 호출자에게 노출한다. 노출된 id는 F4/F5 공격의 입력이 된다. 전역 공개 검색 의도일 가능성을 완전히 배제할 수 없어 confidence medium.","suggestion":"WHERE owner_id = ? 또는 공유 문서 집합으로 결과를 스코프하고, 응답에서 owner_id 등 내부 식별자 노출을 재검토한다."},
+  {"id":"F7","file":"code-defective.ts","line":29,"severity":"major","confidence":"high","reason":"listDocumentsWithOwners가 for 루프 안에서 문서당 1회 await 쿼리를 실행해 최대 101회 직렬 왕복이 발생한다(N+1). RTT 5ms 기준으로도 0.5초가 순수 대기로 쌓이고 DB 커넥션 점유가 길어진다.","suggestion":"documents와 users를 JOIN한 단일 쿼리로 대체하거나, owner_id를 모아 WHERE id IN (?) 배치 조회 후 맵으로 병합한다."},
+  {"id":"F8","file":"code-defective.ts","line":44,"severity":"major","confidence":"high","reason":"조회 결과가 비면 doc[0]가 undefined이고 .storage_key 접근이 TypeError를 던진다. 존재하지 않거나 이미 삭제된 id에 대해 404 대신 500과 스택 트레이스가 반환된다.","suggestion":"S3 호출 전에 if (!doc[0]) return Response.json({ error: 'Not found' }, { status: 404 }); 가드를 추가한다."},
+  {"id":"F9","file":"code-defective.ts","line":44,"severity":"major","confidence":"medium","reason":"S3 객체를 먼저 삭제하고 DB 행을 나중에 삭제한다. 그 사이 DB 삭제가 실패하면 행은 남고 파일만 사라진 영구 불일치가 되며, 롤백이나 보상 트랜잭션이 없다.","suggestion":"DB 행을 먼저 삭제(또는 soft-delete)한 뒤 스토리지 정리를 수행하고, 스토리지 삭제 실패는 재시도 가능한 비동기 정리 작업으로 분리한다."},
+  {"id":"F10","file":"code-defective.ts","line":52,"severity":"major","confidence":"high","reason":"클라이언트가 보낸 body.exp를 타입 검증·상한·과거값 검사 없이 토큰 payload에 그대로 넣는다. exp를 100년 뒤로 두거나 생략해 사실상 무기한 공유 링크를 만들 수 있고, F3와 결합하면 영구 백도어가 된다.","suggestion":"만료는 서버가 계산하고 클라이언트 요청값은 최대치(예: 7일)로 클램프한다. 숫자 타입과 미래 시각 여부를 검증한다."},
+  {"id":"F11","file":"code-defective.ts","line":30,"severity":"major","confidence":"medium","reason":"소유자 이메일을 조회해 응답에 그대로 포함시킨다. 호출자 인가 검증이 없는 상태와 결합하면 사용자 이메일 대량 수집 경로가 된다.","suggestion":"응답에서 email을 제거하고 표시에 필요한 최소 필드(name 등)만 노출한다."},
+  {"id":"F12","file":"code-defective.ts","line":51,"severity":"minor","confidence":"high","reason":"req.json()이 try/catch 없이 호출된다. 본문이 비었거나 malformed JSON이면 예외가 던져져 400 대신 500이 반환된다.","suggestion":"try/catch로 감싸고 파싱 실패 시 400 Bad Request를 반환한다."},
+  {"id":"F13","file":"code-defective.ts","line":9,"severity":"minor","confidence":"high","reason":"q가 빈 문자열이면 LIKE '%%'로 전건 매칭이 되고, 최소 길이 검증이 없다. 또한 LIMIT 50 고정에 offset/cursor가 없어 51번째 이후 결과에 도달할 수 없다.","suggestion":"q 최소 길이를 검증해 빈 검색을 거부하고, cursor 또는 offset 기반 페이지네이션 파라미터를 추가한다."},
+  {"id":"F14","file":"code-defective.ts","line":27,"severity":"minor","confidence":"high","reason":"const items = []가 any[]로 추론되며 noImplicitAny 설정에서 에러가 된다. db.raw의 모든 반환값도 타입이 없어 컴파일러가 필드 오타나 구조 변경을 잡아주지 못한다.","suggestion":"DocumentRow/UserRow 인터페이스를 정의하고 db.raw<DocumentRow>() 형태로 제네릭을 지정한다. 각 핸들러의 반환 타입도 Promise<Response>로 명시한다."},
+  {"id":"F15","file":"code-defective.ts","line":22,"severity":"minor","confidence":"medium","reason":"listDocumentsWithOwners와 deleteDocument가 req 파라미터를 전혀 사용하지 않는다. 이는 호출자 컨텍스트를 읽지 않는다는 신호이기도 하다.","suggestion":"파라미터를 제거하기보다 F4/F6 수정 시 req에서 세션·인증 컨텍스트를 읽도록 채운다."},
+  {"id":"F16","file":"code-defective.ts","line":14,"severity":"minor","confidence":"high","reason":"선행 와일드카드 LIKE '%...%'는 B-tree 인덱스를 사용할 수 없어 documents 풀스캔을 유발한다. F1(인젝션)을 고쳐도 데이터 증가 시 성능 문제가 남는다.","suggestion":"전문 검색 인덱스(PostgreSQL FTS 또는 pg_trgm)를 도입하거나 검색 전용 인덱스 테이블을 검토한다."},
+  {"id":"F17","file":"code-defective.ts","line":11,"severity":"minor","confidence":"medium","reason":"네 핸들러 어디에도 try/catch가 없다. DB 드라이버의 원문 에러가 응답이나 로그에 그대로 실리면 스키마 구조가 외부에 노출될 수 있다.","suggestion":"공통 에러 핸들러로 감싸 내부 에러는 로깅하고 클라이언트에는 일반화된 메시지와 적절한 상태 코드만 반환한다."},
+  {"id":"F18","file":"code-defective.ts","line":2,"severity":"minor","confidence":"medium","reason":"db와 s3를 모듈 최상위에서 직접 import해 모듈 모킹 없이는 단위 테스트가 불가능하다. 파일 전체에 대응하는 테스트도 존재하지 않는다.","suggestion":"의존성을 함수 인자나 요청 컨텍스트로 주입하는 구조로 바꾸고, F1~F5에 대한 회귀 테스트(악성 입력, 타인 문서 id, 위조 토큰)를 함께 추가한다."}
+]
+```

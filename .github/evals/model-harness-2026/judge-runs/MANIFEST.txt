@@ -1,0 +1,26 @@
+created_utc=2026-07-26T18:39:26Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+effort=medium
+
+# judge-protocol-and-prompt-sha256
+4d2dd82b41fac707ddcb479b688d4bd769fcdad88fcaea7e2faed1e637775651  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/JUDGE-PROTOCOL.md
+f5e6164f74b36de3fbd8ae8a2bde8f90f7779c13e2eed4d921b0b6a3d89ac5b6  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/make_blind_prompts.py
+80e0dbaf66363319e9bc33b5995d92dadca5b178ea14c73fa2565aa805fbeb8e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/blind-map.json
+93229659165d562c57e567f2b0baf3e9b2be9184f100b6117e88a0a1ef5388ad  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-backend-webhook.1.txt
+04e358004c5b6bba7502a36d06ecf96c7880ec3ec6d7325fe06f29452ac0f23d  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-backend-webhook.2.txt
+fbc76803bf1893643f66654ed312869d6ed7d32cbe274f30ed4dea9c60717e6a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-mobile-expense.1.txt
+949ca51e1907fc2c8034a8524747ada45568cefb00cc3a31d55f29ea875913ba  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-mobile-expense.2.txt
+6e5aaccf107ea19e2cb4e4b08499a3483536b560290eeeec83e860179cbf6711  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-ui-internal.1.txt
+0229e23d837f20b43439d2c0cad88f6d123da9034e7f131757ab70b4fb1f0e41  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/create-ui-internal.2.txt
+370cb2b25df0c963ad2a885b8b6d46b66c6abd3717836200c9bccbe3ceb03ae2  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-clean-v2.1.txt
+76739ecf4756e5558e6f924dcda871b034dde8e92342066a108e6d04065e69ff  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-clean-v2.2.txt
+cba40d842f8c15320d709327364be2f890fa028923cba576363c0811f302406f  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-clean.1.txt
+9506a85ad5ab96a223512aae3a2e6ad99d4eb6e344c584cc99f28a28aeef9e09  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-clean.2.txt
+20645b9f0cb8bc67572f49cc5ea0a29efc3637aa7ad87862fe006d4e01c7441e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-convention-v2.1.txt
+29dd6ce47ee48eab12963060c7a9e9bf9a39830d48abc41db533c8c2b4265f12  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-convention-v2.2.txt
+f520e3d65f557546a47ae8364256602cd5cea5b538809795c2806ef8a501800b  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-convention.1.txt
+951d477067e837f372ff81e591245cb14ed6c1f1970bc49f3b0b495e68444c2a  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-convention.2.txt
+e3454cc38593a92793dedb940b339a8e8cda6b1c663f59da74808bcadad2fa81  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-universal.1.txt
+df257001d9b788af6911fe59d6cd545003242e91f967b4a91f5a2f4eeaeb512e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/review-universal.2.txt
+8ff55a2fa6839f24d6465ebb7c17833ae7a83a951ca2862bd86019fa0d334bdb  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/screen-admin.1.txt
+968feeb6db29d281591d81bbbe59c10d49c8d3e3dbbfdf27ebe02c3639a33225  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/judge-prompts/screen-admin.2.txt

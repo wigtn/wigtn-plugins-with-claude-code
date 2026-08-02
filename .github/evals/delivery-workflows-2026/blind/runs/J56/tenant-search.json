@@ -1,0 +1,66 @@
+{
+  "task": "tenant-search",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Complete, compact implementation with tenant scoping, Unicode casefold matching, deterministic keyset pagination, strict limit checks, canonical URL-safe cursor decoding, HMAC verification, and cursor field-type validation. It does not mutate the input collection."
+    },
+    {
+      "label": "B",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 4,
+      "maintainability": 3,
+      "evidence_quality": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "search/cursor.py: _urlsafe_b64decode",
+          "finding": "Uses base64.urlsafe_b64decode without strict alphabet validation or a canonical re-encoding check.",
+          "impact": "Some altered cursor strings containing ignored non-base64 characters can decode to the original signed bytes and be accepted, violating the requirement that tampered cursors raise ValueError."
+        },
+        {
+          "location": "search/cursor.py: decode_cursor return payload[\"created_at\"], payload[\"id\"]",
+          "finding": "The decoded sorting fields are checked only for presence, not for required integer and string types.",
+          "impact": "A signed but structurally invalid cursor can reach pagination comparisons and raise TypeError or exhibit unintended comparison behavior instead of being rejected as an invalid cursor with ValueError."
+        }
+      ],
+      "summary": "Core search and pagination behavior is sound and all reported tests pass, but cursor parsing is materially less strict than the other candidates. Permissive base64 decoding weakens tamper rejection, and missing payload type validation compromises failure behavior."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Strongest cursor boundary validation: canonical URL-safe encoding, exact payload schema, HMAC verification, explicit input types, tenant binding, and strict sorting-key types. Search behavior is complete, input-safe, and clearly implements the mixed-direction ordering through documented stable sorts."
+    },
+    {
+      "label": "D",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Complete and project-native implementation with strict canonical cursor decoding, exact payload schema and type validation, tenant enforcement, correct keyset filtering, and concise tuple-based ordering. Reported visible and hidden test results support the implementation."
+    }
+  ],
+  "ranking_best_to_worst": [
+    "C",
+    "D",
+    "A",
+    "B"
+  ]
+}

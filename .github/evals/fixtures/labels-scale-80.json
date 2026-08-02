@@ -1,0 +1,223 @@
+{
+  "scale-80": {
+    "reviewer": "code-reviewer",
+    "defects": [
+      {
+        "id": "S-SQLI",
+        "desc": "사용자 입력을 SQL 문자열에 직접 보간 (src/modules/invoice.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "sql injection",
+            "인젝션",
+            "보간",
+            "파라미터",
+            "바인딩",
+            "prepared"
+          ]
+        ]
+      },
+      {
+        "id": "S-SECRET",
+        "desc": "웹훅 시크릿 하드코딩 + 타이밍 비안전 비교 (src/modules/review.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "하드코딩",
+            "hardcode",
+            "시크릿",
+            "secret",
+            "whsec"
+          ],
+          [
+            "환경",
+            "env",
+            "노출",
+            "커밋",
+            "타이밍",
+            "timing"
+          ]
+        ]
+      },
+      {
+        "id": "S-NPLUS1",
+        "desc": "루프 안에서 쿼리 (N+1) (src/modules/asset.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "n+1",
+            "n + 1",
+            "반복 쿼리",
+            "루프",
+            "loop",
+            "조인",
+            "join"
+          ]
+        ]
+      },
+      {
+        "id": "S-TOCTOU",
+        "desc": "check-then-act 경합 → 중복 선점 (src/modules/invoice1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "race",
+            "경쟁",
+            "동시",
+            "concurren",
+            "toctou",
+            "원자",
+            "atomic",
+            "트랜잭션",
+            "transaction",
+            "lock"
+          ]
+        ]
+      },
+      {
+        "id": "S-IDEM",
+        "desc": "[크로스파일] contracts.ts가 최대 5회 재전송 명시인데 eventId 미사용 (src/modules/review1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "멱등",
+            "idempot",
+            "중복",
+            "duplicate",
+            "eventid",
+            "재전송",
+            "retry"
+          ]
+        ]
+      },
+      {
+        "id": "S-AUTHZ",
+        "desc": "[크로스파일] 클라이언트가 보낸 ownerId를 신뢰 (contracts.ts 위반) (src/modules/asset1.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "owner",
+            "소유자",
+            "세션",
+            "session",
+            "신뢰",
+            "클라이언트",
+            "권한",
+            "인가",
+            "authz"
+          ]
+        ]
+      },
+      {
+        "id": "S-FLOAT",
+        "desc": "[크로스파일] Money 정수 규약 위반 (소수 반환) (src/modules/invoice2.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "정수",
+            "소수",
+            "부동소수",
+            "float",
+            "반올림",
+            "rounding",
+            "money"
+          ]
+        ]
+      },
+      {
+        "id": "S-CATCH",
+        "desc": "되돌릴 수 없는 blob 삭제 후 DB 실패 → 데이터 불일치 (src/modules/review2.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "blob",
+            "삭제",
+            "되돌",
+            "불일치",
+            "orphan",
+            "고아",
+            "순서",
+            "트랜잭션",
+            "보상"
+          ]
+        ]
+      },
+      {
+        "id": "S-UNBOUND",
+        "desc": "[크로스파일] LIMIT 없는 SELECT * (contracts.ts MAX_PAGE_SIZE 위반) (src/modules/asset2.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "limit",
+            "상한",
+            "페이지",
+            "pagination",
+            "unbounded",
+            "전체",
+            "메모리",
+            "oom"
+          ]
+        ]
+      },
+      {
+        "id": "S-LEAK",
+        "desc": "early return 시 커넥션 미반환 (풀 고갈) (src/modules/invoice3.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "release",
+            "반환",
+            "누수",
+            "leak",
+            "커넥션",
+            "connection",
+            "pool",
+            "finally"
+          ]
+        ]
+      },
+      {
+        "id": "S-ORDER",
+        "desc": "할인 전 금액에 과세 → 과다 청구 (src/modules/review3.ts)",
+        "severity": "major",
+        "match": [
+          [
+            "할인",
+            "discount"
+          ],
+          [
+            "세금",
+            "세액",
+            "tax"
+          ],
+          [
+            "순서",
+            "기준",
+            "전",
+            "후",
+            "before",
+            "after"
+          ]
+        ]
+      },
+      {
+        "id": "S-TRUSTC",
+        "desc": "[크로스파일] 권한을 요청 body의 role로 판정 (contracts.ts 위반) (src/modules/asset3.ts)",
+        "severity": "critical",
+        "match": [
+          [
+            "role",
+            "권한",
+            "body",
+            "클라이언트",
+            "요청",
+            "위조",
+            "신뢰",
+            "세션",
+            "session"
+          ]
+        ]
+      }
+    ]
+  }
+}

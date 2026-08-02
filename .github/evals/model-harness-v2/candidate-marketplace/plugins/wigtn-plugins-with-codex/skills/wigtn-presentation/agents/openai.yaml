@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Presentation"
+  short_description: "Create WIGTN-branded presentation artifacts"
+  default_prompt: "Use $wigtn-presentation to create a WIGTN-branded presentation for this content."
+policy:
+  allow_implicit_invocation: true

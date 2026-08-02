@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>화면정의서 — internal-doc-sharing (인덱스)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --wf-bg: #fafafa; --wf-border: #d4d4d8; --wf-fg: #18181b; --wf-muted: #71717a; }
+    .wf-box { border: 2px dashed var(--wf-border); background: white; padding: 1rem; border-radius: 0.5rem; }
+    .wf-label { font-size: 0.75rem; color: var(--wf-muted); letter-spacing: 0.05em; text-transform: uppercase; }
+  </style>
+</head>
+<body class="bg-neutral-50 text-neutral-900">
+
+  <header class="sticky top-0 z-50 bg-white border-b shadow-sm">
+    <nav class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 text-sm overflow-x-auto" aria-label="화면 목록">
+      <span class="font-semibold whitespace-nowrap">internal-doc-sharing — 화면정의서</span>
+      <a href="04-wireframes/login.html#screen-login" class="hover:underline whitespace-nowrap">/login</a>
+      <a href="04-wireframes/list.html#screen-list" class="hover:underline whitespace-nowrap">/</a>
+      <a href="04-wireframes/upload.html#screen-upload" class="hover:underline whitespace-nowrap">/upload</a>
+      <a href="04-wireframes/doc-detail.html#screen-doc-detail" class="hover:underline whitespace-nowrap">/docs/{id}</a>
+      <a href="04-wireframes/share-view.html#screen-share-view" class="hover:underline whitespace-nowrap">/s/{token}</a>
+      <a href="04-wireframes/admin.html#screen-admin" class="hover:underline whitespace-nowrap">/admin</a>
+      <a href="04-wireframes/admin-audit.html#screen-admin-audit" class="hover:underline whitespace-nowrap">/admin/audit</a>
+      <span class="ml-auto text-xs text-neutral-500 whitespace-nowrap">Lo-fi Wireframe</span>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-semibold mb-2">사내 문서 공유 서비스 — 와이어프레임 인덱스</h1>
+    <p class="text-sm text-neutral-600 mb-8">FE 페이지 7개(≥6) → 페이지별 파일 분할. 카드를 클릭하면 각 화면 와이어프레임으로 이동합니다. 흑백 + 의미색(error/success/warning)만 사용합니다.</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+      <a href="04-wireframes/login.html#screen-login" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">01 · 인증</p>
+        <h2 class="font-semibold text-lg mt-1">/login</h2>
+        <p class="text-sm text-neutral-600 mt-2">사내 이메일 도메인 화이트리스트 기반 Magic Link 로그인 카드.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">guest · member · admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Optional (Magic Link)</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-001</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/list.html#screen-list" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">02 · 문서</p>
+        <h2 class="font-semibold text-lg mt-1">/ (문서 목록)</h2>
+        <p class="text-sm text-neutral-600 mt-2">필터 바 + 문서 테이블/카드 리스트, 20건 커서 페이지네이션.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">member · admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Required</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-003 (Sec: FR-009)</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/upload.html#screen-upload" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">03 · 문서</p>
+        <h2 class="font-semibold text-lg mt-1">/upload</h2>
+        <p class="text-sm text-neutral-600 mt-2">PDF/DOCX 드래그&드롭 업로드(≤50MB) + 진행률 + 검사 중 배지.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">member · admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Required</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-002 · FR-013</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/doc-detail.html#screen-doc-detail" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">04 · 문서</p>
+        <h2 class="font-semibold text-lg mt-1">/docs/{id}</h2>
+        <p class="text-sm text-neutral-600 mt-2">문서 메타 + 다운로드 + 공유 링크 생성/폐기 패널 + 삭제 위험 영역.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">member(타인 문서 읽기 전용) · admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Required</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-004 · FR-005 · FR-008 (Sec: FR-013)</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/share-view.html#screen-share-view" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">05 · 외부 공유</p>
+        <h2 class="font-semibold text-lg mt-1">/s/{token} (공유 열람)</h2>
+        <p class="text-sm text-neutral-600 mt-2">로그인 없는 외부 열람 뷰어. 크롬 최소화, 사내 네비게이션 미렌더링.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">guest · member · admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">None (토큰)</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-006 · FR-007 · FR-012 · FR-014</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/admin.html#screen-admin" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">06 · 관리 (Desktop only)</p>
+        <h2 class="font-semibold text-lg mt-1">/admin (전체 문서)</h2>
+        <p class="text-sm text-neutral-600 mt-2">삭제·격리 포함 전체 문서 조회, 사유 입력 강제 삭제, 30일 내 복원.</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Required + role=admin</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-009 · FR-015</dd></div>
+        </dl>
+      </a>
+
+      <a href="04-wireframes/admin-audit.html#screen-admin-audit" class="wf-box block hover:bg-neutral-100">
+        <p class="wf-label">07 · 관리 (Desktop only)</p>
+        <h2 class="font-semibold text-lg mt-1">/admin/audit (감사 로그)</h2>
+        <p class="text-sm text-neutral-600 mt-2">업로드·공유·열람·삭제 이벤트를 문서별·기간별로 조회(append-only).</p>
+        <dl class="mt-3 text-xs text-neutral-500 space-y-1">
+          <div><dt class="inline font-medium">Audience:</dt> <dd class="inline">admin</dd></div>
+          <div><dt class="inline font-medium">Auth:</dt> <dd class="inline">Required + role=admin</dd></div>
+          <div><dt class="inline font-medium">FRs:</dt> <dd class="inline">FR-011 (표시 스키마: FR-010)</dd></div>
+        </dl>
+      </a>
+
+    </div>
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-4 py-8 text-xs text-neutral-500 border-t">
+    Generated by /screen-spec · 2026-07-26 · Lo-fi Wireframe (grayscale + semantic state colors)
+  </footer>
+
+</body>
+</html>

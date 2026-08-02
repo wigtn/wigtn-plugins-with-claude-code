@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M56-BARE",
+  "task": "review-only",
+  "repeat": 3,
+  "exit_code": 0,
+  "duration_seconds": 22
+}

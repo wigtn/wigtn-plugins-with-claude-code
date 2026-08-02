@@ -1,0 +1,7 @@
+{
+  "arm": "AC-M55-PLUGIN",
+  "task": "detached-head",
+  "repeat": 2,
+  "exit_code": 0,
+  "duration_seconds": 27
+}

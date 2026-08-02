@@ -1,0 +1,56 @@
+{
+  "task": "config-migration",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Complete and well-scoped implementation with exact schema checks, non-mutating behavior, timeout validation, and passing visible/hidden tests. Minor URL validation weakness: it rejects uppercase HTTPS schemes and accepts some URLs containing whitespace."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Strongest implementation. It validates exact v1/v2 shapes, rejects mixed and unknown fields, handles bool timeout/version correctly, validates HTTPS URLs more rigorously, preserves API and input mappings, and is supported by visible and hidden test passes."
+    },
+    {
+      "label": "C",
+      "completeness": 4,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [],
+      "summary": "Complete and clean implementation with exact field validation and good endpoint/timeout checks. Minor correctness issue: v2 version accepts 2.0 because it only rejects bool and values not equal to 2, while the schema says version=2."
+    },
+    {
+      "label": "D",
+      "completeness": 4,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "config/migrate.py::_validate_timeout(value, multiplier=1)",
+          "finding": "v2 delivery.timeout_ms accepts any Real value that resolves to an integer, such as 500.0.",
+          "impact": "The v2 schema uses timeout_ms as millisecond integer data; accepting floats weakens input type validation and can allow malformed configs that should raise ValueError."
+        }
+      ],
+      "summary": "Mostly complete and project-native, with exact schema validation and solid endpoint checks. Main weakness is overly broad timeout_ms typing for v2."
+    }
+  ],
+  "ranking_best_to_worst": ["B", "C", "A", "D"]
+}

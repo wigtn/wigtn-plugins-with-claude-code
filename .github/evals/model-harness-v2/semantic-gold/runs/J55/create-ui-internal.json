@@ -1,0 +1,50 @@
+{
+  "fixture": "create-ui-internal",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Strongest PRD. It covers scope, roles, permissions, upload states, failure recovery, security boundaries, open decisions, assumptions, acceptance criteria, and a 4-week delivery plan. It correctly treats the 2-second target as non-SLA and separates unresolved policy decisions. Slightly verbose, but most detail is useful."
+    },
+    {
+      "label": "B",
+      "completeness": 4,
+      "correctness": 4,
+      "feasibility": 4,
+      "traceability": 3,
+      "concision": 3,
+      "blockers": [],
+      "high": [],
+      "summary": "Very complete and implementable, with strong security, data, API, state, and operational coverage. It handles the ambiguity around member management reasonably. Traceability is weaker than A because acceptance criteria are less explicitly mapped to stable requirement IDs, and it adds more operational ceremony than strictly needed for the brief."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 3,
+      "feasibility": 3,
+      "traceability": 4,
+      "concision": 3,
+      "blockers": [],
+      "high": [
+        {
+          "location": "권한 정책: 구성원 초대·제거 | 향후 범위",
+          "finding": "The brief says project managers can invite and remove members, while the candidate marks the capability as future scope and only later softens it as an open decision.",
+          "impact": "This creates product ambiguity and could lead a team to omit an explicitly requested administrator capability without a clear release decision."
+        },
+        {
+          "location": "OD-11: 다중 파일 동시 업로드 지원",
+          "finding": "The candidate leaves multi-file upload support open while other requirements imply document upload capability and retry behavior but do not clearly settle whether users can upload multiple documents in one interaction.",
+          "impact": "Upload state handling, progress UI, retry behavior, and test scope may need rework once this is decided."
+        }
+      ],
+      "summary": "Well structured with good acceptance criteria and solid traceability, but it pushes some core scope decisions too far into open decisions. Security and reliability coverage are reasonable, yet feasibility is less settled than A or B because upload and member-management boundaries remain ambiguous."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "C"]
+}

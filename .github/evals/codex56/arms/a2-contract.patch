@@ -1,0 +1,27 @@
+diff --git a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
+--- a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
++++ b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
+@@ -20,4 +20,23 @@
+ ## Delivery outline
+ ```
+ 
+ Requirements describe necessary behavior, not a preferred implementation unless the constraint is real. Use durable IDs such as `FR-101`; never renumber an existing PRD merely to make the document prettier.
++
++## WIGTN output contract
++
++For a feature with UI, the PRD must include these implementation artifacts. Keep
++them concise, but do not replace them with prose:
++
++- a User Roles table that states permissions and prohibited actions;
++- a Pages table with route, access role, and whether FE components exist;
++- a State Matrix covering Empty, Loading, Error, and Success for each relevant page;
++- a User Flow rendered as a Mermaid diagram;
++- functional requirements with stable IDs;
++- measurable, numeric NFR targets, or an explicitly owned open decision when a
++  target cannot yet be justified;
++- acceptance criteria in Given/When/Then form and mapped to requirement IDs;
++- server-side authorization rules for protected and destructive actions;
++- Non-Goals and implementation phases mapped to requirement IDs.
++
++These are project conventions, not suggestions. Include every applicable item
++even when the brief does not name it.

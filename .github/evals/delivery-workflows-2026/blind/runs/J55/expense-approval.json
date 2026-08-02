@@ -1,0 +1,79 @@
+{
+  "task": "expense-approval",
+  "candidates": [
+    {
+      "label": "A",
+      "completeness": 3,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py decide()",
+          "finding": "Does not verify that actor_id is actually a manager; it only checks team and self-approval.",
+          "impact": "A same-team non-manager could approve or reject another user's expense, violating the authorization requirement."
+        }
+      ],
+      "summary": "Clean, minimal implementation with strong idempotency, audit, and transition behavior. Main gap is missing manager authorization."
+    },
+    {
+      "label": "B",
+      "completeness": 3,
+      "correctness": 3,
+      "scope_discipline": 4,
+      "maintainability": 4,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py decide()",
+          "finding": "Does not verify that actor_id is actually a manager; it only checks team and self-approval.",
+          "impact": "A same-team non-manager could approve or reject another user's expense, violating the authorization requirement."
+        }
+      ],
+      "summary": "Good project-native implementation and handles missing expense more explicitly than most. It has the same manager authorization gap, plus weaker amount validation for non-numeric or bool values."
+    },
+    {
+      "label": "C",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 2,
+      "maintainability": 2,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py _is_manager()",
+          "finding": "Infers manager status from actor_id starting with 'm'.",
+          "impact": "This is a test-shaped authorization shortcut: legitimate managers with other IDs are denied, while any ID beginning with 'm' is allowed."
+        },
+        {
+          "location": "expense/service.py _normalize_decision()",
+          "finding": "Accepts undocumented actions APPROVED and REJECTED, and records normalized status as audit action.",
+          "impact": "Expands the public API beyond the requested action contract and can produce audit action values different from the caller's requested action."
+        }
+      ],
+      "summary": "Covers many behaviors but adds brittle role inference and broadens action semantics. Deterministic IDs are acceptable for an in-memory exercise but less robust than UUIDs."
+    },
+    {
+      "label": "D",
+      "completeness": 3,
+      "correctness": 2,
+      "scope_discipline": 2,
+      "maintainability": 3,
+      "evidence_quality": 4,
+      "blockers": [],
+      "high": [
+        {
+          "location": "expense/service.py decide()",
+          "finding": "Infers manager status from actor_id starting with 'm'.",
+          "impact": "This is a test-oriented authorization shortcut: legitimate managers with other IDs are denied, while any ID beginning with 'm' is allowed."
+        }
+      ],
+      "summary": "Otherwise solid implementation with good idempotency, audit, and validation, but the hard-coded manager convention is a significant authorization and scope problem."
+    }
+  ],
+  "ranking_best_to_worst": ["A", "B", "D", "C"]
+}

@@ -1,0 +1,122 @@
+diff --git a/search/cursor.py b/search/cursor.py
+index 3662433..c1f698d 100644
+--- a/search/cursor.py
++++ b/search/cursor.py
+@@ -1,5 +1,74 @@
++import base64
++import binascii
++import hashlib
++import hmac
++import json
++
++
++_SIGNING_KEY = b"tenant-search-cursor-v1"
++
++
++def _encode_part(value: bytes) -> str:
++    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
++
++
++def _decode_part(value: str) -> bytes:
++    padding = "=" * (-len(value) % 4)
++    try:
++        decoded = base64.b64decode(
++            value + padding, altchars=b"-_", validate=True
++        )
++    except (ValueError, binascii.Error) as exc:
++        raise ValueError("invalid cursor") from exc
++    if _encode_part(decoded) != value:
++        raise ValueError("invalid cursor")
++    return decoded
++
++
+ def encode_cursor(tenant_id: str, created_at: int, record_id: str) -> str:
+-    raise NotImplementedError
++    payload = json.dumps(
++        {
++            "version": 1,
++            "tenant_id": tenant_id,
++            "created_at": created_at,
++            "record_id": record_id,
++        },
++        ensure_ascii=False,
++        separators=(",", ":"),
++        sort_keys=True,
++    ).encode("utf-8")
++    signature = hmac.new(_SIGNING_KEY, payload, hashlib.sha256).digest()
++    return f"{_encode_part(payload)}.{_encode_part(signature)}"
++
+ 
+ def decode_cursor(value: str, tenant_id: str):
+-    raise NotImplementedError
++    if not isinstance(value, str):
++        raise ValueError("invalid cursor")
++
++    try:
++        payload_part, signature_part = value.split(".")
++    except ValueError as exc:
++        raise ValueError("invalid cursor") from exc
++
++    payload = _decode_part(payload_part)
++    signature = _decode_part(signature_part)
++    expected = hmac.new(_SIGNING_KEY, payload, hashlib.sha256).digest()
++    if not hmac.compare_digest(signature, expected):
++        raise ValueError("invalid cursor")
++
++    try:
++        data = json.loads(payload.decode("utf-8"))
++    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
++        raise ValueError("invalid cursor") from exc
++
++    if (
++        not isinstance(data, dict)
++        or data.get("version") != 1
++        or data.get("tenant_id") != tenant_id
++        or isinstance(data.get("created_at"), bool)
++        or not isinstance(data.get("created_at"), int)
++        or not isinstance(data.get("record_id"), str)
++    ):
++        raise ValueError("invalid cursor")
++
++    return data["created_at"], data["record_id"]
+diff --git a/search/service.py b/search/service.py
+index f8a1da0..3fb9ddf 100644
+--- a/search/service.py
++++ b/search/service.py
+@@ -1,4 +1,35 @@
+ from .cursor import encode_cursor, decode_cursor
+ 
++
+ def search(records, tenant_id, query, limit, cursor=None):
+-    raise NotImplementedError
++    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 50:
++        raise ValueError("limit must be an integer between 1 and 50")
++
++    query_folded = query.casefold()
++    matching = [
++        record
++        for record in records
++        if record["tenant_id"] == tenant_id
++        and query_folded in record["name"].casefold()
++    ]
++    matching.sort(key=lambda record: (-record["created_at"], record["id"]))
++
++    if cursor is not None:
++        last_created_at, last_id = decode_cursor(cursor, tenant_id)
++        matching = [
++            record
++            for record in matching
++            if record["created_at"] < last_created_at
++            or (
++                record["created_at"] == last_created_at
++                and record["id"] > last_id
++            )
++        ]
++
++    page = matching[:limit]
++    if len(matching) <= limit:
++        return page, None
++
++    last = page[-1]
++    next_cursor = encode_cursor(tenant_id, last["created_at"], last["id"])
++    return page, next_cursor

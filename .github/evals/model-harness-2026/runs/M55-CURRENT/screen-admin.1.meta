@@ -1,0 +1,9 @@
+arm=M55-CURRENT
+fixture=screen-admin
+repeat=1
+model=gpt-5.5
+reasoning_effort=medium
+started_epoch=1785084101
+finished_epoch=1785084217
+duration_seconds=116
+exit_code=0

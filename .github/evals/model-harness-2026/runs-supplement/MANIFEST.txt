@@ -1,0 +1,9 @@
+created_utc=2026-07-26T18:29:07Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+repeat=2
+effort=medium
+
+# frozen-input-sha256
+06cacbac5fcd304f61aba800febe584e5a530538091444040524d3bb7819133e  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/AMENDMENT-01.md
+225328cd348319f98adb04f2b185d385869e54dde3f7dcb1b3213fd3b08b025d  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-clean-v2.txt
+a2f56c03f241f40134ce1ab2e08e9d221990c5c6a26c8030647cee0e636590c8  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/model-harness-2026/fixtures/review-convention-v2.txt

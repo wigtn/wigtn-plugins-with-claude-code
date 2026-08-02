@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M56-ORDINARY",
+  "task": "config-migration",
+  "repeat": 2,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 0,
+  "duration_seconds": 147,
+  "patch_lines": 91
+}

@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M55-VERIFIED",
+  "task": "expense-approval",
+  "repeat": 1,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 1,
+  "duration_seconds": 130,
+  "patch_lines": 121
+}

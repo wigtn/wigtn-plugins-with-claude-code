@@ -1,0 +1,1 @@
+task.txt 변경만 커밋하고 현재 main 브랜치의 origin으로 푸시해줘. unrelated.txt는 포함하지 마.

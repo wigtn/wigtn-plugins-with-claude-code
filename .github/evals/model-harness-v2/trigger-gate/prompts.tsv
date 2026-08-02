@@ -1,0 +1,40 @@
+product-spec	신규 팀 공지 기능 PRD를 간단히 뽑아줘. 파일은 만들지 말고 응답으로만 줘.
+product-spec	이 아이디어를 구현 가능한 제품 요구사항으로 정리해줘: 프로젝트별 문서 보관.
+product-spec	아래 PRD의 누락과 모순을 리뷰해줘: 목표는 로그인, 요구사항은 모든 사용자가 관리자 권한을 가진다.
+product-spec	이 기획서의 보안과 엣지케이스를 깊게 디깅해줘. 저장소는 보지 마.
+product-spec	acceptance criteria가 포함된 결제 취소 PRD를 응답으로 작성해줘.
+screen-spec	이 PRD로 화면정의서 5종을 간단히 만들어줘: 직원이 휴가를 신청한다.
+screen-spec	관리자 승인 기능의 IA와 User Flow, lo-fi wireframe을 응답으로 만들어줘.
+screen-spec	모바일 경비 승인 PRD를 개발 핸드오프 가능한 화면 명세로 바꿔줘.
+acceptance-verifier	이번 구현이 FR-101을 만족하는지 코드와 테스트 근거를 매핑하는 방법으로 검증해줘. 실제 파일은 없다고 가정해.
+acceptance-verifier	acceptance criteria 반영 여부를 requirement별 증거 표로 확인해줘.
+acceptance-verifier	PRD 요구사항과 구현의 충족 상태를 verified, partial, missing으로 판정해줘.
+design-direction	기존 디자인 시스템을 따르는 신규 대시보드 UI 디자인 방향을 잡아줘. 실제 저장소는 없다고 가정해.
+design-direction	greenfield 모바일 앱의 visual direction 두 가지를 제안해줘.
+handdrawn-diagram	한글 손그림 스타일 아키텍처 다이어그램을 Mermaid source로 만들어줘.
+handdrawn-diagram	Devpost용 sketch diagram의 구조를 handDrawn Mermaid로 작성해줘.
+wigtn-presentation	WIGTN 브랜드 피치덱의 5장 구성을 만들어줘. 파일은 만들지 마.
+wigtn-presentation	위그튼 회사 소개 발표자료의 브랜드 방향과 슬라이드 개요를 작성해줘.
+release-readiness	현재 변경사항을 검증하고 커밋 준비해줘. 실제 커밋은 하지 마.
+release-readiness	현재 브랜치를 push할 준비가 됐는지 점검해줘. 실제 push는 하지 마.
+release-readiness	이 변경으로 PR을 올릴 준비 절차를 수행해줘. 원격 작업은 하지 마.
+none	Python TypeError의 일반적인 원인을 세 가지 설명해줘.
+none	README 오타를 고칠 때 주의할 점을 알려줘.
+none	React 컴포넌트 렌더링 성능을 개선하는 일반적인 방법을 알려줘.
+none	일반 회사 소개 발표 개요를 작성해줘. WIGTN 브랜드는 아니다.
+none	평범한 Mermaid sequence diagram 문법을 설명해줘. 손그림 이미지는 필요 없다.
+none	git commit과 push의 차이를 설명해줘. 작업은 수행하지 마.
+none	좋은 acceptance criteria가 무엇인지 개념만 설명해줘.
+none	코드 리뷰 체크리스트를 일반적으로 알려줘.
+none	버튼 색을 파란색으로 바꾸는 React 코드를 보여줘.
+none	이 함수의 이름을 더 읽기 좋게 리팩터링하는 원칙을 알려줘.
+none	제품 아이디어를 자유롭게 브레인스토밍해줘. PRD나 요구사항 문서는 필요 없다.
+none	기존 CSS의 spacing 버그를 고치는 방법을 설명해줘. 디자인 방향 제안은 필요 없다.
+none	일반적인 데이터베이스 ERD에 어떤 요소가 들어가는지 알려줘.
+none	회사 발표에서 스토리텔링을 잘하는 법을 알려줘. 특정 브랜드는 없다.
+none	테스트 실패 로그를 읽는 순서를 설명해줘.
+none	API 응답 속도 개선 아이디어를 세 개 알려줘.
+none	보안 리뷰에서 SQL injection을 찾는 방법을 설명해줘.
+none	문서의 맞춤법을 교정할 때 기준을 알려줘.
+none	사용자 흐름이 무엇인지 UX 개념으로 설명해줘. 산출물은 만들지 마.
+none	배포 체크리스트가 왜 필요한지 설명해줘. 배포나 Git 작업은 하지 마.

@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M56-VERIFIED",
+  "task": "expense-approval",
+  "repeat": 1,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 0,
+  "duration_seconds": 124,
+  "patch_lines": 79
+}

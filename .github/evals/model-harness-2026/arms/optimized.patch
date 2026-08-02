@@ -1,0 +1,112 @@
+diff --git a/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md b/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+--- a/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
++++ b/plugins/wigtn-plugins-with-codex/skills/product-spec/SKILL.md
+@@ -18,15 +18,13 @@ Do not turn a review or deep dive into a rewrite unless the user asks. Report fi
+ 
+ ## Workflow
+ 
+-1. Find applicable repository instructions, existing product docs, adjacent code, routes, schemas, and tests.
+-2. Establish the target user, problem, desired outcome, boundaries, and evidence already available.
+-3. Ask only about choices that materially change the result and cannot be safely inferred. Record reversible assumptions and continue.
+-4. Use stable requirement IDs. Keep solution detail proportional to evidence; do not invent enterprise scale, SLAs, or architecture.
+-5. Make acceptance criteria observable and testable. Connect UI requirements to roles, routes, states, and permissions.
+-6. In create mode, run the review checklist before saving. In deep-dive mode, use the deep-dive lenses and distinguish facts, inferences, and open questions.
+-7. Save a new PRD under the project’s existing docs convention, or default to `docs/product/<feature>-prd.md`. Preserve the source PRD unless the user asked to edit it.
++1. Establish the target user, problem, outcome, boundaries, repository evidence, and unresolved decisions.
++2. Use stable requirement IDs and observable acceptance criteria. Do not invent scale, SLAs, or architecture.
++3. For each template contract, mark it `필수` or `해당 없음` with a reason. Omit irrelevant detail; never force UI sections onto a backend-only feature.
++4. In review mode, test both universal product quality and the WIGTN contract in the review checklist. In deep-dive mode, distinguish facts, inferences, and open questions.
++5. Save under the project’s docs convention, or default to `docs/product/<feature>-prd.md`. Preserve source documents unless asked to edit them.
+ 
+-Read [PRD template](references/prd-template.md) when creating. Read [review checklist](references/review-checklist.md) for every mode. Read [deep-dive guide](references/deep-dive.md) only for deep-dive requests.
++Read [PRD template](references/prd-template.md) when creating and [review checklist](references/review-checklist.md) for every mode. Read [deep-dive guide](references/deep-dive.md) only for deep-dive requests.
+ 
+ ## Completion
+ 
+diff --git a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
+--- a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
++++ b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/prd-template.md
+@@ -1,23 +1,55 @@
+ # PRD Template
+ 
+-Use only the sections that improve the implementation contract.
++This is an output contract, not a demand for filler. Start with an applicability ledger. Mark each conditional item `필수` or `해당 없음` with one sentence of evidence.
+ 
+ ```markdown
+ # <Feature> PRD
+ 
++## Applicability
++| Contract | Required / N/A | Reason |
++
+ ## Context and problem
+ ## Goals
+ ## Non-goals
+-## Users and key scenarios
++## Users, roles, and permissions
++| Role | Goal | Allowed actions | Forbidden actions |
++
+ ## Functional requirements
+ | ID | Requirement | Priority |
+-## UX, roles, routes, and states
++
++## Experience contract
++### Pages and routes                 <!-- UI only -->
++| Page | Route | Allowed roles | Primary action |
++
++### State matrix                    <!-- UI or user-visible workflow only -->
++| Surface | Empty | Loading | Error | Success | Recovery |
++
++### User flow                       <!-- Multi-step user or system workflow -->
++```mermaid
++flowchart TD
++```
++
++## Authorization and data boundaries
++State where server-side authorization is enforced. Cover ownership or tenancy where relevant; UI hiding is not authorization.
++
+ ## Non-functional requirements
++Use measurable targets only when evidence supports them. Otherwise record the metric and decision owner as open.
++
+ ## Acceptance criteria
+-| ID | Observable criterion | Verification method |
++| ID | Requirement | Given | When | Then | Verification |
++
+ ## Assumptions and open decisions
+ ## Risks and mitigations
+ ## Delivery outline
++| Phase | Requirement IDs | Verifiable exit condition |
+ ```
+ 
+-Requirements describe necessary behavior, not a preferred implementation unless the constraint is real. Use durable IDs such as `FR-101`; never renumber an existing PRD merely to make the document prettier.
++Always required: context/problem, goals, non-goals, roles, stable FR IDs, authorization/data boundary, acceptance mapping, assumptions/open decisions, risks, and requirement-mapped delivery.
++
++Conditional:
++
++- Pages/routes and state matrix: required for a feature with user-visible screens.
++- Mermaid flow: required for a multi-step user or system lifecycle.
++- Quantitative NFR: required only when a target is evidenced; never fabricate an SLA.
++
++Requirements describe necessary behavior, not a preferred implementation unless the constraint is real. Never renumber an existing PRD merely to make it prettier.
+diff --git a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-checklist.md b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-checklist.md
+--- a/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-checklist.md
++++ b/plugins/wigtn-plugins-with-codex/skills/product-spec/references/review-checklist.md
+@@ -4,6 +4,9 @@
+ - The problem, target user, outcome, and non-goals agree with one another.
+ - Requirements have stable IDs and one testable responsibility each.
+ - Acceptance criteria are externally observable and map back to requirements.
++- Acceptance criteria express Given/When/Then or an equally explicit precondition, action, and observable result.
++- Delivery phases name the requirement IDs they satisfy and have verifiable exit conditions.
++- The applicability ledger marks conditional contracts required or N/A with evidence.
+ - Terms, roles, entities, and states are used consistently.
+ 
+ ## Feasibility
+@@ -15,6 +18,9 @@
+ ## UX and operations
+ 
+ - Relevant loading, empty, error, success, authorization, recovery, and destructive states exist.
++- A UI feature has a page/route/role table and a state matrix; a multi-step lifecycle has a Mermaid flow.
++- Server-side authorization, ownership, and tenancy boundaries are explicit where relevant; hiding UI is never treated as authorization.
++- Backend-only work does not invent screens merely to fill the template.
+ - Analytics, observability, security, privacy, and accessibility appear only where the product needs them.
+ - Open decisions name an owner or a decision point when known.
+ 

@@ -1,0 +1,7 @@
+arm=M56-CURRENT
+task=pagination
+model_exit=0
+test_exit=0
+test_integrity=intact
+duration_seconds=55
+wigtn_skill_loaded=no

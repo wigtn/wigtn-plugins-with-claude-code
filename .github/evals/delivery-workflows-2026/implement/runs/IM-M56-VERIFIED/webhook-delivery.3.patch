@@ -1,0 +1,54 @@
+diff --git a/webhook/delivery.py b/webhook/delivery.py
+index 8a98242..8177308 100644
+--- a/webhook/delivery.py
++++ b/webhook/delivery.py
+@@ -3,7 +3,21 @@ class WebhookStore:
+         self.events = {}
+ 
+     def accept(self, event_id: str, payload: bytes) -> bool:
+-        raise NotImplementedError
++        if event_id not in self.events:
++            self.events[event_id] = payload
++            return True
++
++        if self.events[event_id] == payload:
++            return False
++
++        raise ValueError("event ID already exists with a different payload")
++
+ 
+ def retry_delay(attempt: int, status_code: int):
+-    raise NotImplementedError
++    if attempt < 1:
++        raise ValueError("attempt must be at least 1")
++
++    if 200 <= status_code < 300:
++        return None
++
++    return {1: 0, 2: 60, 3: 300}.get(attempt)
+diff --git a/webhook/signing.py b/webhook/signing.py
+index 2320976..a9135ce 100644
+--- a/webhook/signing.py
++++ b/webhook/signing.py
+@@ -1,2 +1,20 @@
++import hashlib
++import hmac
++
++
+ def verify_signature(secret: bytes, body: bytes, header: str) -> bool:
+-    raise NotImplementedError
++    """Return whether *header* contains the HMAC-SHA256 signature for *body*."""
++    if not isinstance(header, str) or not header.startswith("sha256="):
++        return False
++
++    encoded_signature = header[len("sha256=") :]
++    if len(encoded_signature) != hashlib.sha256().digest_size * 2:
++        return False
++
++    try:
++        supplied_signature = bytes.fromhex(encoded_signature)
++    except ValueError:
++        return False
++
++    expected_signature = hmac.new(secret, body, hashlib.sha256).digest()
++    return hmac.compare_digest(expected_signature, supplied_signature)

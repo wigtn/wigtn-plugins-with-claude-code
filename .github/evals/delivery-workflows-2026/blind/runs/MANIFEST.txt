@@ -1,0 +1,12 @@
+created_utc=2026-07-27T09:38:13Z
+codex_cli=codex-cli 0.146.0-alpha.3.1
+effort=medium
+6da1e4738eb360cc23e07df3383b97cda6f49e33103c151d32b8ee6af0135032  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/PROTOCOL.md
+bd43b6f1e9dfe72a1b50fe8805d2eb77e3d5d3d73fc7ec59c85a0599c39937f4  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/make_prompts.py
+b09502162c5470064dbd774be72017b804067b0fb27fab286884addd33b8a194  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/score.py
+7a1fcd869121e768ee8e00694f347220f2199adabcf7a5af49f5cf415703c167  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/run.sh
+f25cb7601491d17965e5390b145fd269c761fdeb605c65c0d0771cb5dc12d480  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/BLIND-MAP.json
+98debe1cfd57edee413251680cf28b9671163f0e978604245b40003889474622  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/prompts/config-migration.txt
+3c605e13c7595adfd5b7a3ca0778c20b705bc4a3eaa36cba61936f13e028f6f3  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/prompts/expense-approval.txt
+46af71ab3f1e1409de075da1c12ebf9f41917deef6a283ea11037700e8e97328  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/prompts/tenant-search.txt
+06d723f08051c52cef62c68c25ff79756a5c6be83cfb624905da0d51077b4aa7  /Users/hyeonman/Desktop/kim/wigtn/wigtn-plugins-with-claude-code/.github/evals/delivery-workflows-2026/blind/prompts/webhook-delivery.txt

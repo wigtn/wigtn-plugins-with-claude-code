@@ -1,0 +1,10 @@
+{
+  "arm": "IM-M56-ORDINARY",
+  "task": "expense-approval",
+  "repeat": 1,
+  "exit_code": 0,
+  "visible_exit": 0,
+  "hidden_exit": 1,
+  "duration_seconds": 135,
+  "patch_lines": 117
+}

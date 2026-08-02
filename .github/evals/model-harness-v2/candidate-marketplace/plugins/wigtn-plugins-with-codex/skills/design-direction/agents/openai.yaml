@@ -1,0 +1,6 @@
+interface:
+  display_name: "WIGTN Design Direction"
+  short_description: "Derive a project-native UI design direction"
+  default_prompt: "Use $design-direction to define a project-native visual direction for this interface."
+policy:
+  allow_implicit_invocation: true

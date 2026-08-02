@@ -1,0 +1,5 @@
+judge=J55
+model=gpt-5.5
+fixture_repeat=review-convention.1
+duration_seconds=16
+exit_code=0

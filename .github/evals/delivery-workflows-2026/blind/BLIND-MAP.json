@@ -1,0 +1,218 @@
+{
+  "expense-approval": {
+    "labels": {
+      "A": "IM-M56-VERIFIED",
+      "B": "IM-M56-BARE",
+      "C": "IM-M55-VERIFIED",
+      "D": "IM-M56-ORDINARY"
+    },
+    "selection": {
+      "IM-M56-BARE": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -80,
+          -3
+        ]
+      },
+      "IM-M56-ORDINARY": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -83,
+          -1
+        ]
+      },
+      "IM-M56-VERIFIED": {
+        "repeat": 2,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -82,
+          -2
+        ]
+      },
+      "IM-M55-VERIFIED": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -86,
+          -3
+        ]
+      }
+    }
+  },
+  "webhook-delivery": {
+    "labels": {
+      "A": "IM-M56-VERIFIED",
+      "B": "IM-M55-VERIFIED",
+      "C": "IM-M56-ORDINARY",
+      "D": "IM-M56-BARE"
+    },
+    "selection": {
+      "IM-M56-BARE": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -56,
+          -1
+        ]
+      },
+      "IM-M56-ORDINARY": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -54,
+          -1
+        ]
+      },
+      "IM-M56-VERIFIED": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -54,
+          -3
+        ]
+      },
+      "IM-M55-VERIFIED": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -56,
+          -1
+        ]
+      }
+    }
+  },
+  "tenant-search": {
+    "labels": {
+      "A": "IM-M56-BARE",
+      "B": "IM-M55-VERIFIED",
+      "C": "IM-M56-ORDINARY",
+      "D": "IM-M56-VERIFIED"
+    },
+    "selection": {
+      "IM-M56-BARE": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -122,
+          -3
+        ]
+      },
+      "IM-M56-ORDINARY": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -140,
+          -3
+        ]
+      },
+      "IM-M56-VERIFIED": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -121,
+          -1
+        ]
+      },
+      "IM-M55-VERIFIED": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -109,
+          -1
+        ]
+      }
+    }
+  },
+  "config-migration": {
+    "labels": {
+      "A": "IM-M55-VERIFIED",
+      "B": "IM-M56-ORDINARY",
+      "C": "IM-M56-VERIFIED",
+      "D": "IM-M56-BARE"
+    },
+    "selection": {
+      "IM-M56-BARE": {
+        "repeat": 2,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -101,
+          -2
+        ]
+      },
+      "IM-M56-ORDINARY": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -95,
+          -3
+        ]
+      },
+      "IM-M56-VERIFIED": {
+        "repeat": 1,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -100,
+          -1
+        ]
+      },
+      "IM-M55-VERIFIED": {
+        "repeat": 3,
+        "quality": [
+          true,
+          true,
+          true,
+          true,
+          -79,
+          -3
+        ]
+      }
+    }
+  }
+}

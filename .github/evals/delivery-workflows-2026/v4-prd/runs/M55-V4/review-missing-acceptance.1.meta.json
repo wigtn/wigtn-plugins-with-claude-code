@@ -1,0 +1,7 @@
+{
+  "arm": "M55-V4",
+  "fixture": "review-missing-acceptance",
+  "repeat": 1,
+  "exit_code": 0,
+  "duration_seconds": 49
+}

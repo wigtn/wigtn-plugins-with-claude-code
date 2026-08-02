@@ -1,0 +1,23 @@
+{
+  "review-contract-clean": {
+    "missing": null
+  },
+  "review-missing-applicability": {
+    "missing": "applicability"
+  },
+  "review-missing-pages": {
+    "missing": "pages"
+  },
+  "review-missing-states": {
+    "missing": "states"
+  },
+  "review-missing-flow": {
+    "missing": "flow"
+  },
+  "review-missing-acceptance": {
+    "missing": "acceptance"
+  },
+  "review-missing-delivery": {
+    "missing": "delivery"
+  }
+}
