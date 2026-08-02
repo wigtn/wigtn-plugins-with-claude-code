@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**One plugin. 13 agents. From idea to production.**
+**One plugin. 12 agents. From idea to production.**
 
 ![Version](https://img.shields.io/badge/v0.1.14-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,13 +27,13 @@
 You open Claude Code → write a vague prompt → get generic code → spend 30 min fixing → repeat.
 
 **With WIGTN-Coding:**
-You run `/prd` → get a structured spec → 13 agents build it in parallel → ship production-ready code on the first try.
+You run `/prd` → get a structured spec → 12 agents build it in parallel → ship production-ready code on the first try.
 
 ---
 
 ## What it does
 
-WIGTN Plugins is a Claude Code plugin. You describe what you want to build, and 13 specialized agents handle the rest — requirements, architecture, code, review, commit — all in parallel.
+WIGTN Plugins is a Claude Code plugin. You describe what you want to build, and 14 specialized agents handle the rest — requirements, architecture, code, review, commit — all in parallel.
 
 ```
 /prd "SaaS dashboard with OAuth"  →  PRD + task plan in 30 seconds
@@ -72,7 +72,7 @@ That's it. The plugin handles PRD generation, 4-category quality analysis, archi
 │  3. PRD Generation ────── PRD_{feature}.md  (7 sections, Gherkin stories)  │
 │  4. Task Planning ─────── PLAN_{feature}.md (phases + tasks)               │
 │                                                                             │
-│  ┌─── prd-reviewer ─── parallel-digging-coordinator ──────────────────┐    │
+│  ┌─── prd-reviewer — 4 adversarial lenses ────────────────────────────┐    │
 │  │  Phase 0: Context Harvest (CLAUDE.md, code patterns, deps)         │    │
 │  │  Phase 1: PRD Structure Parsing                                    │    │
 │  │  Phase 2: ════════════ 4 AGENTS IN PARALLEL ═══════════            │    │
@@ -111,7 +111,7 @@ That's it. The plugin handles PRD generation, 4-category quality analysis, archi
 │                                                                             │
 │  ┌─── BUILD PHASE ─── team-build-coordinator ────────────────────────┐     │
 │  │                                                                   │     │
-│  │  Phase 0: Setup ─── SHARED_CONTEXT_{feature}.md + TaskCreate      │     │
+│  │  Phase 0: Setup ─── SHARED_CONTEXT_{feature}.md + TodoWrite      │     │
 │  │           Context Harvest: sample existing code → learn patterns   │     │
 │  │                                                                   │     │
 │  │  Phase 1: Foundation (if Backend + dependents exist)              │     │
@@ -144,8 +144,8 @@ That's it. The plugin handles PRD generation, 4-category quality analysis, archi
 │          on feature branch → reuse │ on main + PLAN → feat/<name>          │
 │                                                                             │
 │  Step 2: Quality Gate                                                       │
-│  ┌─── < 3 files: code-reviewer (sequential) ──────────────────────┐        │
-│  │     ≥ 3 files: parallel-review-coordinator                      │        │
+│  ┌─── ≤5 files & LOW blast radius: code-reviewer (single) ────────┐        │
+│  │     6+ files or MEDIUM/HIGH blast radius → split by category    │        │
 │  │                                                                 │        │
 │  │  Phase 0: Context Harvest (lint configs, adjacent code)         │        │
 │  │  Phase 1: Blast Radius ─── callers, importers, impact score     │        │
@@ -174,7 +174,7 @@ That's it. The plugin handles PRD generation, 4-category quality analysis, archi
 Shared Memory (3 layers):
   Layer 1 — MEMORY.md ─────────── persistent cross-session conventions
   Layer 2 — SHARED_CONTEXT ────── session-scoped API contracts, types, patterns
-  Layer 3 — TaskCreate/Update ─── in-conversation task tracking per team
+  Layer 3 — TodoWrite ─── in-conversation task tracking per team
 ```
 
 Each step runs in parallel where possible. Full pipeline: ~6 min (vs ~20 min sequential).
@@ -201,8 +201,6 @@ Each step runs in parallel where possible. Full pipeline: ~6 min (vs ~20 min seq
 | Agent | Role |
 |-------|------|
 | `team-build-coordinator` | Dispatches Backend, Frontend, AI, Ops teams in parallel |
-| `parallel-review-coordinator` | Runs 3 review agents, merges scores |
-| `parallel-digging-coordinator` | 4-category PRD analysis pipeline |
 | `architecture-decision` | MSA vs Monolithic vs Modular Monolith |
 
 ### Developers

@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**一个插件。13 个智能体。从创意到生产。**
+**一个插件。12 个智能体。从创意到生产。**
 
 ![Version](https://img.shields.io/badge/v0.1.14-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,13 +27,13 @@
 打开 Claude Code → 写一个模糊的提示 → 得到通用代码 → 花 30 分钟修复 → 重复。
 
 **使用 WIGTN-Coding：**
-运行 `/prd` → 获得结构化规格 → 13 个智能体并行构建 → 一次就产出生产级代码。
+运行 `/prd` → 获得结构化规格 → 12 个智能体并行构建 → 一次就产出生产级代码。
 
 ---
 
 ## 它做什么
 
-WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13 个专业智能体处理其余一切 — 需求、架构、代码、审查、提交 — 全部并行执行。
+WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14 个专业智能体处理其余一切 — 需求、架构、代码、审查、提交 — 全部并行执行。
 
 ```
 /prd "基于 OAuth 的 SaaS 仪表盘"  →  30 秒内生成 PRD + 任务计划
@@ -72,7 +72,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13
 │  3. PRD 生成 ────────── PRD_{feature}.md（7 个章节，Gherkin 用户故事）       │
 │  4. 任务规划 ────────── PLAN_{feature}.md（阶段 + 任务）                     │
 │                                                                             │
-│  ┌─── prd-reviewer ─── parallel-digging-coordinator ──────────────────┐    │
+│  ┌─── prd-reviewer — 4 个对抗性视角 ──────────────────────────────────┐    │
 │  │  Phase 0: 上下文收割（CLAUDE.md、代码模式、依赖）                    │    │
 │  │  Phase 1: PRD 结构解析                                             │    │
 │  │  Phase 2: ════════════ 4 个智能体并行执行 ═══════════               │    │
@@ -111,7 +111,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13
 │                                                                             │
 │  ┌─── BUILD 阶段 ─── team-build-coordinator ─────────────────────────┐     │
 │  │                                                                   │     │
-│  │  Phase 0: 初始化 ─── SHARED_CONTEXT_{feature}.md + TaskCreate     │     │
+│  │  Phase 0: 初始化 ─── SHARED_CONTEXT_{feature}.md + TodoWrite     │     │
 │  │           上下文收割：采样现有代码 → 学习模式                       │     │
 │  │                                                                   │     │
 │  │  Phase 1: 基础构建（后端 + 依赖团队存在时）                        │     │
@@ -144,8 +144,8 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13
 │          功能分支 → 复用 │ main + PLAN → feat/<name>                        │
 │                                                                             │
 │  Step 2: 质量门禁                                                           │
-│  ┌─── < 3 文件：code-reviewer（顺序）────────────────────────────┐         │
-│  │     ≥ 3 文件：parallel-review-coordinator                      │         │
+│  ┌─── ≤5 文件且 LOW 影响半径：code-reviewer（单个）──────────────┐         │
+│  │     6+ 文件或 MEDIUM/HIGH 影响半径 → 按类别拆分                │         │
 │  │                                                                 │        │
 │  │  Phase 0: 上下文收割（lint 配置、相邻代码）                      │        │
 │  │  Phase 1: 影响范围分析 ─── 调用者、导入者、影响评分              │        │
@@ -174,7 +174,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13
 共享内存（3 层）：
   Layer 1 — MEMORY.md ─────────── 跨会话持久化的项目规范
   Layer 2 — SHARED_CONTEXT ────── 会话范围 API 契约、类型、模式
-  Layer 3 — TaskCreate/Update ─── 对话内按团队追踪任务
+  Layer 3 — TodoWrite ─── 对话内按团队追踪任务
 ```
 
 每个步骤尽可能并行运行。完整流水线：~6 分钟（串行 ~20 分钟）。
@@ -194,15 +194,13 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，13
 ---
 
 <details>
-<summary><b>智能体（13 个）</b> — 点击展开</summary>
+<summary><b>智能体（12 个）</b> — 点击展开</summary>
 
 ### 协调器
 
 | 智能体 | 角色 |
 |--------|------|
 | `team-build-coordinator` | 并行分配后端、前端、AI、运维团队 |
-| `parallel-review-coordinator` | 运行 3 个审查智能体，合并评分 |
-| `parallel-digging-coordinator` | 4 类 PRD 分析流水线 |
 | `architecture-decision` | MSA vs 单体 vs 模块化单体 |
 
 ### 开发者

@@ -1,6 +1,6 @@
 ---
 name: team-memory-protocol
-description: 팀 빌드 간 공유 컨텍스트 관리 프로토콜. SHARED_CONTEXT 파일 생성/관리, TaskCreate 연동, Auto Memory 업데이트 규칙을 정의합니다.
+description: 팀 빌드 간 공유 컨텍스트 관리 프로토콜. SHARED_CONTEXT 파일 생성/관리, TodoWrite 연동, Auto Memory 업데이트 규칙을 정의합니다.
 allowed-tools: Read, Write, Edit, Glob
 ---
 
@@ -27,7 +27,7 @@ allowed-tools: Read, Write, Edit, Glob
 │  ├── 읽기: 빌드 중 (모든 팀)                                 │
 │  └── 쓰기: Coordinator + Backend 팀만                        │
 │                                                             │
-│  Layer 3: TaskCreate (대화 내 추적)                           │
+│  Layer 3: TodoWrite (대화 내 추적)                           │
 │  ├── 지속성: 대화 세션 동안                                  │
 │  ├── 용도: 팀별 진행 추적, 의존성 관리                       │
 │  ├── 읽기/쓰기: Coordinator                                  │
@@ -114,7 +114,7 @@ conflict_prevention:
     - "Backend 팀의 API 정의가 우선"
 ```
 
-## TaskCreate 연동 프로토콜
+## TodoWrite 연동 프로토콜
 
 ### 팀별 Task 등록
 

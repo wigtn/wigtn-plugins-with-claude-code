@@ -1,21 +1,20 @@
 {
   "name": "wigtn-plugins",
   "version": "0.1.14",
-  "description": "AI-native Vibe Coding — From idea to Deploy, Zero friction. 13 agents, 5 commands, 6 skills, team-based parallel build, 20 design styles, screen-spec generator (IA / User Flow / Wireframe HTML), WIGTN-brand PPT generator.",
+  "description": "AI-native Vibe Coding — From idea to Deploy, Zero friction. 12 agents, 5 commands, 6 skills, team-based parallel build, 20 design styles, screen-spec generator (IA / User Flow / Wireframe HTML), WIGTN-brand PPT generator.",
   "agents": [
-    "./agents/architecture-decision.md",
-    "./agents/code-formatter.md",
-    "./agents/team-build-coordinator.md",
-    "./agents/parallel-review-coordinator.md",
-    "./agents/parallel-digging-coordinator.md",
-    "./agents/frontend-developer.md",
-    "./agents/design-discovery.md",
-    "./agents/backend-architect.md",
-    "./agents/mobile-developer.md",
     "./agents/ai-agent.md",
+    "./agents/architecture-decision.md",
+    "./agents/backend-architect.md",
+    "./agents/code-formatter.md",
+    "./agents/code-reviewer-lean.md",
     "./agents/code-reviewer.md",
+    "./agents/design-discovery.md",
+    "./agents/frontend-developer.md",
+    "./agents/mobile-developer.md",
+    "./agents/pr-reviewer.md",
     "./agents/prd-reviewer.md",
-    "./agents/pr-reviewer.md"
+    "./agents/team-build-coordinator.md"
   ],
   "commands": [
     "./commands/prd.md",

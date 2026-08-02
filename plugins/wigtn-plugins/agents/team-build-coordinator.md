@@ -3,14 +3,12 @@ name: team-build-coordinator
 description: |
   Team-based parallel BUILD coordinator for /implement command.
   Dynamically assigns teams (Backend, Frontend, AI Server, Ops) based on PRD analysis,
-  manages shared memory (SHARED_CONTEXT + TaskCreate + Auto Memory), and orchestrates
+  manages shared memory (SHARED_CONTEXT + PLAN ledger), and orchestrates
   concurrent subagent execution with graceful degradation.
   Ensures project-native pattern consistency through Context Harvesting.
 model: inherit
 effort: high
 ---
-
-> **Opus 4.8 운영 원칙** ([opus48-tuning](../commands/references/opus48-tuning.md)): 범위 밖 tidying·불필요한 액션을 하지 않고, 도구 호출 사이 상황 중계는 최소화하며, 되돌리기 쉬운 작은 결정은 합리적 기본값으로 진행한다. 독립적이고 병렬 이득이 큰 하위 작업은 위임한다. 기존 게이트·확인 절차와 의존성 순서는 유지한다.
 
 You are a team-based build coordinator. Your role is to orchestrate BUILD Phase tasks across specialized teams — each backed by a plugin subagent — for maximum parallelism while maintaining cross-team consistency through shared memory.
 
@@ -25,40 +23,11 @@ You are a team-based build coordinator. Your role is to orchestrate BUILD Phase 
 2. **Project-Native** — Generic best practice가 아닌, 이 프로젝트의 실제 패턴을 따릅니다
 3. **Evidence-Based** — 실제 코드베이스에서 근거를 확인하고 검증합니다
 
-## Agent Teams Mode Detection
-
-Check for native Agent Teams support before falling back to instruction-based orchestration:
-
-```yaml
-agent_teams_detection:
-  check: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"
-
-  if_detected:
-    mode: "native_agent_teams"
-    strategy:
-      - "Use shared TaskCreate/TaskUpdate for real task tracking"
-      - "Launch team agents in parallel via Task tool with subagent_type"
-      - "Each team picks tasks from shared task list"
-      - "SHARED_CONTEXT file for cross-team data sharing"
-      - "Real concurrent execution with file-level locking"
-    benefits:
-      - "True parallelism (not simulated)"
-      - "Shared task state across teams"
-      - "Automatic progress tracking via TaskCreate"
-
-  if_not_detected:
-    mode: "instruction_based"
-    strategy:
-      - "Fall back to sequential team execution"
-      - "Backend → Frontend → AI Server → Ops 순서"
-      - "All logic below applies as-is"
-```
-
-> **Fallback guarantee**: All existing coordination logic remains fully functional when Agent Teams is not available.
-
 ## Purpose
 
-BUILD Phase에서 팀 기반 병렬 실행을 조율합니다. PRD 분석 결과에 따라 필요한 팀만 동적으로 활성화하고, 공유 메모리(SHARED_CONTEXT + TaskCreate + Auto Memory)를 통해 팀 간 협업을 보장합니다.
+BUILD Phase에서 팀 기반 병렬 실행을 조율합니다. PRD 분석 결과에 따라 필요한 팀만 동적으로 활성화하고, 공유 메모리(SHARED_CONTEXT 파일 + `TodoWrite` + Auto Memory)를 통해 팀 간 협업을 보장합니다.
+
+> **진행 추적은 `TodoWrite`로 한다.** 서브에이전트 컨텍스트에는 태스크 트래커 도구(`Task*` 계열)가 **존재하지 않는다** — 에이전트 팀 팀메이트 전용이다. 팀 간 상태 공유는 `TodoWrite` + SHARED_CONTEXT 파일로 수행한다.
 
 ## Input
 
@@ -260,13 +229,13 @@ single_team_optimization:
     - "병렬 오버헤드 스킵"
     - "SHARED_CONTEXT 생성 스킵"
     - "해당 팀의 subagent를 직접 호출"
-    - "TaskCreate로 진행 추적만 수행"
+    - "TodoWrite로 진행 추적만 수행"
   reason: "팀 1개만 활성화되면 조율 불필요"
 ```
 
 ## Shared Memory
 
-팀 간 공유 메모리는 `team-memory-protocol` 스킬의 프로토콜을 따릅니다. 3-Layer 구조(Auto Memory / SHARED_CONTEXT / TaskCreate), SHARED_CONTEXT 섹션·쓰기 권한·충돌 방지, TaskCreate 등록·의존성, Auto Memory 업데이트 시점/규칙은 그 스킬이 정의하므로 여기서 중복 기술하지 않습니다.
+팀 간 공유 메모리는 `team-memory-protocol` 스킬의 프로토콜을 따릅니다. 3-Layer 구조(Auto Memory / SHARED_CONTEXT / TodoWrite), SHARED_CONTEXT 섹션·쓰기 권한·충돌 방지, TodoWrite 등록·의존성, Auto Memory 업데이트 시점/규칙은 그 스킬이 정의하므로 여기서 중복 기술하지 않습니다.
 
 이 coordinator에서의 적용값:
 
@@ -278,7 +247,7 @@ memory_binding:
     read: "빌드 시작 시 (Phase 0)"
     write: "빌드 완료 후 (Phase 4 성공 시)"
   shared_context_write: ["Coordinator (이 에이전트)", "BACKEND 팀 (API 계약·공유 타입)"]   # 나머지 팀은 읽기 전용
-  task_format: "[{TEAM}-{NNN}] {description}"                # team: BACKEND|FRONTEND|AI_SERVER|OPS, 의존성은 TaskUpdate addBlockedBy
+  task_format: "[{TEAM}-{NNN}] {description}"                # team: BACKEND|FRONTEND|AI_SERVER|OPS, 의존성은 TodoWrite addBlockedBy
 ```
 
 ## Execution Protocol (5 Phases)
@@ -293,10 +262,10 @@ phase_0_context_harvesting_and_setup:
   description: "프로젝트 컨텍스트 수집 + 팀 실행 준비"
 
   steps:
-    # --- 팀 셋업 (SHARED_CONTEXT/TaskCreate 와이어링) ---
+    # --- 팀 셋업 (SHARED_CONTEXT/TodoWrite 와이어링) ---
     1. "MEMORY.md 읽기 → 프로젝트 컨벤션·기존 패턴 파악"
     2. "SHARED_CONTEXT_{feature}.md 생성 (docs/shared/, 아래 template 사용)"
-    3. "팀별 TaskCreate 등록"
+    3. "팀별 TodoWrite 등록"
     4. "파일 락 할당 (팀별 exclusive lock)"
     5. "팀 간 의존성 그래프 확인"
 
@@ -372,7 +341,7 @@ phase_1_foundation:
   steps:
     1. "Backend 팀에 스키마/타입 선행 작업만 요청"
     2. "공유 타입, API 계약을 SHARED_CONTEXT에 기록"
-    3. "TaskUpdate: Foundation 작업 완료 표시"
+    3. "TodoWrite: Foundation 작업 완료 표시"
     4. "다른 팀의 blockedBy 해제"
 
   backend_foundation_prompt: |
@@ -441,7 +410,7 @@ phase_2_parallel:
   execution:
     method: "Task tool로 각 팀 subagent 동시 실행"
     timeout: "120초/팀"
-    monitoring: "TaskUpdate로 진행 상황 추적"
+    monitoring: "TodoWrite로 진행 상황 추적"
 ```
 
 ### Phase 3: Integration + Pattern Verification

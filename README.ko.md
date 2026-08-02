@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**하나의 플러그인. 13개 에이전트. 아이디어에서 프로덕션까지.**
+**하나의 플러그인. 12개 에이전트. 아이디어에서 프로덕션까지.**
 
 ![Version](https://img.shields.io/badge/v0.1.14-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,13 +27,13 @@
 Claude Code 열기 → 두루뭉술한 프롬프트 작성 → 범용적인 코드 생성 → 30분 동안 수정 → 반복.
 
 **WIGTN-Coding과 함께:**
-`/prd` 실행 → 구조화된 스펙 생성 → 13개 에이전트가 병렬로 빌드 → 첫 시도에 프로덕션 수준 코드 완성.
+`/prd` 실행 → 구조화된 스펙 생성 → 12개 에이전트가 병렬로 빌드 → 첫 시도에 프로덕션 수준 코드 완성.
 
 ---
 
 ## 뭘 하는 플러그인인가
 
-WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명하면, 13개의 전문 에이전트가 나머지를 처리합니다 — 요구사항, 아키텍처, 코드, 리뷰, 커밋까지, 전부 병렬로.
+WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명하면, 12개의 전문 에이전트가 나머지를 처리합니다 — 요구사항, 아키텍처, 코드, 리뷰, 커밋까지, 전부 병렬로.
 
 ```
 /prd "OAuth 기반 SaaS 대시보드"  →  PRD + 작업 계획 30초 만에 생성
@@ -72,7 +72,7 @@ WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명�
 │  3. PRD 생성 ────────── PRD_{feature}.md  (7개 섹션, Gherkin 스토리)         │
 │  4. 작업 계획 ────────── PLAN_{feature}.md (단계별 + 태스크)                  │
 │                                                                             │
-│  ┌─── prd-reviewer ─── parallel-digging-coordinator ──────────────────┐    │
+│  ┌─── prd-reviewer — 4개 적대적 렌즈 ─────────────────────────────────┐    │
 │  │  Phase 0: 컨텍스트 수확 (CLAUDE.md, 코드 패턴, 의존성)              │    │
 │  │  Phase 1: PRD 구조 파싱                                            │    │
 │  │  Phase 2: ════════════ 4개 에이전트 병렬 실행 ═══════════           │    │
@@ -111,7 +111,7 @@ WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명�
 │                                                                             │
 │  ┌─── BUILD 단계 ─── team-build-coordinator ─────────────────────────┐     │
 │  │                                                                   │     │
-│  │  Phase 0: 셋업 ─── SHARED_CONTEXT_{feature}.md + TaskCreate       │     │
+│  │  Phase 0: 셋업 ─── SHARED_CONTEXT_{feature}.md + TodoWrite       │     │
 │  │           컨텍스트 수확: 기존 코드 샘플링 → 패턴 학습              │     │
 │  │                                                                   │     │
 │  │  Phase 1: 기반 구축 (백엔드 + 의존 팀 존재 시)                    │     │
@@ -144,8 +144,8 @@ WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명�
 │          피처 브랜치 → 재사용 │ main + PLAN → feat/<name>                   │
 │                                                                             │
 │  Step 2: 품질 게이트                                                        │
-│  ┌─── < 3 파일: code-reviewer (순차) ─────────────────────────────┐        │
-│  │     ≥ 3 파일: parallel-review-coordinator                       │        │
+│  ┌─── 파일 ≤5개 & blast radius LOW: code-reviewer (단일) ─────────┐        │
+│  │     파일 6개+ 또는 blast radius MEDIUM/HIGH → 카테고리 분할     │        │
 │  │                                                                 │        │
 │  │  Phase 0: 컨텍스트 수확 (린트 설정, 인접 코드)                   │        │
 │  │  Phase 1: 영향 범위 분석 ─── 호출자, 임포터, 영향 점수           │        │
@@ -174,7 +174,7 @@ WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명�
 공유 메모리 (3계층):
   Layer 1 — MEMORY.md ─────────── 세션 간 지속되는 프로젝트 컨벤션
   Layer 2 — SHARED_CONTEXT ────── 세션 스코프 API 계약, 타입, 패턴
-  Layer 3 — TaskCreate/Update ─── 대화 내 팀별 작업 추적
+  Layer 3 — TodoWrite ─── 대화 내 팀별 작업 추적
 ```
 
 각 단계는 가능한 곳에서 병렬 실행됩니다. 전체 파이프라인: ~6분 (순차 시 ~20분).
@@ -194,15 +194,13 @@ WIGTN Plugins은 Claude Code 플러그인입니다. 만들고 싶은 걸 설명�
 ---
 
 <details>
-<summary><b>에이전트 (13개)</b> — 클릭하여 펼치기</summary>
+<summary><b>에이전트 (12개)</b> — 클릭하여 펼치기</summary>
 
 ### 코디네이터
 
 | 에이전트 | 역할 |
 |---------|------|
 | `team-build-coordinator` | 백엔드, 프론트엔드, AI, 운영 팀을 병렬 배정 |
-| `parallel-review-coordinator` | 3개 리뷰 에이전트 실행, 점수 병합 |
-| `parallel-digging-coordinator` | 4카테고리 PRD 분석 파이프라인 |
 | `architecture-decision` | MSA vs 모놀리식 vs 모듈러 모놀리스 |
 
 ### 개발자

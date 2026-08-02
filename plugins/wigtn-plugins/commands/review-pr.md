@@ -224,7 +224,6 @@ gh api repos/{owner}/{repo}/pulls/$PR_NUMBER/comments \
 | 구성요소 | 역할 | 호출 조건 |
 |----------|------|----------|
 | `pr-reviewer` 에이전트 | PR diff 기반 코드 리뷰 | 항상 |
-| `parallel-review-coordinator` | 병렬 리뷰 조율 | Level 2+, 병렬 이득이 클 때 |
 
 ### 외부 도구
 

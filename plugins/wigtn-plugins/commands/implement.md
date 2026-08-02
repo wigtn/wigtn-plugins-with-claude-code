@@ -129,6 +129,8 @@ DESIGN 완료 후, **이슈 트래커(Linear) 연동 여부**에 따라 BUILD �
 - `--sequential`: 순차 모드 강제 (기존 방식)
 - `--full-stack`: (deprecated) 모든 팀 강제 활성화로 매핑
 - `--no-tracker`: 이슈 트래커(Linear) 연동을 무시하고 원큐 플로우로 진행
+- `--resume`: 저장된 진행 상태에서 마지막 실패 지점부터 재개 (인자 없이 `/implement {feature}` 와 동일)
+- `--restart`: 저장된 진행 상태를 버리고 처음부터 다시 실행
 
 ---
 
@@ -548,13 +550,13 @@ for issue in topological_order(sub_issues):   # blockedBy 가 모두 완료된 �
 
 `team-build-coordinator`가 다음 Phase를 순서대로 수행합니다:
 
-- **Phase 0 — Setup**: `SHARED_CONTEXT_{feature}.md` 생성, MEMORY.md 읽기(프로젝트 컨벤션 파악), TaskCreate 등록(팀별 Task).
+- **Phase 0 — Setup**: `SHARED_CONTEXT_{feature}.md` 생성, MEMORY.md 읽기(프로젝트 컨벤션 파악), TodoWrite 등록(팀별 Task).
 - **Phase 1 — Foundation (조건부)**: 다른 팀이 의존할 경우 Backend 스키마/타입 선행.
 - **Phase 2 — 병렬 팀 실행**: Backend(backend-architect) · Frontend(frontend-developer) · AI Server(ai-agent, 해당 시) · Ops(general-purpose, 해당 시) 동시 실행.
 - **Phase 3 — 통합 검증 (fresh-context verifier)**: 빌드 컨텍스트와 독립된 서브에이전트가 PRD/계약을 대조해 API 계약 준수·타입 일관성·파일 충돌을 검증.
 - **Phase 4 — 빌드/테스트 검증**: typecheck / test / build, Auto Memory 업데이트.
 
-조율은 SHARED_CONTEXT + TaskCreate + Auto Memory로 수행하며, 오류 발생 시 실패 팀만 순차 재시도하고 독립 팀은 계속 진행합니다. 진행 상황은 팀별 task 완료 현황과 전체 진행률, Shared Context 경로를 함께 표시합니다.
+조율은 SHARED_CONTEXT + TodoWrite + Auto Memory로 수행하며, 오류 발생 시 실패 팀만 순차 재시도하고 독립 팀은 계속 진행합니다. 진행 상황은 팀별 task 완료 현황과 전체 진행률, Shared Context 경로를 함께 표시합니다.
 
 **팀 할당 모드:**
 
@@ -678,7 +680,6 @@ npm run build       # 빌드 확인
 |----------|------|----------|
 | `architecture-decision` | 아키텍처 결정 | greenfield 항상 · feature 조건부 · **quick-fix 스킵** |
 | `team-build-coordinator` | 팀 기반 병렬 빌드 조율 | BUILD Phase 병렬 모드 (feature/greenfield) · **quick-fix 스킵** |
-| `parallel-digging-coordinator` | 병렬 prd-reviewer (상세 검토 시) | feature/greenfield 상세 검토 선택 시 · **quick-fix 스킵** |
 | `backend-architect` | Backend 코드 생성 | Team BUILD (Backend 팀) |
 | `frontend-developer` | Frontend 코드 생성 | Team BUILD (Frontend 팀) |
 | `ai-agent` | AI/ML 코드 생성 | Team BUILD (AI Server 팀) |
