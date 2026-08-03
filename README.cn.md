@@ -4,10 +4,10 @@
 
 # WIGTN Plugins
 
-**一个插件。11 个智能体。从创意到生产。**
+**一个插件。11 个智能体。从创意到通过验证的提交。**
 
 ![Version](https://img.shields.io/badge/v0.1.15-Unified_Plugin-FF6B6B?style=for-the-badge)
-![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
+![Agents](https://img.shields.io/badge/11-Agents-5A67D8?style=for-the-badge)
 ![Commands](https://img.shields.io/badge/5-Commands-38B2AC?style=for-the-badge)
 ![Skills](https://img.shields.io/badge/6-Skills-00D4AA?style=for-the-badge)
 ![Styles](https://img.shields.io/badge/20-Design_Styles-F59E0B?style=for-the-badge)
@@ -27,19 +27,19 @@
 打开 Claude Code → 写一个模糊的提示 → 得到通用代码 → 花 30 分钟修复 → 重复。
 
 **使用 WIGTN-Coding：**
-运行 `/prd` → 获得结构化规格 → 11 个智能体并行构建 → 一次就产出生产级代码。
+运行 `/prd` → 获得结构化契约 → 按需生成界面规格 → 实现 → 仅在配置的检查通过后提交。
 
 ---
 
 ## 它做什么
 
-WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14 个专业智能体处理其余一切 — 需求、架构、代码、审查、提交 — 全部并行执行。
+WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需求、架构、实现和审查。它只并行执行相互独立的任务，并将同一份契约从 PRD 贯穿到提交。
 
 ```
-/prd "基于 OAuth 的 SaaS 仪表盘"  →  30 秒内生成 PRD + 任务计划
+/prd "基于 OAuth 的 SaaS 仪表盘"  →  基于契约生成 PRD + 任务计划
 /screen-spec dashboard             →  (有 UI 时) IA + 流程 + 屏幕规格 + 可点击 HTML 线框图
 /implement --parallel              →  后端 + 前端 + AI + 运维团队同时构建
-/auto-commit                       →  3 智能体审查，质量门禁，80+ 分自动提交
+/auto-commit                       →  findings 汇总 + 客观检查 + 提交
 ```
 
 ---
@@ -75,7 +75,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 │  ┌─── prd-reviewer — 4 个对抗性视角 ──────────────────────────────────┐    │
 │  │  Phase 0: 上下文收割（CLAUDE.md、代码模式、依赖）                    │    │
 │  │  Phase 1: PRD 结构解析                                             │    │
-│  │  Phase 2: ════════════ 4 个智能体并行执行 ═══════════               │    │
+│  │  Phase 2: ═════════════ 4 个对抗性视角 ═════════════               │    │
 │  │           │ 完整性       │ 可行性        │ 安全性      │ 一致性    │   │    │
 │  │           │ FR/NFR/边界  │ 技术栈适配    │ OWASP       │ 命名规范 │   │    │
 │  │           │ 用例、重复    │ 变更影响范围   │ 认证/授权    │ PRD↔代码 │   │    │
@@ -111,7 +111,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 │                                                                             │
 │  ┌─── BUILD 阶段 ─── team-build-coordinator ─────────────────────────┐     │
 │  │                                                                   │     │
-│  │  Phase 0: 初始化 ─── SHARED_CONTEXT_{feature}.md + TodoWrite     │     │
+│  │  Phase 0: 初始化 ─── SHARED_CONTEXT_{feature}.md + PLAN 台账     │     │
 │  │           上下文收割：采样现有代码 → 学习模式                       │     │
 │  │                                                                   │     │
 │  │  Phase 1: 基础构建（后端 + 依赖团队存在时）                        │     │
@@ -144,29 +144,17 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 │          功能分支 → 复用 │ main + PLAN → feat/<name>                        │
 │                                                                             │
 │  Step 2: 质量门禁                                                           │
-│  ┌─── ≤5 文件且 LOW 影响半径：code-reviewer（单个）──────────────┐         │
-│  │     6+ 文件或 MEDIUM/HIGH 影响半径 → 按类别拆分                │         │
-│  │                                                                 │        │
-│  │  Phase 0: 上下文收割（lint 配置、相邻代码）                      │        │
-│  │  Phase 1: 影响范围分析 ─── 调用者、导入者、影响评分              │        │
-│  │  Phase 2: ═══════════ 3 个智能体并行执行 ════════════           │        │
-│  │           │ 可读性 +          │ 性能 +         │ 最佳实践     │        │
-│  │           │ 可维护性          │ 可测试性       │ + 安全性      │        │
-│  │           │     (40 分)       │   (40 分)      │   (20 分)     │        │
-│  │           ══════════════════════════════════════════════════     │        │
-│  │  Phase 3: 契约验证（调用者兼容性、边界、测试）                    │        │
-│  │                                                                 │        │
-│  │  分数合并：求和 + 契约违规扣分 + 安全覆盖                        │        │
-│  │  安全关键 → 上限 59 分 → FAIL                                   │        │
-│  └─────────────────────────────────────────────────────────────────┘        │
+│  ┌─── code-reviewer — 有证据支持的 findings ────────────────────┐         │
+│  │  每项 finding：文件 + 行号 + severity + confidence + 证据     │         │
+│  │                                                               │         │
+│  │  FAIL  ← critical ≥1                                          │         │
+│  │  WARN  ← critical 0 AND (major ≥1 OR minor ≥5)                │         │
+│  │  PASS  ← critical 0 AND major 0 AND minor <5                  │         │
+│  └───────────────────────────────────────────────────────────────┘         │
 │                                                                             │
-│  ┌────────────────────────────────────────┐                                 │
-│  │ ≥ 80 (PASS)  → Step 4                 │                                 │
-│  │ 60-79 (WARN) → code-formatter 自动修复 → 重新评估                       │
-│  │ < 60 (FAIL)  → 阻止                   │                                 │
-│  └────────────────────────────────────────┘                                 │
-│                                                                             │
-│  Step 4: 提交信息 ─── <type>(<scope>): <subject> + 质量分数                │
+│  Step 3: 客观检查 ─── typecheck / lint / 已配置检查                         │
+│          non-zero exit → 阻止                                               │
+│  Step 4: 提交信息 ─── <type>(<scope>): <subject> + 门禁结果                │
 │  ✋ 检查点：AskUserQuestion ── PR / Draft PR / 仅提交 / 取消               │
 │  Step 5: git commit → git push -u → gh pr create                           │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -174,10 +162,10 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 共享内存（3 层）：
   Layer 1 — MEMORY.md ─────────── 跨会话持久化的项目规范
   Layer 2 — SHARED_CONTEXT ────── 会话范围 API 契约、类型、模式
-  Layer 3 — TodoWrite ─── 对话内按团队追踪任务
+  Layer 3 — PLAN 台账 ─────────── 任务复选框 + 执行日志
 ```
 
-每个步骤尽可能并行运行。完整流水线：~6 分钟（串行 ~20 分钟）。
+独立步骤可以并行，存在依赖的步骤保持顺序。运行时间取决于任务、模型和已配置的检查。
 
 ---
 
@@ -188,8 +176,8 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 | `/prd <功能>` | 根据功能创意生成 PRD + 分阶段任务计划（针对 UI 功能新增 User Roles、Page State Matrix、User Flow 章节） |
 | `/screen-spec <功能>` | 可选 UI 阶段：IA + 用户流程 + 屏幕规格 + 可点击 HTML 线框图 + Dev Handoff。灰度 + 语义色 lo-fi 线框图（风格决策在 `/implement` 阶段） |
 | `/implement <功能>` | 自动并行模式检测，进行设计 + 构建（如存在 screen-spec 产物则作为输入使用） |
-| `/auto-commit` | 3 智能体并行审查 → 质量门禁 → 提交 + PR |
-| `/review-pr <PR>` | 在终端审查 GitHub PR：diff 分析、质量评分、行内评论 |
+| `/auto-commit` | 有证据支持的 findings → 确定性汇总 → 客观检查 → 提交 + PR |
+| `/review-pr <PR>` | 在终端审查 GitHub PR：diff 分析、severity findings、行内评论 |
 
 ---
 
@@ -216,8 +204,8 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 
 | 智能体 | 角色 |
 |--------|------|
-| `code-reviewer` | 5 个类别 100 分制质量评分 |
-| `pr-reviewer` | GitHub PR diff 审查、100 分制评分、行内审查评论（用于 `/review-pr`） |
+| `code-reviewer` | 有证据支持的 findings 与确定性 PASS/WARN/FAIL 汇总 |
+| `pr-reviewer` | GitHub PR diff 审查、severity findings、行内审查评论（用于 `/review-pr`） |
 | `prd-reviewer` | 在完整性、可行性、安全性、一致性中发现缺口 |
 | `code-formatter` | 多语言自动格式化和 lint 修复 |
 | `design-discovery` | 基于 VS 技法的 Web/Mobile 风格推荐 |
@@ -291,7 +279,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 
 ```bash
 /prd 带看板和团队协作的项目管理工具
-# → 4 智能体分析："缺失：实时同步、角色权限"
+# → 4 视角分析："缺失：实时同步、角色权限"
 
 /implement --parallel project-management
 # 后端：API 端点、Prisma 模型、认证中间件
@@ -299,7 +287,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 # 运维：Dockerfile、GitHub Actions CI/CD
 
 /auto-commit
-# 3 审查者 → 87/100 → 自动提交
+# findings 汇总 PASS + 客观检查通过 → 自动提交
 ```
 
 </details>
