@@ -1,0 +1,7 @@
+model=claude-opus-4-8
+arm=A0
+fixture=3
+rep=2
+status=0
+verdict=ok
+seconds=92

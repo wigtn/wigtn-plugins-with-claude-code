@@ -214,6 +214,89 @@ def check_readme_agents() -> None:
                 )
 
 
+# ── 7. 에이전트 개수 표기 (과거 3회 어긋난 적 있음) ─────────────────────
+# README 14 / CLAUDE.md 13 / 실제 12 였던 적이 있다. 사람이 세는 한 또 어긋난다.
+def check_agent_count() -> None:
+    global checked
+    actual = len(list((PLUGIN / "agents").glob("*.md")))
+    pat = re.compile(r"\b(\d{1,2})\s*(?:agents|개 에이전트|agent definitions)")
+    targets = [
+        ROOT / "README.md", ROOT / "README.ko.md", ROOT / "README.cn.md",
+        ROOT / "CLAUDE.md",
+        PLUGIN / ".claude-plugin" / "plugin.json",
+        ROOT / ".claude-plugin" / "plugin.json",
+        ROOT / ".claude-plugin" / "marketplace.json",
+    ]
+    # 인벤토리 주장만 검사한다. 다이어그램의 "3개 에이전트 병렬 실행"은
+    # 그 Phase의 팬아웃 폭이지 플러그인 총량이 아니다.
+    skip = re.compile(r"[│┃═─┌└├]|병렬|parallel|Phase", re.I)
+    for f in targets:
+        if not f.exists():
+            continue
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if skip.search(line):
+                continue
+            for m in pat.finditer(line):
+                checked += 1
+                if int(m.group(1)) != actual:
+                    errors.append(
+                        f"{rel(f)}: 에이전트 개수 {m.group(1)} 로 적혀 있으나 실제는 {actual}"
+                    )
+
+
+# ── 6. PRD 계약 단일 정본 (드리프트 방지) ───────────────────────────────
+# 측정 결과 값을 하는 유일한 층이 "우리가 정한 관습"이었다. 그 층이 13개 파일에
+# 재진술되면 서로 어긋나고, 어긋난 순간 게이트가 무엇을 강제하는지 아무도 모른다.
+# 그래서 정본을 하나 두고, ① 정본이 실재하는지 ② 채점기와 항목이 일치하는지
+# ③ 다른 파일이 골격을 재진술하지 않는지를 CI에서 검사한다.
+def check_prd_contract() -> None:
+    global checked
+    contract = PLUGIN / "contracts" / "PRD-CONTRACT.md"
+    checked += 1
+    if not contract.exists():
+        errors.append("contracts/PRD-CONTRACT.md 가 없음 — PRD 계약 정본이 사라졌다")
+        return
+    text = contract.read_text(encoding="utf-8")
+
+    # ② 정본의 Critical 항목 수 == score_prd.py 의 채점 항목 수
+    scorer = ROOT / ".github" / "evals" / "score_prd.py"
+    checked += 1
+    n_contract = len(re.findall(r"^\|\s*C-\d+\s*\|", text, re.M))
+    if scorer.exists():
+        n_scorer = len(re.findall(r'^\s{4}\("', scorer.read_text(encoding="utf-8"), re.M))
+        if n_contract != n_scorer:
+            errors.append(
+                f"PRD 계약의 Critical 항목 {n_contract}개 != score_prd.py 채점 항목 "
+                f"{n_scorer}개 — 계약을 고쳤으면 채점기도 고쳐야 한다"
+            )
+
+    # ②b 계약을 실제로 읽는 소비자가 있는가 (정본이 고아가 되지 않도록)
+    for consumer in ("commands/prd.md", "agents/prd-reviewer.md"):
+        checked += 1
+        body = (PLUGIN / consumer).read_text(encoding="utf-8")
+        if "contracts/PRD-CONTRACT.md" not in body:
+            errors.append(
+                f"{consumer}: PRD 계약 정본을 참조하지 않음 — "
+                f"참조가 없으면 정본이 아니라 고아 파일이다"
+            )
+
+    # ③ 골격 재진술 금지: 정본 외의 파일이 조건부 섹션을 자기 표로 다시 정의하는가
+    marker = "Has FE Components"
+    allowed = {"contracts/PRD-CONTRACT.md"}
+    for f in md_files():
+        r = rel(f).replace("plugins/wigtn-plugins/", "")
+        if r in allowed:
+            continue
+        body = f.read_text(encoding="utf-8")
+        checked += 1
+        # 표 헤더로 재정의하는 경우만 위반. 산문에서 규칙을 인용하는 것은 허용.
+        if re.search(r"^\|.*" + marker + r".*\|", body, re.M):
+            errors.append(
+                f"{rel(f)}: PRD 골격(§5.4 Pages 표)을 재진술함 — "
+                f"contracts/PRD-CONTRACT.md 를 참조만 한다"
+            )
+
+
 def main() -> int:
     for fn in (
         check_referenced_paths,
@@ -221,6 +304,8 @@ def main() -> int:
         check_flag_definitions,
         check_hooks_json,
         check_readme_agents,
+        check_prd_contract,
+        check_agent_count,
     ):
         fn()
 

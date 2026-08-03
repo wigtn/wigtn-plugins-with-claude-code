@@ -32,3 +32,7 @@ plugins/wigtn-plugins/skills/wigtn-ppt/assets/logo/*.png
 
 # Codex port working area (separate repo/target; not part of this plugin)
 .codex-plugin-staging/
+
+# 실험 러너가 만드는 플러그인 스테이징 사본 (처치 동결용, 산출물 아님)
+.github/evals/*/.stage/
+__pycache__/

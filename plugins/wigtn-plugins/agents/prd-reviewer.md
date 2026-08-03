@@ -25,18 +25,23 @@ Critical 이슈 0개 → ✅ PASS → /screen-spec(FE 있으면) 또는 /impleme
 Critical 이슈 1개+ → ❌ BLOCKED → 수정 필요
 ```
 
-**Critical 이슈 기준 (문서유형·존재 조건부):**
+**Critical 이슈 기준 — 계약 정본에서 읽는다:**
 
-> **판정 입력**: PRD 헤더 `> **Type**:` (product-feature | internal-backend | refactor). **Type이 없거나 모호하면 strict = `product-feature`로 처리한다** — 오탐 수정이 보안 미탐을 만들지 않도록.
+**`${CLAUDE_PLUGIN_ROOT}/contracts/PRD-CONTRACT.md`를 Read한다.** 그 파일의
+「검증 계약」 표(C-1~C-10)가 누락 시 Critical인 항목의 **유일한 정본**이다.
+여기서 그 목록을 재진술하지 않는다 — 재진술하면 둘이 어긋나고, 어긋나는 순간
+게이트가 무엇을 강제하는지 아무도 모르게 된다. (CI가 재진술을 검사한다)
 
-- 핵심 기능 누락(필수 요구사항 미정의) — 유형 무관 항상 적용
-- 구현 불가능한 요구사항 / 데이터 무결성 위험 — 유형 무관 항상 적용
-- 보안 취약점(Rate Limiting 미정의, 인증 정책 누락, GDPR/개인정보 미고려 등) — **런타임/외부 노출 API 또는 인증·개인정보 처리가 존재할 때만** Critical. 공격 표면이 없는 순수 리팩터·오프라인 배치면 Major 이하로 강등.
-- Scale Grade ↔ 기술 스택 2단계 이상 Over/Under-Spec 괴리 — `product-feature`·`internal-backend`에서만 적용 (`refactor`는 §4.0 N/A라 미적용)
-- **§5.4에 FE 페이지가 있는데 §5.4.1 Page State Matrix 누락** — FE 페이지가 존재할 때만
-- **§5.4에 FE 페이지가 있는데 §5.5 User Flow Mermaid 누락** — FE 페이지가 존재할 때만
+계약에 없고 **이 리뷰어만 판단하는 것**은 아래 셋이다:
 
-> **이유**: §5.4.1·§5.5는 `/screen-spec`의 필수 입력. FE가 있는데 누락되면 막힌다. FE가 없는 백엔드/리팩터 PRD엔 부당 Critical을 만들지 않는다.
+- 핵심 기능 누락 / 구현 불가능한 요구사항 / 데이터 무결성 위험 — 유형 무관 항상 Critical
+- 보안 취약점(Rate Limiting 미정의, 인증 정책 누락, GDPR/개인정보 미고려 등) —
+  **런타임/외부 노출 API 또는 인증·개인정보 처리가 존재할 때만** Critical.
+  공격 표면이 없는 순수 리팩터·오프라인 배치면 Major 이하로 강등.
+- Scale Grade ↔ 기술 스택 2단계 이상 Over/Under-Spec 괴리 —
+  `product-feature`·`internal-backend`에서만 적용
+
+> **판정 입력**: PRD 헤더 `> **Type**:`. **Type이 없거나 모호하면 strict = `product-feature`로 처리한다** — 오탐 수정이 보안 미탐을 만들지 않도록.
 > **Fail-safe**: 유형 판정이 모호하면 strict(제품) 모드로 auth·rate-limiting·GDPR Critical을 정상 발화시킨다.
 
 ## Analysis Categories — 다양성 계약 (Diversity Contract)

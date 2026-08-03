@@ -54,9 +54,9 @@ Glob: "**/tests/**/*<filename>*"
 Read: .eslintrc* | tsconfig.json | pyproject.toml
 ```
 
-### Phase 3: 5-Category 평가
+### Phase 3: 평가
 
-`code-reviewer.md`의 5축 100점 평가 체계(Readability / Maintainability / Performance / Testability / Best Practices, 각 20점)를 동일하게 사용한다 — 그 정의를 따른다.
+`code-reviewer` 에이전트의 severity 기준과 findings 롤업(FAIL/WARN/PASS)을 동일하게 사용한다 — 그 정의를 따른다. 합산 점수는 쓰지 않는다.
 
 **PR 리뷰 특화 추가 체크:**
 - PR 설명과 실제 변경의 일치 여부
@@ -86,7 +86,7 @@ issue:
 
 ### Phase 5: 리뷰 판단 (findings 롤업 — 결정론적)
 
-> 판단은 findings 롤업으로 정한다(점수 아님). 점수(NN/100)는 코멘트 참고값.
+> 판단은 findings 롤업으로 정한다. 합산 점수는 쓰지 않는다.
 
 | 롤업 조건 | 추천 판단 | GitHub Action |
 |----------|----------|--------------|
@@ -97,13 +97,8 @@ issue:
 
 ## Parallel Review Mode
 
-변경 범위가 넓어 카테고리를 독립적으로 나눠 처리할 이득이 크면 카테고리별 병렬 리뷰를 지원합니다:
-
-```
-Agent A: Readability(20) + Maintainability(20) = /40
-Agent B: Performance(20) + Testability(20) = /40
-Agent C: Best Practices(20) + Security Flag = /20 + 🔒
-```
+변경 범위가 넓으면 **변경 영역(모듈/디렉토리) 단위로** 나눠 병렬 리뷰한다.
+렌즈를 쪼개지 않는다 — 렌즈 분할의 검출 이득은 확인되지 않았다.
 
 ## Output Format
 

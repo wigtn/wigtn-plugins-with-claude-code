@@ -39,9 +39,29 @@
 | `Read` / `Write` / `Edit` / `Bash` / `Agent` / `Skill` / `ToolSearch` / `Artifact` | **있음** | 스키마 즉시 로드됨 |
 | `WebFetch` / `WebSearch` / `SendMessage` / `Monitor` / `NotebookEdit` / `EnterWorktree` / `ExitWorktree` | **있음** (deferred) | deferred 목록 |
 
+#### P-1b · 재프로브 (2026-08-03)
+
+- **왜 다시 쟀나**: v0.1.15 리팩터가 `TaskCreate`/`TaskUpdate` 27곳을 **`TodoWrite`로 치환**했다.
+  P-1은 `TodoWrite`도 없다고 이미 기록해 두었는데, 그 기록을 무시하고 없는 도구를
+  없는 도구로 바꾼 것이다. 되돌리기 전에 확정이 필요했다.
+- **방법**: 새 `general-purpose` 서브에이전트가 `TodoWrite` / `TaskCreate` / `TaskUpdate` /
+  `TaskList` / `Grep` / `Glob` 을 **실제 호출**. 기준선으로 `Read` 도 호출.
+- **결과**: P-1 그대로 재현.
+
+| 도구 | 결과 | verbatim |
+|---|---|---|
+| `TodoWrite` | **없음** | `TodoWrite exists but is not enabled in this context` |
+| `TaskCreate` / `TaskUpdate` / `TaskList` | **없음** | 동일 에러 |
+| `Grep` / `Glob` | **없음** | `not available in this session — use Bash` |
+| `Read` (기준선) | 있음 | 정상 반환 |
+| `ToolSearch select:TodoWrite,TaskCreate,TaskList` | — | `No matching deferred tools found` |
+
+- **조치**: 플러그인의 `TodoWrite` 참조 12곳을 **파일 원장**(`docs/todo_plan/PLAN_{feature}.md`
+  체크박스)으로 되돌렸다. 진행 추적의 정본은 도구가 아니라 파일이다.
+
 **함의**
 - 크로스 에이전트 상태 공유의 실행 가능한 수단은 **파일 기반 PLAN 원장 + `SHARED_CONTEXT` 뿐**이다.
-- `TodoWrite` 대체안도 성립하지 않는다.
+- `TodoWrite` 대체안도 성립하지 않는다. (두 번 확인)
 - README가 광고하던 "Layer 3 — TaskCreate/Update"는 **실행되지 않는 계층**이었다 → 제거됨.
 - 에러 문구가 *"exists but is **not enabled in this context**"* 이므로, 원인은 "구현 없음"이 아니라 **서브에이전트 도구 세트에서 제외**다. 버전에 따라 바뀔 수 있다 → 재확인 대상.
 
@@ -92,6 +112,36 @@
 - **내용**: `.claude/settings.json`(또는 gitignore되는 `settings.local.json`)의 `disableAllHooks: true` 한 줄로 모든 hook 비활성화. managed settings 계층만 override 불가.
 - **함의 (사실이라면)**: 플러그인은 자기가 꺼진 것을 감지할 수 없다(SessionStart도 안 돌므로). → 광고를 낮추고(E-7), 하드닝 레시피를 제공한다(E-6).
 - **확정 필요**: 실제로 설정해보고 hook이 안 도는지 확인. **확정 전까지 이 항목에 기능을 걸지 않는다.**
+
+---
+
+### P-6 · `--settings` 의 `enabledPlugins` 는 병합인가 교체인가 (대조군 격리의 전제)
+
+- **날짜**: 2026-08-03
+- **왜 중요한가**: "플러그인 없음" 대조군 전체가 이 한 가지 동작에 걸려 있다.
+  교체라면 `{"enabledPlugins":{}}` 만으로 전부 꺼지고, 병합이라면 **아무것도 안 꺼진다.**
+- **방법**: 저장소 밖 임시 디렉터리에서 세 가지 설정으로 각각
+  `claude -p "Answer YES or NO: is a skill or command named 'prd' available to you right now?"` 실행.
+
+| 격리 방법 | 답 | 판정 |
+|---|---|---|
+| `--settings '{"enabledPlugins":{}}'` | **YES** | ❌ 안 꺼진다 — **병합이다** |
+| `--settings` 에 `<plugin>@<marketplace>` 키를 **하나하나 false** | **NO** | ✅ 꺼진다 |
+| `HOME=$(mktemp -d)` | (실행 불가) | 로그인 정보까지 사라져 `Please run /login` |
+
+- **확정**: `enabledPlugins` 는 **기존 설정에 병합**된다. 키는 `wigtn-plugins@wigtn-plugins`
+  처럼 **마켓플레이스 접미사까지** 정확히 일치해야 한다. `"wigtn-plugins": false` 는
+  일치하는 키가 없으므로 **조용히 무시된다.**
+
+- **이 프로브가 뒤집은 것**: 2×2 실험의 A0(대조군) 3건이 이 방식으로 실행돼 있었고,
+  전부 오염돼 있었다 — 산출물에 `Scale Grade`·`Has FE Components`·`§5.4.1`·`Role Key`가
+  그대로 나왔다. 즉 "플러그인 없음" arm이 실은 **플러그인을 켠 채로** 돌고 있었다.
+  해당 실행은 `runs-discarded-contaminated-A0/` 로 격리했다.
+
+- **오염 경로 #4**: `EXPERIMENT.md §4.3` 이 기록한 세 경로(저장소 탐색 / `CLAUDE.md` 자동 주입 /
+  전역 플러그인 활성화)에 이어, **"끈다고 쓴 설정이 실제로는 안 꺼진 경우"** 가 네 번째다.
+  앞의 셋은 "격리를 안 했다"지만, 이건 **"격리를 했는데 안 됐다"** 라서 훨씬 안 보인다.
+  → **격리는 선언이 아니라 산출물로 검증한다.** 대조군은 매 실행 오염 마커를 grep 한다.
 
 ---
 

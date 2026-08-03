@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**하나의 플러그인. 12개 에이전트. 아이디어에서 프로덕션까지.**
+**하나의 플러그인. 11개 에이전트. 아이디어에서 프로덕션까지.**
 
 ![Version](https://img.shields.io/badge/v0.1.15-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,7 +27,7 @@
 Claude Code 열기 → 두루뭉술한 프롬프트 작성 → 범용적인 코드 생성 → 30분 동안 수정 → 반복.
 
 **WIGTN-Coding과 함께:**
-`/prd` 실행 → 구조화된 스펙 생성 → 12개 에이전트가 병렬로 빌드 → 첫 시도에 프로덕션 수준 코드 완성.
+`/prd` 실행 → 구조화된 스펙 생성 → 11개 에이전트가 병렬로 빌드 → 첫 시도에 프로덕션 수준 코드 완성.
 
 ---
 

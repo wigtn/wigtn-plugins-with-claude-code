@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**一个插件。12 个智能体。从创意到生产。**
+**一个插件。11 个智能体。从创意到生产。**
 
 ![Version](https://img.shields.io/badge/v0.1.15-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,7 +27,7 @@
 打开 Claude Code → 写一个模糊的提示 → 得到通用代码 → 花 30 分钟修复 → 重复。
 
 **使用 WIGTN-Coding：**
-运行 `/prd` → 获得结构化规格 → 12 个智能体并行构建 → 一次就产出生产级代码。
+运行 `/prd` → 获得结构化规格 → 11 个智能体并行构建 → 一次就产出生产级代码。
 
 ---
 
@@ -194,7 +194,7 @@ WIGTN Plugins 是一个 Claude Code 插件。你描述想要构建的东西，14
 ---
 
 <details>
-<summary><b>智能体（12 个）</b> — 点击展开</summary>
+<summary><b>智能体（11 个）</b> — 点击展开</summary>
 
 ### 协调器
 

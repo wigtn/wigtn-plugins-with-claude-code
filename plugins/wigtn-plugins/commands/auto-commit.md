@@ -190,15 +190,15 @@ ls "$ROOT"/docs/todo_plan/PLAN_*.md "$ROOT"/PLAN_*.md "$ROOT"/PRD.md 2>/dev/null
 
 > **연동**: `code-reviewer` 에이전트로 변경된 코드를 평가합니다.
 > **fan-out은 변경 규모에 비례한다.** 3줄 diff에 다중 리뷰어는 순수 낭비다. 기본은 `code-reviewer` **1개**로 처리한다.
-> - 변경이 클 때만(파일 6개+ **또는** blast radius MEDIUM/HIGH — 공개 API·시그니처 변경, caller 다수, 다중 모듈) 리뷰를 **카테고리별로 나눠 병렬 실행**한다: A(Readability+Maintainability) / B(Performance+Testability) / C(Best Practices+Security).
+> - 변경이 클 때만(파일 6개+ **또는** blast radius MEDIUM/HIGH — 공개 API·시그니처 변경, caller 다수, 다중 모듈) 리뷰를 **변경 영역별로 나눠 병렬 실행**한다(모듈/디렉토리 단위 분할). 렌즈를 쪼개는 게 아니라 **일감을 쪼갠다** — 렌즈 분할은 검출 이득이 확인되지 않았다.
 > - 각 리뷰어는 findings를 `severity`+`confidence`로 보고하고, 병합 후 **findings 롤업**으로 판정한다(점수 합산이 아니다).
 > - `--no-parallel-review`로 순차 강제, `--parallel-review`로 강제 활성.
 
-**평가 항목**: Readability, Maintainability, Performance, Testability, Best Practices (5축 findings 수집)
+**평가 항목**: `code-reviewer` 에이전트의 severity 정의를 따른다 — 별도 축을 여기서 재정의하지 않는다.
 
 #### 품질 기준 (병렬/순차 공통) — findings 롤업으로 결정
 
-> 게이트는 **findings 롤업(결정론적)**으로 정한다. 합산 100점은 참고 표시값이며 커밋 여부를 좌우하지 않는다 (같은 코드가 78/85로 튀어 통과/차단이 갈리는 노이즈 제거).
+> 게이트는 **findings 롤업(결정론적)**으로만 정한다. 합산 점수는 폐기했다 — 같은 코드가 78/85로 튀어 통과/차단이 갈리는 노이즈였고, 게이트가 쓰지도 않았다.
 
 | 롤업 조건 | 상태 | 액션 |
 |----------|------|------|
@@ -206,15 +206,15 @@ ls "$ROOT"/docs/todo_plan/PLAN_*.md "$ROOT"/PLAN_*.md "$ROOT"/PRD.md 2>/dev/null
 | critical 0 AND (major ≥1 OR minor ≥5) | **WARN** | ⚠️ Step 3 (code-formatter 개선 후 재평가) |
 | critical 0 AND major 0 AND minor <5 | **PASS** | ✅ Step 4로 진행 (바로 커밋) |
 
-- **Security 차단 규칙**: Security Critical은 critical의 부분집합 → 항상 FAIL(점수 무관 차단). zero-tolerance 유지.
+- **Security 차단 규칙**: Security Critical은 critical의 부분집합 → 항상 FAIL. zero-tolerance 유지.
 - **confidence 반영**: confidence low인 critical은 major로 강등하되 "사람 확인 필요" 플래그를 붙인다(오탐이 무조건 차단으로 이어지지 않도록).
 - **findings 보고 규칙**: 모든 finding에 파일·라인·이유·severity·confidence를 함께 제시한다. 근거 없는 감점·차단 금지.
 
-결과는 **findings 롤업(critical/major/minor 건수 + 판정)**을 먼저 보고하고, 5축 참고 점수를 뒤에 표로 덧붙인다.
+결과는 **findings 롤업(critical/major/minor 건수 + 판정)**으로 보고한다. 합산 점수는 쓰지 않는다.
 
 ### Step 3: 자동 개선 (조건부)
 
-> **연동**: 롤업이 **WARN**(critical 0 AND (major ≥1 OR minor ≥5))일 때 `code-formatter` 에이전트를 호출합니다. 점수는 게이트 판정에 쓰이지 않는 참고값입니다.
+> **연동**: 롤업이 **WARN**(critical 0 AND (major ≥1 OR minor ≥5))일 때 `code-formatter` 에이전트를 호출합니다.
 
 - ESLint/Prettier 자동 수정, import 정리, 포맷팅 통일 후 롤업 재계산.
 - 재계산이 PASS(critical 0, major 0, minor <5)면 커밋 진행.
@@ -272,14 +272,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/hooks/scaffold-checks.sh"
 
 <body>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 - **Subject**: 50자 이내, 동사 원형으로 시작(Add/Update/Fix/Remove), 마침표 없음
 - **Body**: 변경된 주요 파일/기능 나열, 72자 줄바꿈
-- **`Quality Score:` 줄은 게이트가 실제로 실행됐을 때만 넣는다.** 하드 게이트 hook은 이 줄을 "게이트를 거친 파이프라인 커밋" 신호로 본다 → `.wigtn/gate-pass` 아티팩트가 없으면 차단한다.
-  - **`--no-review`(리뷰 스킵)**: `Quality Score:` 줄을 **넣지 않고** 대신 `Quality Gate: SKIPPED (--no-review)`로 표기한다. 신호가 없으므로 리뷰 PASS 게이트(게이트 2)를 우회한다(긴급 핫픽스 경로 보존). **단 객관 체크(게이트 1)는 그대로 실행된다** — `.wigtn/checks.sh`는 커밋 메시지와 무관하다.
+- **`Quality Gate: PASS` 줄은 롤업이 실제로 PASS했을 때만 넣는다.** 하드 게이트 hook은 이 줄을 "게이트를 거친 파이프라인 커밋" 신호로 본다 → `.wigtn/gate-pass` 아티팩트가 없으면 차단한다.
+  - **`--no-review`(리뷰 스킵)**: `Quality Gate: PASS` 줄을 **넣지 않고** 대신 `Quality Gate: SKIPPED (--no-review)`로 표기한다. 신호가 없으므로 리뷰 PASS 게이트(게이트 2)를 우회한다(긴급 핫픽스 경로 보존). **단 객관 체크(게이트 1)는 그대로 실행된다** — `.wigtn/checks.sh`는 커밋 메시지와 무관하다.
 
 ### Step 5.5: Safety Guard (최종 확인)
 
@@ -339,7 +339,7 @@ git add -A
 git commit -m "$(cat <<'EOF'
 <generated message>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
@@ -352,7 +352,7 @@ git add -A
 git commit -m "$(cat <<'EOF'
 <generated message>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
@@ -417,7 +417,7 @@ EOF
    - **FAIL** (critical ≥1) → STOP (수동 수정) — 아티팩트 미기록 → 커밋 hook 차단
    - **Security Critical** → critical의 부분집합 → FAIL → STOP
 
-> **하드 게이트 (hook 강제)**: `hooks.json`의 PreToolUse가 `git commit`을 가로채 번들 스크립트 `hooks/gate.sh`를 실행한다. **두 게이트는 독립이다** — ① `.wigtn/checks.sh` 객관 체크는 **모든 커밋에** 실행되고 커밋 메시지를 보지 않는다, ② `.wigtn/gate-pass` 신선도(30분)는 메시지에 `Quality Score:`가 있는 커밋에만 적용된다. 게이트가 프롬프트라 스킵돼도 하네스가 커밋을 막는다. `--no-review`는 ②만 우회하며 ①은 우회하지 못한다. 머지·리베이스·체리픽·리버트 중에는 ①이 면제된다.
+> **하드 게이트 (hook 강제)**: `hooks.json`의 PreToolUse가 `git commit`을 가로채 번들 스크립트 `hooks/gate.sh`를 실행한다. **두 게이트는 독립이다** — ① `.wigtn/checks.sh` 객관 체크는 **모든 커밋에** 실행되고 커밋 메시지를 보지 않는다, ② `.wigtn/gate-pass` 신선도(30분)는 메시지에 `Quality Gate: PASS`(또는 레거시 `Quality Score:`)가 있는 커밋에만 적용된다. 게이트가 프롬프트라 스킵돼도 하네스가 커밋을 막는다. `--no-review`는 ②만 우회하며 ①은 우회하지 못한다. 머지·리베이스·체리픽·리버트 중에는 ①이 면제된다.
 4. Safety Guard에서 AskUserQuestion("PR 생성?") → 선택에 따라:
    - PR 생성 → BRANCH + COMMIT + PUSH + PR
    - Draft PR → BRANCH + COMMIT + PUSH + Draft PR
@@ -462,7 +462,7 @@ EOF
 9. **Stale Branch 차단** ⚠️: 현재 피처 브랜치의 PR이 **MERGED 또는 CLOSED**면 stale. 재사용 금지 — origin/main에서 새 브랜치 분기 후 carry-over (Stale Branch Handling 참조)
 10. **기존 PR 확인**: 같은 브랜치에 open PR이 이미 있으면 새 PR 생성하지 않고 커밋만 추가
 11. **Multiple Remote 처리** (Direct 모드): remote가 2개 이상이면 push 전 반드시 사용자 확인, tracking branch가 설정된 remote를 기본값으로 제안
-12. **점수 근거 동반**: 보고하는 모든 Quality Score에는 구체적 findings를 함께 제시한다 (근거 없는 숫자 금지)
+12. **판정 근거 동반**: 롤업 판정에는 그것을 만든 findings(파일·라인·사유)를 함께 제시한다. 근거 없는 판정 금지.
 13. **하드 게이트 아티팩트**: 롤업 PASS 시에만 Step 3.5에서 `.wigtn/gate-pass`를 기록한다. 커밋 hook이 이 아티팩트로 게이트 실행을 강제하므로, 게이트를 우회하려 파일을 미리 만들거나 `touch`하지 않는다.
 
 ## Skip Quality Gate
@@ -473,6 +473,6 @@ EOF
 /auto-commit --no-review --direct --message "hotfix: 긴급 버그 수정"
 ```
 
-- `--no-review`는 리뷰를 실행하지 않으므로 커밋 메시지에 `Quality Score:` 줄을 넣지 않는다(대신 `Quality Gate: SKIPPED (--no-review)`). hook의 리뷰 PASS 게이트는 신호가 없는 커밋을 통과시키므로 이 경로가 정상 동작한다. **객관 체크는 이 경로에서도 실행된다** — 긴급 핫픽스도 타입체크는 통과해야 한다.
+- `--no-review`는 리뷰를 실행하지 않으므로 커밋 메시지에 `Quality Gate: PASS` 줄을 넣지 않는다(대신 `Quality Gate: SKIPPED (--no-review)`). hook의 리뷰 PASS 게이트는 신호가 없는 커밋을 통과시키므로 이 경로가 정상 동작한다. **객관 체크는 이 경로에서도 실행된다** — 긴급 핫픽스도 타입체크는 통과해야 한다.
 
 ⚠️ **경고**: 품질 검사 스킵은 권장하지 않습니다. 가능하면 `/review-pr`로 리뷰를 받으세요.

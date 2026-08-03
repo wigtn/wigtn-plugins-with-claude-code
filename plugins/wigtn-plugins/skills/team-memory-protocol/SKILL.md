@@ -1,6 +1,6 @@
 ---
 name: team-memory-protocol
-description: 팀 빌드 간 공유 컨텍스트 관리 프로토콜. SHARED_CONTEXT 파일 생성/관리, TodoWrite 연동, Auto Memory 업데이트 규칙을 정의합니다.
+description: 팀 빌드 간 공유 컨텍스트 관리 프로토콜. SHARED_CONTEXT 파일 생성/관리, PLAN 원장 연동, Auto Memory 업데이트 규칙을 정의합니다.
 allowed-tools: Read, Write, Edit, Glob
 ---
 
@@ -27,11 +27,11 @@ allowed-tools: Read, Write, Edit, Glob
 │  ├── 읽기: 빌드 중 (모든 팀)                                 │
 │  └── 쓰기: Coordinator + Backend 팀만                        │
 │                                                             │
-│  Layer 3: TodoWrite (대화 내 추적)                           │
-│  ├── 지속성: 대화 세션 동안                                  │
+│  Layer 3: PLAN 원장 (docs/todo_plan/PLAN_{feature}.md)       │
+│  ├── 지속성: 파일 — 세션이 끝나도 남는다                     │
 │  ├── 용도: 팀별 진행 추적, 의존성 관리                       │
-│  ├── 읽기/쓰기: Coordinator                                  │
-│  └── metadata: team, files, phase                           │
+│  ├── 읽기: 모든 팀 / 쓰기: Coordinator                       │
+│  └── 형식: `- [ ]` 체크박스 + blocked-by 주석                │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -114,7 +114,11 @@ conflict_prevention:
     - "Backend 팀의 API 정의가 우선"
 ```
 
-## TodoWrite 연동 프로토콜
+## PLAN 원장 연동 프로토콜
+
+> **왜 도구가 아니라 파일인가**: 서브에이전트 컨텍스트에는 `TodoWrite`도 `Task*`도 없다
+> (프로브 확정 — `.github/probes/HARNESS_FACTS.md` P-1). 없는 도구에 진행 추적을 걸면
+> 조용히 아무것도 기록되지 않는다. 원장은 파일이므로 어느 컨텍스트에서도 동작한다.
 
 ### 팀별 Task 등록
 

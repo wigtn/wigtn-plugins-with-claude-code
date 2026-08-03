@@ -4,7 +4,7 @@
 
 # WIGTN Plugins
 
-**One plugin. 12 agents. From idea to production.**
+**One plugin. 11 agents. From idea to production.**
 
 ![Version](https://img.shields.io/badge/v0.1.15-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/13-Agents-5A67D8?style=for-the-badge)
@@ -27,7 +27,7 @@
 You open Claude Code → write a vague prompt → get generic code → spend 30 min fixing → repeat.
 
 **With WIGTN-Coding:**
-You run `/prd` → get a structured spec → 12 agents build it in parallel → ship production-ready code on the first try.
+You run `/prd` → get a structured spec → 11 agents build it in parallel → ship production-ready code on the first try.
 
 ---
 

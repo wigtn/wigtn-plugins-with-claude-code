@@ -53,16 +53,25 @@ check "git commit --amend --no-edit" 2 "$(run 'git commit --amend --no-edit')"
 check "git -C . commit"              2 "$(run 'git -C . commit -m x')"
 check "cd sub && git commit"         2 "$(run 'cd /tmp && git commit -m x')"
 
-echo "== 게이트 2: gate-pass는 Quality Score 커밋만 =="
+echo "== 게이트 2: gate-pass는 게이트 통과를 주장한 커밋만 =="
 setup_repo; mk_checks 0
-check "Quality Score 있음 + gate-pass 없음 -> 차단" 2 "$(run 'git commit -m "x
+check "Quality Score(레거시) 있음 + gate-pass 없음 -> 차단" 2 "$(run 'git commit -m "x
 
 Quality Score: 85"')"
-check "Quality Score 없음 + gate-pass 없음 -> 허용" 0 "$(run 'git commit -m "x"')"
+check "Quality Gate: PASS 있음 + gate-pass 없음 -> 차단" 2 "$(run 'git commit -m "x
+
+Quality Gate: PASS (critical 0, major 0, minor 1)"')"
+check "신호 없음 + gate-pass 없음 -> 허용" 0 "$(run 'git commit -m "x"')"
+check "Quality Gate: SKIPPED(--no-review) -> 게이트2 미적용" 0 "$(run 'git commit -m "x
+
+Quality Gate: SKIPPED (--no-review)"')"
 touch .wigtn/gate-pass
-check "Quality Score 있음 + 신선한 gate-pass -> 허용" 0 "$(run 'git commit -m "x
+check "Quality Score(레거시) + 신선한 gate-pass -> 허용" 0 "$(run 'git commit -m "x
 
 Quality Score: 85"')"
+check "Quality Gate: PASS + 신선한 gate-pass -> 허용" 0 "$(run 'git commit -m "x
+
+Quality Gate: PASS (critical 0, major 0, minor 0)"')"
 
 echo "== G-02 면제: 정상 워크플로가 막히지 않는가 =="
 setup_repo; mk_checks 1; touch .git/MERGE_HEAD
