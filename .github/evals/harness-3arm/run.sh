@@ -55,9 +55,11 @@ fixture_text() {
 stage_arms() {
   rm -rf "$STAGE"; mkdir -p "$STAGE"
   # A1 = main (구 하네스). worktree 로 뽑아 작업 트리를 건드리지 않는다.
+  # rm -rf 로 디렉터리만 지우면 git 에는 등록이 남아 다음 add 가 실패한다.
   local wt="$STAGE/wt-A1"
-  git -C "$REPO" worktree add --detach "$wt" main >/dev/null 2>&1 \
-    || die "main worktree 생성 실패"
+  git -C "$REPO" worktree prune >/dev/null 2>&1
+  git -C "$REPO" worktree add --detach "$wt" main 2>&1 | tail -3 >&2
+  [ -d "$wt/plugins/wigtn-plugins" ] || die "main worktree 생성 실패: $wt"
   cp -R "$wt/plugins/wigtn-plugins" "$STAGE/A1"
   # A2 = HEAD (PR본)
   cp -R "$REPO/plugins/wigtn-plugins" "$STAGE/A2"
@@ -81,11 +83,18 @@ PY
   done
 }
 
-arm_args() {  # $1=arm -> stdout: 추가 인자
+# 격리(실측 확정): user 스코프 settings.json 이 wigtn-plugins 를 전역 활성화한다.
+# --setting-sources 에서 user 를 제외하면 설치본이 적재되지 않는다. cwd 에 의존하지
+# 않는 문서화된 메커니즘이다(ERRATA E-08).
+ISO=(--setting-sources project)
+
+# bash 3.2 에는 mapfile 이 없다(macOS 기본). 배열을 직접 채운다.
+set_arm_args() {  # $1=arm -> 전역 배열 EXTRA
+  EXTRA=("${ISO[@]}")
   case "$1" in
     A0) : ;;
-    A1) printf '%s\n%s' "--plugin-dir" "$STAGE/A1" ;;
-    A2) printf '%s\n%s' "--plugin-dir" "$STAGE/A2" ;;
+    A1) EXTRA+=(--plugin-dir "$STAGE/A1") ;;
+    A2) EXTRA+=(--plugin-dir "$STAGE/A2") ;;
   esac
 }
 
@@ -93,9 +102,9 @@ arm_args() {  # $1=arm -> stdout: 추가 인자
 verify_arm() {
   local arm="$1" wd out n_wigtn n_par
   wd="$(mktemp -d)"
-  mapfile -t extra < <(arm_args "$arm")
+  set_arm_args "$arm"
   out="$( cd "$wd" && claude -p "$PROBE" --model "$MODEL" \
-            ${extra[@]+"${extra[@]}"} --allowedTools Read </dev/null 2>&1 )"
+            "${EXTRA[@]}" --allowedTools Read </dev/null 2>&1 )"
   rm -rf "$wd"
   n_wigtn=$(printf '%s' "$out" | grep -c 'wigtn-plugins:')
   n_par=$(printf '%s' "$out" | grep -c 'parallel-.*-coordinator')
@@ -120,7 +129,7 @@ one_call() {
 
   mkdir -p "$cell/logs"
   local wd; wd="$(mktemp -d)"
-  mapfile -t extra < <(arm_args "$arm")
+  set_arm_args "$arm"
 
   python3 "$RUNCALL" \
     --meta "$cell/logs/${key}.meta" \
@@ -130,7 +139,7 @@ one_call() {
     --kv "model=$MODEL" --kv "arm=$arm" --kv "fixture=$f" --kv "rep=$r" \
     --kv "parallel=$PAR" \
     -- claude -p "$(fixture_text "$f")" --model "$MODEL" \
-       ${extra[@]+"${extra[@]}"} \
+       "${EXTRA[@]}" \
        --allowedTools "Read Write Edit Glob Grep" --output-format json
   local rc=$?
 
