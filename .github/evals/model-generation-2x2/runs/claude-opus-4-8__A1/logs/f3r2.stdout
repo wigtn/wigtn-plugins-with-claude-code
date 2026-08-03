@@ -1,0 +1,25 @@
+완료했습니다.
+
+## 결과 보고
+
+**PRD 작성 완료 및 품질 게이트 통과 ✅**
+
+| 항목 | 값 |
+|---|---|
+| PRD 경로 | `PRD.md` (루트, 요청대로) |
+| PLAN 경로 | `docs/todo_plan/PLAN_realtime-delivery-tracking.md` |
+| 문서 유형 | `product-feature` / Scale Grade: **Startup** |
+| 게이트 결과 | **✅ PASS** (Critical 0 / Major 5 / Minor 4) |
+| 감지된 FE 페이지 | **4개** (`/driver/delivery/{id}`, `/track/{token}`, `/dispatch`, `/dispatch/delivery/{id}`) |
+
+**작성 내용 요약** — 3개 역할(`driver`/`customer`/`dispatcher`, +`admin`) 기준으로:
+- 기사 앱: 백그라운드 5초 간격 위치 전송 + 네트워크 단절 버퍼링
+- 고객: 비로그인 서명 토큰(`/track`)으로 지도·ETA 실시간 열람
+- 관리자: 지연 감지(ETA 초과 15분/정지 10분) 대시보드
+- REST(위치 쓰기/조회) + WebSocket(실시간 스트리밍) API 명세, DB 스키마, Redis Pub/Sub 아키텍처, 정량 NFR(위치 전파 p95 < 5s 등)
+
+**리뷰어 지적 중 반영한 것**: 우선순위 역전(FR-010 ETA를 P0로 승격 — P0 지연감지의 선행 의존성), `/driver` 페이지 FR-003 매핑 누락 보완.
+
+**남은 Major(게이트 비차단, 구현 전 검토 권장)**: 추적 토큰이 URL/`wsUrl`에 평문 노출, `/track`·WS 핸드셰이크 rate limit 미정의, RN 백그라운드 위치의 OS 스로틀링 대응, `admin` 페이지/플로우 미정의. 이들은 `PRD.md`를 열어 반영 여부를 결정하시면 됩니다.
+
+**다음 단계**: FE 페이지가 4개이므로 `/screen-spec 실시간-배송-추적`으로 화면정의서를 만든 뒤 `/implement`로 진행하는 것을 권장합니다. 바로 구현하고 싶으시면 `/implement`로 넘어가셔도 됩니다.

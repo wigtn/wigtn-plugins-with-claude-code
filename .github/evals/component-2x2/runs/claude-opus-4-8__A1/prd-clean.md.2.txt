@@ -1,0 +1,78 @@
+`wigtn-local:prd-reviewer` 서브에이전트가 자체 리뷰 프로토콜(Contract Gate C-1~C-10 + 4개 카테고리)대로 리뷰를 수행했습니다. 결과를 그대로 전달합니다.
+
+---
+
+# PRD Analysis Report
+
+## 분석 대상
+- 문서: `/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.g87FboCuER/prd-clean.md`
+- 분석일: 2026-08-03
+- Type 판정: `feature` → 모호하므로 strict = `product-feature`로 처리
+
+## Contract Gate 결과 (C-1 ~ C-10)
+정본(`PRD-CONTRACT.md`) 검증 계약 항목은 **전부 실질 충족** → 계약 기반 Critical 0개.
+- C-1 §2.3 Roles(member/admin/guest) O · C-2 §2.2 Gherkin(실패·만료 포함) O · C-3 §3 FR + FR-003↔FR-007 무모순 O · C-4 §4.1 정량 NFR O · C-5 인가 규칙 명시 O(단 C-Sec-1 참조) · C-6 §5.4 Pages O · C-7 §5.4.1 State Matrix O · C-8 §5.5 Mermaid O · C-9 §1.3 Non-Goals O · C-10 §6 Phases O.
+
+아래 Critical 2건은 계약 항목 누락이 아니라 **리뷰어 전용 판단(데이터 노출/보안)**에서 발화한 것이다.
+
+## 요약
+
+| 카테고리 | 발견 | Critical | Major | Minor |
+|----------|------|----------|-------|-------|
+| 완전성 | 4 | 0 | 3 | 1 |
+| 실현가능성 | 1 | 0 | 1 | 0 |
+| 보안 | 5 | 2 | 1 | 2 |
+| 일관성 | 3 | 0 | 1 | 2 |
+| **총계** | **13** | **2** | **6** | **5** |
+
+---
+
+## 상세 분석
+
+### Critical (즉시 수정 필요)
+
+**C-Sec-1. GET 상세 조회에 객체 단위 소유권 인가 누락 (IDOR / 문서 유출)**
+- 위치: §5.2 API 표 line 103 (`GET /api/documents/{id}` 인가 `session | token`), FR-007 line 67
+- 문제: 목록(line 102)은 "본인 것 + admin 전체"로 스코핑되지만, 상세 조회의 session 경로에는 소유자/admin 검증이 명시돼 있지 않다. FR-007도 "세션 또는 서명 토큰 중 하나만 통과하면 허용"으로 정의한다. 로그인한 `member`가 타인 문서 ID를 대입해 상세 + presigned URL(§4.2, 5분)까지 획득 가능. 삭제(FR-004)는 소유자 검증이 있는데 읽기는 없어 비대칭.
+- 개선안: session 경로에 `owner OR admin OR (문서ID 바인딩된 유효 토큰)` 인가 명시, FR-007을 "인증 통과 + 리소스 접근 권한 통과"로 강화.
+
+**C-Sec-2. Rate Limiting 전 구간 미정의**
+- 위치: §4.2 Security 전체(line 79-85), §5.2 API 표 (§4.1 "50 req/s"는 용량 목표일 뿐 남용 방지 정책 아님)
+- 문제: 외부 노출 API(업로드 POST) 및 비인증 공개 엔드포인트 `/s/[token]`가 있으나 rate limiting 미정의 → 자원 고갈/토큰 열거 남용에 무방비.
+- 개선안: 인증/비인증/업로드별 rate limit과 429 응답을 §4.2에 정량 명시.
+
+> **Quality Gate: Critical 2건 → ❌ BLOCKED.** 두 항목 해소 후 재검토 필요.
+
+---
+
+### Major (구현 전 수정 권장)
+
+- **M-1 (Feasibility)** — FR-001 line 61 / §5.2 line 101 / §5.1 line 95: 50MB 업로드가 세션 API 라우트를 프록시 → Next.js/서버리스 본문 크기·시간 한계로 실패 위험. presigned 직업로드(direct-to-S3)로 전환 권장.
+- **M-2 (Completeness)** — §5.2→§5.4 점프: Architecture / Database Schema(문서·토큰·감사 로그 FR-005) 섹션 부재 → 구현 시 임의 결정·재작업.
+- **M-3 (Completeness)** — §4(4.1/4.2/4.3만): 가용성 SLO·복구(RTO/RPO)·데이터 보관/삭제/개인정보 정책 부재. 500GB/10만 건 규모·개인정보 포함 가능성 대비 공백.
+- **M-4 (Completeness)** — §1.2 line 16 vs FR-003 line 63 / §4.2 line 83: 공유 링크 수동 폐기(revocation) 수단 없음 → 7일 만료 전 유출 링크 무효화 불가, 유출 방지 목표와 모순.
+- **M-5 (Security/Integrity)** — FR-004 line 64 / FR-005 line 65 / §4.2 line 85: 삭제 시 S3 객체 실제 삭제 여부·관련 토큰 무효화 미정의 → 데이터 잔존·프라이버시·무결성 리스크.
+- **M-6 (Consistency)** — §5.4 Pages 표 line 109-113: Audience/Auth/Linked FRs 컬럼 결여로 §2.3 `guest`가 `/s/[token]`에 미매핑, 페이지-FR-권한 추적 단절.
+
+---
+
+### Minor (개선 제안)
+
+- **m-1** — FR-006 line 66 vs §5.2: 검색 파라미터/엔드포인트(`GET /api/documents?q=`) 미정의.
+- **m-2** — §2.2 line 36 vs FR-001 line 61: 수용 기준이 PDF만 검증, DOCX·비허용 확장자 거부 시나리오 누락.
+- **m-3** — §4.2/§5 섹션 번호 드리프트(Security를 4.5 아닌 4.2로, §5.3 누락).
+- **m-4** — `/s/[token]` line 113: 토큰 URL 경로 노출(Referer/히스토리/로그) 완화책(Referrer-Policy·로그 마스킹) 미기재.
+- **m-5** — §5.4.1 line 120: PDF/DOCX 미리보기 능동 콘텐츠(JS/외부 리소스) XSS/SSRF 표면에 대한 샌드박스/CSP 대책 미고려.
+
+---
+
+## 권장 조치
+- **즉시(Critical):** C-Sec-1 상세 조회 소유권 인가, C-Sec-2 rate limiting 정의 → 게이트 재통과.
+- **구현 전(Major):** M-1 업로드 아키텍처, M-2 DB/아키텍처, M-3 가용성·복구·데이터 정책, M-4 링크 폐기, M-5 삭제 후처리, M-6 §5.4 컬럼 보강.
+- **가능하면(Minor):** m-1~m-5.
+
+**게이트 상태: ❌ BLOCKED** (Critical 2건 해소 후 `/screen-spec` 진행 권장)
+
+```json
+{"findings":[{"severity":"critical","where":"§5.2 API line 103 (GET /api/documents/{id}) + FR-007 line 67","what":"상세 조회 session 경로에 소유자/admin 스코핑이 없어 로그인 member가 타인 문서 상세+presigned URL을 열람하는 IDOR(수평권한상승). '외부 유출 방지' 목표와 충돌."},{"severity":"critical","where":"§4.2 Security line 79-85 및 §5.2 전체 (특히 공개 엔드포인트 /s/[token] line 113, 업로드 POST line 101)","what":"런타임 외부 노출 API/비인증 공개 엔드포인트가 있으나 rate limiting이 전 구간 미정의 — 남용/DoS/토큰 열거에 무방비."},{"severity":"major","where":"FR-001 line 61 + §5.2 line 101 + §5.1 line 95","what":"최대 50MB 업로드가 세션 API 라우트를 프록시하는 구조라 Next.js/서버리스 본문 크기·시간 한계로 실패 위험. presigned 직업로드 필요."},{"severity":"major","where":"§5 구조(§5.2→§5.4로 §5.3 건너뜀)","what":"Architecture 및 Database Schema(문서/토큰/감사 로그) 섹션 부재로 구현 시 임의 결정·재작업 유발."},{"severity":"major","where":"§4 (4.1/4.2/4.3만 존재)","what":"가용성 목표·복구(RTO/RPO)·데이터 보관/삭제/개인정보 처리 정책 부재. 500GB/10만건 규모 및 개인정보 포함 가능성 대비 공백."},{"severity":"major","where":"§1.2 line 16 vs FR-003 line 63 / §4.2 line 83","what":"공유 링크 수동 폐기(revocation) 수단이 없어 7일 만료 전 유출 링크를 무효화 불가 — 유출 방지 목표와 모순."},{"severity":"major","where":"FR-004 line 64 / FR-005 line 65 / §4.2 line 85","what":"문서 삭제 시 S3 객체 실제 삭제 여부와 관련 공유 토큰 무효화 동작 미정의 — 데이터 잔존/프라이버시·무결성 리스크."},{"severity":"major","where":"§5.4 Pages 표 line 109-113 vs 계약 §5.4 / §2.3","what":"Audience/Auth/Linked FRs 컬럼 결여로 guest 역할이 /s/[token]에 매핑되지 않고 페이지-FR-권한 추적이 끊김."},{"severity":"minor","where":"FR-006 line 66 vs §5.2","what":"제목 부분일치 검색이 FR/페이지에 있으나 §5.2 API에 검색 파라미터/엔드포인트가 정의되지 않음."},{"severity":"minor","where":"§2.2 line 36 vs FR-001 line 61","what":"수용 기준이 PDF 업로드만 검증하고 DOCX 및 비허용 확장자 거부 시나리오가 빠짐."},{"severity":"minor","where":"§4.2(Security를 4.5 아닌 4.2로) line 79, §5(5.3 누락) line 97/107","what":"계약 골격 대비 섹션 번호 드리프트로 항목 추적 혼선."},{"severity":"minor","where":"/s/[token] line 113 / §4.2 line 83","what":"공유 토큰이 URL 경로에 노출돼 Referer/히스토리/로그로 유출될 수 있으나 완화책(Referrer-Policy·로그 마스킹) 미기재."},{"severity":"minor","where":"§5.4.1 line 120 (미리보기)","what":"PDF/DOCX 미리보기의 능동 콘텐츠(JS/외부 리소스) XSS/SSRF 표면에 대한 샌드박스/CSP 대책 미고려."}]}
+```

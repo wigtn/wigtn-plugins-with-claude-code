@@ -122,7 +122,10 @@ one_call() { # $1=arm $2=fixture $3=agent $4=clean/dirty $5=rep
        --allowedTools "Agent Read Glob Grep" --output-format json
   local rc=$?
   rm -rf "$wd"
-  if [ "$rc" -ne 0 ]; then
+  if grep -q '^sleep_suspect=true' "$cell/logs/${key}.meta" 2>/dev/null; then
+    rm -f "$out"
+    say "  SLEPT  $arm $key — 슬립 오염, 채점 제외"
+  elif [ "$rc" -ne 0 ]; then
     rm -f "$out"   # E-02: 실패한 콜의 부분 산출물을 결과로 남기지 않는다
     say "  FAIL   $arm $key ($(grep -m1 '^exit_reason=' "$cell/logs/${key}.meta"))"
   else

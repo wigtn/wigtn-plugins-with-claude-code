@@ -1,0 +1,22 @@
+## 리뷰 결과 — `wigtn-local:code-reviewer` (실제 결함 0건, PASS)
+
+서브에이전트가 133줄 전체를 검토했고, 제기한 후보 지적은 모두 파일 내 증거로 반증되었습니다. 감사 가능하도록 반증 근거를 그대로 옮깁니다.
+
+**제기 후 반증된 후보들**
+
+- **`SHARE_TOKEN_SECRET!` non-null 단언** — `code-clean.ts:113`, `code-clean.ts:123`. `code-clean.ts:8-10`의 모듈 최상위 가드가 모듈 평가 시점에 throw하므로, 시크릿이 없는 상태로 실행될 수 있는 export 경로가 없음. 오류 은폐가 아니라 타당한 단언.
+- **공격자 제어 입력에 대한 무방비 `JSON.parse`** — `code-clean.ts:130`. 순서로 반증: `code-clean.ts:123-128`의 HMAC 비교가 먼저 `null`을 반환. 이를 통과하는 payload는 `sign()`(`code-clean.ts:110`)만 생성 가능하고 항상 정상 JSON. 미검증 바이트가 parse에 도달하는 경로 없음.
+- **`.` 세그먼트 추가를 통한 토큰 위조** — `code-clean.ts:120`. `split(".")`가 3번째 세그먼트를 버려 `payload.mac.junk`도 검증 통과. 단, base64url 알파벳에 `.`이 없고, 접미사는 읽히지 않으며, 반환되는 `documentId`를 만드는 `payload` 전체를 MAC이 여전히 커버함 → 반환 클레임 불변, 결함 아님.
+- **MAC 비교 타이밍 누출** — `code-clean.ts:126-128`. `a.length !== b.length` 단축 평가가 `timingSafeEqual`보다 앞서며, 이는 해당 함수의 길이 불일치 throw를 막는 필수 가드. base64url HMAC 길이는 비밀이 아님.
+- **삭제/스토리지 순서로 인한 불일치 상태** — `code-clean.ts:68-86`. 선택된 순서가 복구 가능한 쪽. 커밋 후 실패는 고아 S3 객체(수거 가능)를 남기지만, 역순은 본문이 사라진 행(복구 불가)을 남김. `code-clean.ts:83-86`의 S3 오류 무시도 삭제가 이미 내구화된 이상 일관됨.
+- **LIKE 메타문자 이스케이프 누락** — `code-clean.ts:19` vs `code-clean.ts:24`. 문자 클래스 `[\\%_]`가 두 와일드카드와 이스케이프 문자 자신까지 단일 패스로 처리 → 이중 이스케이프 없음. `ESCAPE` 선언 문자와 치환이 내보내는 문자가 일치.
+- **OR 절의 admin 우회** — `code-clean.ts:40`. `?`는 보간이 아니라 바인딩이라 인젝션 표면 없음. 규칙도 `code-clean.ts:60`의 `deleteDocument` 인가 검사와 일치.
+- **읽기-삭제 간 소유권 TOCTOU** — `code-clean.ts:52` vs `code-clean.ts:69`. 권한 위반 시나리오를 구성하지 못함. 방금 소유권이 이전된 문서를 직전 소유자가 지우는 좁은 창만 존재하며, 이를 위반이라 볼 계약 근거 없음.
+
+**결함으로 계상하지 않은 참고 사항:** `code-clean.ts:24`의 템플릿 리터럴 `ESCAPE '\\'`는 SQL 텍스트 `ESCAPE '\'`를 생성합니다. PostgreSQL/SQLite에서는 올바른 리터럴 백슬래시지만, MySQL 기본 백슬래시 이스케이프 모드에서는 미종결 문자열로 읽힙니다. `./db`(`code-clean.ts:3`)와 드라이버 설정에 접근할 수 없어 실패를 입증할 수 없으므로, DB 레이어 담당자를 위한 맥락으로만 남깁니다.
+
+**Rollup:** critical 0, major 0, minor 0 → **PASS**
+
+```json
+{"findings":[]}
+```

@@ -1,0 +1,25 @@
+완료했습니다.
+
+## 결과
+
+**PRD.md** (루트) 저장 완료 — 온라인 강의 플랫폼 쿠폰 기능
+- **유형**: `product-feature` / **규모**: `Startup` (greenfield 합리적 기본값, §4.0에 근거 명시)
+- **핵심 방어**: 중복 사용·만료 차단을 3중으로 설계 — ①멱등키 UNIQUE, ②1인 1회 partial unique index, ③총 한도 조건부 원자 업데이트(SOLD_OUT)
+
+**품질 게이트 (`prd-reviewer`)**: ✅ **PASS** — Critical 0 / Major 5 / Minor 4
+- Major·Minor는 **모두 PRD에 반영 완료**했습니다:
+  - M-1 `/me/coupons` 소유 모델 → `coupon_codes.assigned_user_id` 추가
+  - M-2 부분 환불 → Non-Goal로 명시 + FR-009 "전액만 복원" 확정
+  - M-3 `exhausted` 전이 주체 → redeem 트랜잭션 내 전이 규칙 추가
+  - M-4 ID 타입 불일치 → 스키마 ID를 `VARCHAR(cp_/rd_ prefix)`로 통일
+  - M-5 PG↔redeem 정확히-한번 → 예약→확정 2단계 + reconciliation 배치 명문화
+  - m-3 정률 0~100% DB CHECK, m-4 validate 응답 단일 계약(HTTP 200 통일)
+
+**PLAN 원장**: `docs/todo_plan/PLAN_coupon.md` — Phase별 Task 체크박스(=`/implement` 진행 원장)
+
+## 다음 단계
+§5.4에 **FE 페이지 5개**(admin 3 + student 2)가 있으므로:
+- **`/screen-spec 쿠폰기능`** — 화면정의서 5종(IA/Flow/Spec/Wireframe/Handoff) 생성 권장
+- 이후 **`/implement 쿠폰기능`** 으로 구현
+
+바로 화면정의서로 넘어갈까요, 아니면 구현부터 진행할까요?

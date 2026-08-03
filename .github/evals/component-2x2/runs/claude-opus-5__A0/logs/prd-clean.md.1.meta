@@ -1,0 +1,6 @@
+model=claude-opus-5
+arm=A0
+fixture=prd-clean.md
+rep=1
+rc=0
+seconds=103

@@ -1,0 +1,27 @@
+✅ 완료했습니다. 품질 게이트를 통과한 PRD가 준비됐습니다.
+
+## 최종 결과
+
+**품질 게이트: ✅ PASS** (Critical 0건 — 계약 C-1~C-10 전 항목 충족)
+
+### 산출물
+| 파일 | 내용 |
+|---|---|
+| `PRD.md` (루트) | 실시간 배송 추적 PRD 정본 |
+| `docs/todo_plan/PLAN_realtime-delivery-tracking.md` | `/implement` 진행 원장 (4 Phase · FR별 체크박스) |
+
+### PRD 핵심 요약
+- **Type**: product-feature / **Scale**: Startup
+- **역할 3종**: `driver`(위치 전송·상태 전이) / `customer`(비로그인 토큰 링크로 단일 배송 열람) / `admin`(전체 지연 모니터링)
+- **핵심 흐름**: 배송 시작 → 5초 간격 위치 전송 → Realtime Gateway(WebSocket + Redis pub/sub) 팬아웃 → 고객 지도 실시간 반영 + 관리자 지연 감지(임계 15분, Delay Worker 30초 주기)
+- **정량 목표**: 위치 갱신 e2e p95 < 5초, 전송 API p95 < 200ms @ ≥2,000 req/s, 가용성 99.5%(장애 시 HTTP 폴링 폴백)
+
+### 1차 BLOCKED → 수정 이력
+- **Critical**: 추적 토큰 발급·고객 링크 전달 메커니즘 전체 누락 → **FR-012 신설**(in_transit 전이 시 토큰 생성 → 사내 알림 서비스 발송 요청, 원본 폐기·해시 저장)로 해소
+- **Major 5건**: 브라우저 WebSocket 인증 재설계(subprotocol 티켓), Kakao Maps 확정, 공개 엔드포인트 rate limit, FR-005(ETA) P1→P0 우선순위 역전 해소 등 반영
+- **잔여 Minor**(비차단): `cancelled` 상태 진입 경로, FR-008 버퍼 재전송 페이싱 — 구현 중 정리 권장
+
+### 다음 단계
+§5.4에 `Has FE Components: Yes` 페이지가 **3개**(기사 앱 / 고객 추적 지도 / 관제 대시보드)이므로, 구현 전 **`/screen-spec 실시간-배송-추적`**(화면정의서 5종)을 거친 뒤 **`/implement`**를 권장합니다.
+
+> 참고: PRD를 요청하신 대로 루트 `PRD.md`에 저장했습니다. 스킬 권장 위치는 `docs/prd/`이니, 그쪽으로 옮기길 원하시면 말씀해 주세요.

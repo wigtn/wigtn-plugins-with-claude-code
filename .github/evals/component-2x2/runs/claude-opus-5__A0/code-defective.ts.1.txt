@@ -1,0 +1,84 @@
+파일을 전부 읽었습니다. `./db`, `./storage`는 디렉터리에 존재하지 않아 단독 컴파일은 안 되는 픽스처입니다 — 아래는 정적 리뷰 결과입니다.
+
+## Critical
+
+**1. SQL 인젝션 — `code-defective.ts:11-17`**
+`q`가 작은따옴표 문자열 리터럴 안에 그대로 보간됩니다(L14 `LIKE '%${q}%'`). `?q=%' UNION SELECT id,password_hash,1,1 FROM users--` 로 임의 쿼리 실행. 같은 파일 L30/L40/L45가 `?` 플레이스홀더를 쓰고 있으므로 파라미터 바인딩 API는 이미 있습니다 — 여기만 안 쓴 것.
+
+**2. `sign()`은 서명이 아니며 시크릿을 유출 — `code-defective.ts:56-58`**
+`Buffer.from(JSON.stringify(payload) + secret).toString("base64url")` 는 인코딩일 뿐 되돌릴 수 있습니다. 공유 링크(L53) 하나만 받아 base64url 디코드하면 `SHARE_TOKEN_SECRET` 평문이 그대로 나옵니다. 그 시크릿으로 임의의 `documentId`/`exp` 토큰을 무제한 위조 가능 → 전체 문서 열람. HMAC-SHA256(`crypto.createHmac`) + 상수시간 비교로 교체해야 합니다.
+
+**3. 프로덕션 시크릿 하드코딩 — `code-defective.ts:5`**
+`"hs256-prod-9f2a4c8e1b7d"` 가 소스에 커밋되어 있습니다. 저장소/빌드 아티팩트 접근자 전원에게 노출. 환경변수로 빼고 **해당 값은 폐기·로테이션** 필요. 덧붙여 이름은 `hs256`인데 구현은 HMAC이 아니라 명칭까지 오해를 유발합니다.
+
+**4. 인증·인가 전무 (IDOR) — `code-defective.ts:7, 22, 39, 50`**
+4개 핸들러 어디에도 세션/소유자 검사가 없습니다.
+- L39 `deleteDocument`: id만 알면 누구나 남의 문서 + S3 객체 삭제
+- L50 `createShareLink`: 누구나 임의 문서의 공유 링크 발급
+- L7/L22: 소유자 필터 없이 전체 문서 목록 반환
+
+## Major
+
+**5. 빈 결과 미검사로 크래시 — `code-defective.ts:40-44`**
+`doc[0].storage_key` — 존재하지 않거나 이미 삭제된 id면 `doc[0]`이 `undefined`라 TypeError → 500. 인증도 없어 무제한 호출 가능.
+
+**6. 삭제 순서가 뒤바뀜(비원자적) — `code-defective.ts:44-45`**
+되돌릴 수 없는 S3 삭제를 DB 삭제보다 **먼저** 합니다. L45가 실패하면 storage_key가 존재하지 않는 객체를 가리키는 좀비 행이 영구히 남습니다. DB 행 삭제(또는 소프트 삭제) → 커밋 → 객체 정리(비동기 큐) 순서가 맞습니다.
+
+**7. N+1 쿼리 — `code-defective.ts:28-34`**
+문서 100건에 대해 루프 안에서 `await`이라 1 + 100회 **순차** 쿼리. `JOIN users` 한 방 또는 `WHERE id IN (...)` 배치 조회로 교체.
+
+**8. 만료 시각을 클라이언트가 통제 — `code-defective.ts:51-52`**
+`body.exp`를 검증·클램프 없이 그대로 페이로드에 넣습니다. 호출자가 100년 뒤를 넣을 수 있고, `exp`를 아예 생략하면 `JSON.stringify`가 `undefined` 키를 버려서 **만료 없는 영구 토큰**이 발급됩니다. 서버에서 `now + min(요청값, MAX_TTL)`로 계산해야 합니다.
+
+**9. 토큰 검증 경로 부재 — `code-defective.ts:56` (대응 `verify()` 없음)**
+발급만 있고 서명 검증/`exp` 확인 함수가 없습니다. 소비 측이 무결성·만료를 확인할 수단이 이 모듈에 없습니다.
+
+**10. 이메일 PII 노출 — `code-defective.ts:30, 33**
+인증 없는 엔드포인트가 `users.email`을 응답에 실어 보냅니다(L33). 필요한 필드만 선택하거나 인가된 호출자로 제한.
+
+**11. 요청 본문 파싱 미보호 — `code-defective.ts:51`**
+`await req.json()`이 빈/잘못된 본문에서 throw → 400이 아니라 미처리 500. 파일 전체에 `try/catch`가 한 곳도 없습니다.
+
+## Minor
+
+**12. LIKE 와일드카드 미이스케이프 & 빈 검색어 — `code-defective.ts:9, 14`**
+`q` 기본값이 `""`라 `LIKE '%%'`로 전건 조회. 파라미터 바인딩으로 고쳐도 사용자 입력의 `%`, `_`는 별도 이스케이프가 필요합니다.
+
+**13. 암묵적 `any` / 타입 부재 — `code-defective.ts:27**
+`const items = []` 는 `any[]`로 추론되어 `noImplicitAny`에서 에러. `db.raw` 결과도 전부 무타입이라 `doc.owner_id`(L31), `doc[0].storage_key`(L44)가 타입 검사를 못 받습니다.
+
+**14. 페이지네이션 없음 / 미사용 파라미터 — `code-defective.ts:16, 22-24, 39`**
+`LIMIT 50`·`LIMIT 100` 고정에 offset/cursor 없음. L22의 `req`는 아예 읽지 않아 미사용 파라미터입니다.
+
+**15. `deleteObject`에 Bucket 누락 의심 — `code-defective.ts:44`**
+`{ Key: ... }`만 전달합니다. 표준 S3 API는 `Bucket`이 필수 — `./storage` 래퍼가 없어 확정은 못 했습니다.
+
+**16. HTTP 메서드 검사 없음 — `code-defective.ts:39, 50`**
+상태 변경 핸들러가 메서드를 확인하지 않아 GET으로도 동작할 수 있습니다(크롤러에 의한 우발적 삭제 / CSRF 표면).
+
+## Info
+
+**17. 미해결 임포트 — `code-defective.ts:2-3`** — `./db`, `./storage`가 디렉터리에 없어 이 파일 단독으로는 컴파일되지 않습니다.
+
+```json
+{"findings":[
+{"severity":"critical","where":"code-defective.ts:11-17","what":"searchDocuments의 q가 SQL 문자열에 직접 보간되어 SQL 인젝션. 같은 파일 L30/L40/L45는 ? 바인딩을 쓰고 있음"},
+{"severity":"critical","where":"code-defective.ts:56-58","what":"sign()이 base64url 인코딩일 뿐이라 공유 토큰을 디코드하면 SHARE_TOKEN_SECRET이 평문 노출되고 임의 토큰 위조 가능. HMAC-SHA256으로 교체 필요"},
+{"severity":"critical","where":"code-defective.ts:5","what":"프로덕션 시크릿 'hs256-prod-9f2a4c8e1b7d'가 소스에 하드코딩. 환경변수화 + 해당 값 폐기/로테이션 필요"},
+{"severity":"critical","where":"code-defective.ts:7,22,39,50","what":"4개 핸들러 모두 인증/소유자 인가 검사 없음. id만 알면 타인 문서 삭제(L39) 및 공유링크 발급(L50) 가능한 IDOR"},
+{"severity":"major","where":"code-defective.ts:40-44","what":"doc[0].storage_key를 빈 결과 검사 없이 접근. 없는 id 요청 시 TypeError로 500"},
+{"severity":"major","where":"code-defective.ts:44-45","what":"되돌릴 수 없는 S3 삭제를 DB 삭제보다 먼저 수행. DELETE 실패 시 객체 없는 좀비 행이 영구 잔존"},
+{"severity":"major","where":"code-defective.ts:28-34","what":"N+1 쿼리 - 루프 내 await으로 1+100회 순차 조회. JOIN 또는 IN 배치로 교체"},
+{"severity":"major","where":"code-defective.ts:51-52","what":"body.exp를 검증/클램프 없이 사용. exp 생략 시 JSON.stringify가 키를 제거해 만료 없는 영구 토큰 발급"},
+{"severity":"major","where":"code-defective.ts:56","what":"토큰 발급만 있고 서명 검증/만료 확인 함수가 부재해 소비 측이 무결성을 확인할 수 없음"},
+{"severity":"major","where":"code-defective.ts:30,33","what":"인증 없는 엔드포인트가 users.email PII를 응답에 포함"},
+{"severity":"major","where":"code-defective.ts:51","what":"await req.json()이 try/catch 없이 호출되어 잘못된 본문에서 400 대신 미처리 500. 파일 전체에 에러 핸들링 없음"},
+{"severity":"minor","where":"code-defective.ts:9,14","what":"q 기본값 \"\"로 LIKE '%%' 전건 조회, 사용자 입력의 % 및 _ 와일드카드 미이스케이프"},
+{"severity":"minor","where":"code-defective.ts:27","what":"const items = []가 any[]로 추론(noImplicitAny 위반). db.raw 결과 전반이 무타입"},
+{"severity":"minor","where":"code-defective.ts:16,22-24,39","what":"LIMIT 고정에 offset/cursor 없어 페이지네이션 불가. L22의 req는 미사용 파라미터"},
+{"severity":"minor","where":"code-defective.ts:44","what":"s3.deleteObject에 Bucket 인자 누락 의심 (./storage 래퍼 부재로 미확정)"},
+{"severity":"minor","where":"code-defective.ts:39,50","what":"상태 변경 핸들러에 HTTP 메서드 검사가 없어 GET으로도 실행 가능 (CSRF/크롤러 표면)"},
+{"severity":"info","where":"code-defective.ts:2-3","what":"./db, ./storage가 디렉터리에 존재하지 않아 파일 단독 컴파일 불가"}
+]}
+```

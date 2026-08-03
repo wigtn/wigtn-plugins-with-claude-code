@@ -1,0 +1,173 @@
+prd-reviewer 서브에이전트가 리뷰 프로토콜(Completeness / Feasibility / Security / Consistency 4개 카테고리)에 따라 리뷰를 완료했습니다. 결과를 그대로 전달합니다.
+
+---
+
+# PRD Analysis Report
+
+## 분석 대상
+- **문서**: `/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.nVr2dVcc5U/prd-defective.md`
+- **분석일**: 2026-08-03
+- **Type 판정**: `feature` → 계약에 없는 값이므로 strict = `product-feature`로 처리
+- **Scale Grade**: Startup (헤더 line 3에만 존재, §4.0 섹션·근거 없음)
+
+## 요약
+
+| 카테고리 | 발견 | Critical | Major | Minor |
+|----------|------|----------|-------|-------|
+| 완전성 (Completeness) | 6 | 4 | 1 | 1 |
+| 실현가능성 (Feasibility) | 2 | 0 | 2 | 0 |
+| 보안 (Security) | 4 | 3 | 1 | 0 |
+| 일관성 (Consistency) | 4 | 1 | 1 | 2 |
+| **총계** | **16** | **8** | **5** | **3** |
+
+## 외부 근거 검증 (Phase 1.5)
+외부 근거 검증: 스킵 (사유: 지배적 결함이 내부 모순·게이트 섹션 누락이라 웹 근거가 게이트 결과를 바꾸지 않음. 50MB 서버리스 업로드 실현성은 Feasibility 렌즈에서 미검증 리스크로 전달).
+
+---
+
+## 상세 분석
+
+### A. Completeness (누락으로 실패하는 것)
+
+#### C-1 (Critical). §4.5 인가 규칙(Authorization) 전면 누락 — 계약 C-5 위반
+- **위치**: §4 전체 (line 64-73). §4.5 섹션 자체가 없음
+- **문제**: 계약 C-5는 "어느 역할이 어느 리소스에" 접근 가능한지 명시를 항상 Critical로 요구한다. §2.3에 `member/admin/guest` 3개 역할이 선언됐지만(line 46-50), 각 API·리소스에 대한 인가 규칙이 어디에도 없다. 특히 FR-005 `DELETE /api/documents/{id}`(line 60)가 "관리자"용이라 서술되나, 소유자(member)의 자기 문서 삭제 FR-004(line 59)와 동일 엔드포인트를 공유하면서 인가 주체 구분이 명세되지 않았다.
+- **영향**: 구현자가 인가 체크를 임의로 결정 → 임의 사용자가 타인 문서를 삭제/조회하는 IDOR 취약점으로 직결.
+- **개선안**: §4.5에 역할×리소스 인가 매트릭스 추가. 엔드포인트별 인가 주체(§5.1 계약 요구)를 API 표에 컬럼으로 명시.
+
+#### C-2 (Critical). §5.4.1 Page State Matrix 누락 — 계약 C-7 위반
+- **위치**: §5.4 (line 91-97) 이후 부재
+- **문제**: §5.4에 `Has FE Components: Yes` 행이 3개(line 95-97). 계약 C-7상 State Matrix(loading/empty/error/success/no-permission)가 필수인데 섹션이 없다.
+- **영향**: 특히 `/s/[token]` 공유 열람 화면의 `error`(만료·무효 토큰)·`no-permission` 상태 미정의 → 만료 링크 처리 UX 공백.
+- **개선안**: §5.4.1 표를 3개 라우트 각각에 대해 작성.
+
+#### C-3 (Critical). §5.5 User Flow(Mermaid) 누락 — 계약 C-8 위반
+- **위치**: 문서 끝(line 97 이후) 부재
+- **문제**: `Has FE Components: Yes` ≥1이므로 계약 C-8상 필수. §2.2 시나리오(업로드·공유)가 경로로 드러나야 하나 없음.
+- **개선안**: 업로드→목록→상세→공유링크 생성→(guest) 토큰 열람 분기를 flowchart로.
+
+#### C-4 (Critical). §4.1 정량 NFR 부재 — 계약 C-4 위반
+- **위치**: §4.1 (line 66-68) "업로드는 사용자가 기다릴 만한 수준이어야 한다"
+- **문제**: 계약 §4.1/C-4는 "빠르게" 같은 정성 표현을 금지하고 p95 ms·req/s·동시성 정량 목표를 요구한다. 현 문장은 정확히 금지된 정성 표현.
+- **개선안**: 예 "50MB 업로드 p95 < 10s, 목록 조회 p95 < 300ms, 동시 업로드 50 req/s".
+
+#### A-5 (Major). 계약 골격 섹션 다수 누락
+- **위치**: §1.4 Scope, §4.2 Availability, §4.3 Data(보관·개인정보·삭제 정책), §4.4 Recovery, §5.2 Database Schema, §5.3 Architecture, §7 Success Metrics 전부 부재
+- **문제**: 계약 골격(line 27-97)이 모든 섹션을 요구하되 N/A 시 사유 명시를 요구. 현 문서는 이들을 통째로 생략. 특히 §4.3 Data(문서 보관·삭제 정책)와 §7 성공지표 부재는 운영·개인정보 처리에 직접 영향.
+- **개선안**: 각 섹션 추가 또는 근거 있는 `N/A` 한 줄.
+
+#### A-6 (Minor). §2.2 수용 기준이 정상 경로만 — 실패/만료/권한부족 시나리오 누락
+- **위치**: §2.2 (line 30-42)
+- **문제**: 계약 §2.2는 "정상 경로뿐 아니라 실패·만료·권한부족 시나리오도 포함"을 요구. 현재 업로드 성공·공유 성공 2개 happy-path만 존재. C-2 게이트(Gherkin 존재) 자체는 충족하나 계약 요건 미달.
+- **개선안**: "만료된 공유 링크 접근", "타인 문서 삭제 시도 → 403" 시나리오 추가.
+
+### B. Feasibility (기존 스택으로 정말 만들 수 있는가)
+
+#### B-1 (Major). 50MB 업로드를 Next.js 라우트 핸들러로 직접 수신 — 서버리스 본문 한도 리스크
+- **위치**: FR-001 (line 56, 최대 50MB) + §5.2 `POST /api/documents`(line 85) + §5.1 Next.js 16(line 79)
+- **문제**: Next.js를 서버리스(예: Vercel)로 배포 시 요청 본문 크기 한도(통상 4.5MB대)로 50MB 멀티파트 업로드가 라우트 핸들러에서 실패할 수 있다. S3 호환 스토리지를 쓰면서도 presigned URL 직접 업로드 설계가 없다.
+- **영향**: Phase 1(업로드) 착수 시 아키텍처 재작업.
+- **개선안**: S3 presigned PUT/multipart 직접 업로드 흐름을 §5.3에 명시하고 API를 "presign 발급 → 클라이언트 직접 업로드 → 메타 등록"으로 분리.
+
+#### B-2 (Major). 공유 열람의 파일 서빙 경로 미설계
+- **위치**: FR-003(line 58) + `/s/[token]`(line 97) + §5.2 API 표(line 83-89)
+- **문제**: 비로그인 guest가 문서 본문을 열람하려면 스토리지 객체에 대한 시간제한 접근(presigned GET 등)이 필요한데, 토큰→객체 접근 매핑 API가 API 표에 없다. `GET /api/documents/{id}`는 인증 대상(FR-007)이라 guest가 쓸 수 없다.
+- **개선안**: `GET /api/s/{token}` (인증 없이 토큰 검증 후 presigned GET 반환) 엔드포인트 추가.
+
+### C. Security (공격자라면 어떻게 뚫는가) — 런타임·외부 노출 API + 인증 + 사내문서 처리 존재 → Critical 발화
+
+#### S-1 (Critical). 공유 토큰 정책 전무 — 익명 데이터 노출·열거 공격
+- **위치**: FR-003(line 58) + `POST /api/documents/{id}/share`(line 89) + `/s/[token]`(line 97)
+- **문제**: 로그인 없이 열람 가능한 공유 링크인데 토큰 엔트로피·만료(TTL)·1회성·폐기(revoke)·접근 로깅 정책이 전무하다. 짧거나 순차적 토큰이면 열거(enumeration)로 사내 문서 대량 유출. §4.2 Security(line 70-73)는 HTTPS·확장자 검사만 언급.
+- **영향**: §1.2 "외부 유출 방지" 목표와 정면 배치되는 데이터 유출 벡터.
+- **개선안**: ≥128bit 난수 토큰, 기본 만료(예 7일), 폐기 엔드포인트, 접근 감사 로그, 선택적 비밀번호 보호를 §4.5에 명시.
+
+#### S-2 (Critical). Rate Limiting 미정의 — 익명 엔드포인트 남용
+- **위치**: §4 Security 전체 (line 70-73), 공유 열람 `/s/[token]`(line 97)
+- **문제**: 인증 없는 공유 열람·업로드 API에 rate limiting 정책이 없다. 익명 토큰 추측(brute-force)·업로드 남용(스토리지 고갈)에 무방비. 런타임 외부 노출 API가 존재하므로 계약 외 리뷰어 판단상 Critical.
+- **개선안**: 익명 토큰 검증 IP/토큰당 rate limit, 업로드 사용자당 쿼터를 §4.5에 명시.
+
+#### S-3 (Critical). DELETE 인가 부재 → 데이터 무결성 위험(IDOR)
+- **위치**: FR-004(line 59) + FR-005(line 60) 동일 엔드포인트 `DELETE /api/documents/{id}`(line 88)
+- **문제**: 소유자 삭제와 관리자 삭제가 같은 엔드포인트를 쓰는데 소유권/역할 검증 규칙이 없다(C-1과 연동). 임의 인증 사용자가 타인 문서 ID로 삭제 호출 시 방어 명세 없음.
+- **영향**: 데이터 무결성 위험 — 유형 무관 항상 Critical.
+- **개선안**: `member`는 `owner_id == 본인`일 때만, `admin`은 전체 삭제 허용을 명시하고 위반 시 403.
+
+#### S-4 (Major). 업로드 검증이 확장자 검사에 국한
+- **위치**: §4.2 (line 73) "업로드 파일 확장자 검사"
+- **문제**: 확장자만 검사하면 MIME/매직바이트 위조로 우회 가능. 악성 파일·미리보기(§5.4 문서 상세 미리보기, line 96) XSS/SSRF 리스크. 콘텐츠 검증·바이러스 스캔·미리보기 샌드박싱 미정의.
+- **개선안**: 매직바이트 검증 + Content-Type 화이트리스트 + 미리보기 격리(sandboxed iframe / 서버 렌더).
+
+### D. Consistency (스스로/코드와 모순)
+
+#### D-1 (Critical). FR-003 ↔ FR-007 직접 모순 — 계약 C-3 위반 (계약이 명시한 금지 사례)
+- **위치**: FR-003(line 58) "로그인 없이 문서를 열람" vs FR-007(line 62) "모든 문서 조회 요청은 인증을 거쳐야 한다"
+- **문제**: 계약 line 47은 바로 이 조합("비로그인 열람 허용"과 "모든 조회 인증 필수")을 공존 불가 예시로 못박았다. 두 P0 요구가 정면 충돌 → 구현 불가.
+- **영향**: 구현자가 어느 쪽을 따를지 결정 불가. FR-007을 문자 그대로 따르면 공유 기능(§1.2 핵심 목표) 붕괴; FR-003을 따르면 유출 방지 붕괴.
+- **개선안**: FR-007을 "인증 사용자용 문서 API(`/api/documents/*`)는 인증 필수, 공유 열람(`/s/{token}`)은 토큰 검증으로 대체"로 범위 한정하여 모순 제거.
+
+#### D-2 (Major). §5.4 Pages 테이블이 계약 필수 컬럼 결여
+- **위치**: §5.4 (line 93-97)
+- **문제**: 계약 §5.4(line 66)는 `Audience | Auth | Linked FRs | Primary State | Responsive` 컬럼을 요구하나 현 표에는 없다. 특히 `Audience`가 §2.3 Role Key(`member/admin/guest`)를 인용해야 하는데 매핑이 없어 `/s/[token]` 화면의 대상이 `guest`임이 명시되지 않음.
+- **개선안**: 계약 컬럼셋으로 표 재작성.
+
+#### D-3 (Minor). §1.2 Goal "외부 유출 방지" ↔ FR-003 "로그인 없이 열람" 취지 상충
+- **위치**: §1.2(line 16) vs FR-003(line 58)
+- **문제**: 목표는 유출 방지인데 익명 링크 열람을 P0로 허용. D-1/S-1과 같은 뿌리이나 목표-요구 계층의 정합성 문제로 별도 기록.
+- **개선안**: 공유는 "만료·감사 하에 통제된 외부 공유"로 목표를 정교화.
+
+#### D-4 (Minor). 섹션 번호 불일치 및 Type 값 비표준
+- **위치**: §5는 5.1, 5.2, 5.4로 진행되며 5.3 결번(line 75-97); 헤더 Type=`feature`(line 3)는 계약 표(line 15-19)의 `product-feature/internal-backend/refactor` 어디에도 없음
+- **문제**: 계약 §5.2는 Database Schema여야 하나 문서는 5.2를 API로 사용. Type 비표준값은 조건부 게이트 판정을 모호하게 만든다(본 리뷰는 strict로 폴백).
+- **개선안**: 섹션 번호를 계약 골격에 정렬, Type을 `product-feature`로 명시.
+
+---
+
+## 누락된 요구사항
+| ID | 요구사항 | 권장 우선순위 |
+|----|---------|--------------|
+| N-1 | 공유 링크 만료/폐기/1회성 정책 | P0 |
+| N-2 | 익명·업로드 엔드포인트 Rate Limiting/쿼터 | P0 |
+| N-3 | 역할×리소스 인가 매트릭스(§4.5) | P0 |
+| N-4 | 문서 보관·삭제·개인정보 처리 정책(§4.3) | P1 |
+| N-5 | 토큰 기반 파일 서빙 엔드포인트(`GET /api/s/{token}`) | P0 |
+| N-6 | 성공 지표(§7) | P2 |
+
+## 리스크 매트릭스
+| 리스크 | 발생 확률 | 영향도 | 대응 방안 |
+|--------|-----------|--------|-----------|
+| 공유 토큰 열거로 사내 문서 유출 | 높음 | 치명적 | S-1 토큰 정책 + S-2 rate limit |
+| IDOR로 타인 문서 삭제/조회 | 높음 | 치명적 | S-3/C-1 인가 규칙 명시 |
+| FR 모순으로 구현 중단 | 확실 | 높음 | D-1 요구 재정의 |
+| 50MB 업로드 서버리스 실패 | 중간 | 높음 | B-1 presigned 업로드 |
+
+## 권장 조치
+### 즉시 조치 (Critical — 구현 블로킹)
+- D-1 FR-003↔FR-007 모순 해소 (C-3)
+- C-1 §4.5 인가 규칙 신설 (C-5)
+- C-4 §4.1 정량 NFR 작성 (C-4)
+- C-2 §5.4.1 Page State Matrix 작성 (C-7)
+- C-3 §5.5 User Flow Mermaid 작성 (C-8)
+- S-1 공유 토큰 보안 정책
+- S-2 Rate Limiting 정의
+- S-3 DELETE 인가/소유권 검증
+
+### 구현 전 조치 (Major)
+- A-5 누락 골격 섹션, D-2 Pages 컬럼, B-1 업로드 아키텍처, B-2 파일 서빙 경로, S-4 업로드 검증 강화
+
+### 가능하면 조치 (Minor)
+- A-6 실패 시나리오, D-3 목표 정교화, D-4 번호/Type 정렬
+
+---
+
+## Quality Gate 판정
+
+**Critical 8개 → ❌ BLOCKED.** `/implement`(및 `/screen-spec`) 진행 불가. 위 Critical 8건을 수정한 뒤 재리뷰가 필요하다. §5.4에 `Has FE Components: Yes` 페이지가 3개이므로, PASS 이후에는 `/screen-spec 사내문서공유` 단계를 권장한다.
+
+```json
+{"findings":[{"severity":"critical","where":"prd-defective.md:58,62 (FR-003 vs FR-007) / 계약 C-3","what":"FR-003 '로그인 없이 열람'과 FR-007 '모든 조회 인증 필수'가 직접 모순 — 계약이 금지 사례로 명시한 조합, 구현 불가"},{"severity":"critical","where":"prd-defective.md §4.5 부재 (line 64-73) / 계약 C-5","what":"인가 규칙(역할×리소스) 전면 누락. member/admin/guest 3역할이 선언됐으나 각 API 인가 주체 미정의"},{"severity":"critical","where":"prd-defective.md §4.1 (line 66-68) / 계약 C-4","what":"정량 NFR 부재 — '기다릴 만한 수준' 같은 금지된 정성 표현만 존재, p95/req/s/동시성 없음"},{"severity":"critical","where":"prd-defective.md §5.4.1 부재 (line 91-97 이후) / 계약 C-7","what":"Has FE Components:Yes 3건인데 Page State Matrix(loading/empty/error/success/no-permission) 누락"},{"severity":"critical","where":"prd-defective.md §5.5 부재 / 계약 C-8","what":"Has FE Components:Yes ≥1인데 User Flow Mermaid 다이어그램 누락"},{"severity":"critical","where":"prd-defective.md:58,89,97 (share token)","what":"공유 토큰 만료/엔트로피/폐기/감사 정책 전무 — 익명 링크 열거로 사내 문서 유출 위험"},{"severity":"critical","where":"prd-defective.md §4 Security (line 70-73), /s/[token] (line 97)","what":"Rate Limiting 미정의 — 익명 열람·업로드 API 남용/토큰 brute-force에 무방비"},{"severity":"critical","where":"prd-defective.md:59,60,88 (DELETE /api/documents/{id})","what":"소유자·관리자 삭제가 동일 엔드포인트인데 소유권/역할 인가 검증 미명세 — IDOR로 데이터 무결성 위험"},{"severity":"major","where":"prd-defective.md §1.4/§4.2/§4.3/§4.4/§5.2/§5.3/§7 부재","what":"계약 골격 섹션(Scope/Availability/Data/Recovery/DB Schema/Architecture/Success Metrics) 다수 누락"},{"severity":"major","where":"prd-defective.md:56,79,85 (50MB upload)","what":"50MB 업로드를 Next.js 서버리스 라우트로 직접 수신 — 본문 크기 한도로 실패 가능, presigned 업로드 미설계"},{"severity":"major","where":"prd-defective.md §5.2 API (line 83-89), FR-003","what":"비로그인 guest용 토큰 기반 파일 서빙 엔드포인트 부재 — GET /api/documents/{id}는 인증 대상이라 guest 열람 경로 없음"},{"severity":"major","where":"prd-defective.md §4.2 (line 73)","what":"업로드 검증이 확장자 검사에 국한 — MIME/매직바이트 위조·미리보기 XSS/악성파일 대응 없음"},{"severity":"major","where":"prd-defective.md §5.4 (line 93-97)","what":"Pages 테이블이 계약 필수 컬럼(Audience/Auth/Linked FRs/Primary State/Responsive) 결여, guest 대상 매핑 없음"},{"severity":"minor","where":"prd-defective.md §2.2 (line 30-42)","what":"수용 기준이 happy-path 2건뿐 — 만료/권한부족/실패 시나리오 누락(계약 §2.2 위반)"},{"severity":"minor","where":"prd-defective.md §1.2 (line 16) vs FR-003 (line 58)","what":"목표 '외부 유출 방지'와 익명 열람 P0 요구가 취지상 상충"},{"severity":"minor","where":"prd-defective.md:3 header, §5 (5.3 결번)","what":"Type=feature는 계약 비표준값(strict 폴백), §5 번호 불일치(5.2가 API, DB Schema 없음)"}]}
+```
+
+---
+
+**요약**: prd-reviewer가 총 **16건**(Critical 8 · Major 5 · Minor 3)을 발견했고, Quality Gate는 **❌ BLOCKED** 판정입니다. 핵심 블로커는 ① FR-003↔FR-007 인증 요구사항 직접 모순, ② 인가 규칙·정량 NFR·State Matrix·User Flow 등 필수 섹션 누락, ③ 공유 토큰 정책·Rate Limiting·DELETE 인가 부재로 인한 보안 취약점입니다.

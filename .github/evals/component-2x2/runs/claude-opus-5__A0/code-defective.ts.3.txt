@@ -1,0 +1,103 @@
+단일 파일(59줄)이라 인라인으로 정독 리뷰했습니다. 참고로 디렉터리에는 이 파일 하나뿐이고(`ls` 결과), 요구사항/스펙 문서가 없어 **모든 증거는 파일 경로:라인으로 답니다**. `./db`, `./storage` 모듈도 존재하지 않아 그 시그니처에 의존하는 지적은 그렇게 표시했습니다.
+
+---
+
+## Critical
+
+**1. SQL 인젝션 (`code-defective.ts:11-17`)**
+`q`가 쿼리 문자열에 그대로 보간됩니다. `?q=%' UNION SELECT ...--` 로 임의 SQL 실행/데이터 탈취가 가능합니다. 같은 파일 30, 40, 45줄은 바인딩 파라미터(`?`)를 쓰고 있어 **이 한 곳만 일관성이 깨진** 상태입니다.
+
+**2. 인증·인가가 전 핸들러에 전무 (`:7, :22, :39, :50`)**
+네 핸들러 모두 `req`에서 세션/토큰을 읽지 않습니다. 특히:
+- `deleteDocument(:39-48)` — ID만 알면 누구나 남의 문서를 S3 객체까지 영구 삭제 (IDOR).
+- `createShareLink(:50-54)` — 소유권 확인 없이 임의 문서의 공유 링크를 발급.
+- `searchDocuments(:11)` / `listDocumentsWithOwners(:23)` — `owner_id` 필터나 ACL 조인이 없어 전체 테넌트 문서가 노출.
+
+**3. 프로덕션 시크릿 하드코딩 (`:5`)**
+`SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d"` — 이름부터 `prod`이고 소스에 평문입니다. 저장소에 커밋된 시점에 유출로 간주하고 **로테이션 필요**. 환경변수/시크릿 매니저로 옮겨야 합니다.
+
+**4. `sign()`은 서명이 아님 (`:56-58`)**
+`base64url(JSON.stringify(payload) + secret)` 은 해시가 아니라 **가역 인코딩**입니다. 결과:
+- 공유 링크를 받은 사람은 누구나 토큰을 디코드해 **시크릿 원문을 획득**합니다(`:53`에서 URL로 배포되므로 사실상 공개).
+- 시크릿을 얻으면 `documentId`/`exp`를 임의로 바꾼 유효 토큰을 위조할 수 있습니다 → 전 문서 접근.
+`crypto.createHmac("sha256", secret)` 기반 HMAC + 상수시간 비교로 교체해야 합니다. 함수명이 `hs256`을 암시하지만 구현은 HS256이 아닙니다.
+
+**5. 토큰 검증 경로 자체가 없음 + `exp`를 클라이언트가 지정 (`:52`)**
+`body.exp`를 검증·상한 없이 그대로 payload에 넣습니다. `exp: 9999999999` 같은 사실상 무한 만료 링크를 공격자가 지정할 수 있고, 애초에 이 파일 어디에도 `exp`를 **검사하는 코드가 없어** 만료가 강제되지 않습니다. 서버가 만료를 정하고(최대 TTL 캡), 검증 함수를 반드시 추가해야 합니다.
+
+---
+
+## Major
+
+**6. S3 삭제와 DB 삭제가 비원자적이고 순서가 거꾸로 (`:44-45`)**
+객체를 먼저 지우고 행을 나중에 지웁니다. 45줄이 실패하면 `storage_key`가 **이미 사라진 객체를 가리키는 좀비 행**이 남아 이후 다운로드가 전부 깨집니다. DB 행 삭제(또는 soft-delete) 후 스토리지는 비동기 GC로 정리하는 순서가 안전합니다. 트랜잭션도 없습니다.
+
+**7. 존재하지 않는 ID에서 크래시 (`:44`)**
+`doc[0].storage_key` — 40줄 조회가 빈 배열이면 `TypeError: Cannot read properties of undefined`로 500이 납니다. 404를 반환해야 합니다. 33줄 `owner[0]`도 owner가 삭제된 경우 `undefined`가 그대로 응답에 실립니다.
+
+**8. N+1 쿼리 (`:28-34`)**
+문서 100건에 대해 쿼리 101회. `WHERE id IN (...)` 한 번으로 조회 후 맵핑하거나 JOIN으로 대체해야 합니다. 순차 `await`이라 지연이 100배로 누적됩니다.
+
+**9. 이메일 PII 무차별 노출 (`:30, :33`)**
+`users.email`을 조회해 인증 없는 응답(`:36`)에 그대로 포함합니다. 문서 목록에 소유자 이메일 전체가 필요한 근거가 없습니다 — 이름/ID만 노출하거나 권한 있는 호출자에게만 제공해야 합니다.
+
+**10. 요청 본문 검증 없음 (`:51`)**
+`await req.json()`은 본문이 비었거나 JSON이 아니면 throw → 처리되지 않은 500. `body`는 `any`라 타입 안전성도 없습니다. Content-Type 확인 + 스키마 검증(zod 등)이 필요합니다.
+
+**11. 에러 핸들링 전무 (파일 전체)**
+`try/catch`가 한 곳도 없습니다. DB/S3 장애가 그대로 상위로 전파되어 런타임에 따라 스택 트레이스가 응답에 노출될 수 있습니다.
+
+---
+
+## Minor
+
+**12. LIKE 와일드카드 이스케이프 누락 (`:14`)**
+파라미터 바인딩으로 고쳐도 남는 문제입니다. `q`에 포함된 `%`/`_`가 와일드카드로 동작하고, `q`가 빈 문자열이면 `LIKE '%%'`로 **전체 행**을 반환합니다. 또 선행 `%`는 인덱스를 못 쓰게 해 풀스캔을 유발합니다(전문검색 인덱스 고려).
+
+**13. 페이지네이션 부재 (`:16, :24`)**
+`LIMIT 50` / `LIMIT 100` 하드코딩에 offset·cursor가 없어, 결과가 조용히 잘리고 51번째 이후 문서에 도달할 방법이 없습니다.
+
+**14. 도메인 하드코딩 (`:53`)**
+`https://docs.example.com`이 코드에 박혀 있어 스테이징/셀프호스트 환경에서 잘못된 링크를 발급합니다. 설정값으로 빼야 합니다.
+
+**15. `req` 파라미터 미사용 (`:22, :39`)**
+`noUnusedParameters` 위반이자, 인가·페이지네이션 입력을 아예 읽지 않는다는 신호(2·13번의 방증)입니다.
+
+**16. `db.raw` 반환 타입이 암묵적 `any` (`:11, :23, :29, :40`)**
+`rows`, `docs`, `doc`, `owner` 모두 타입이 없어 `doc.owner_id`(`:31`), `doc[0].storage_key`(`:44`) 같은 접근을 컴파일러가 전혀 검증하지 못합니다. 제네릭 반환 타입을 지정하세요.
+
+---
+
+## Info
+
+**17. `s3.deleteObject`에 `Bucket` 누락 가능성 (`:44`)** — AWS SDK 표준 시그니처는 `Bucket`이 필수입니다. `./storage`가 미존재라 래퍼가 주입하는지는 확인 불가 — **미검증**입니다.
+
+**18. `Buffer` 사용으로 런타임 종속 (`:57`)** — 핸들러는 Web 표준 `Request`/`Response`를 쓰는데 `Buffer`는 Node 전용이라 Edge 런타임에서 깨집니다. `TextEncoder`/`btoa` 또는 WebCrypto로 통일하는 편이 안전합니다.
+
+**19. 레이트 리밋 부재 (`:7`)** — 인증 없는 검색 엔드포인트에 12번의 풀스캔이 겹치면 저비용 DoS 벡터가 됩니다.
+
+---
+
+```json
+{"findings":[
+{"severity":"critical","where":"code-defective.ts:11-17","what":"검색어 q를 SQL 문자열에 직접 보간 — SQL 인젝션. 같은 파일 30/40/45줄은 바인딩을 쓰고 있어 일관성도 깨짐"},
+{"severity":"critical","where":"code-defective.ts:7,22,39,50","what":"네 핸들러 모두 인증·인가 검사 없음. deleteDocument는 ID만 알면 타인 문서 영구 삭제(IDOR), createShareLink는 소유권 확인 없이 공유 링크 발급, 목록/검색은 ACL 필터 없이 전체 노출"},
+{"severity":"critical","where":"code-defective.ts:5","what":"프로덕션 서명 시크릿(SHARE_TOKEN_SECRET)이 소스에 평문 하드코딩 — 유출 간주, 로테이션 및 시크릿 매니저 이관 필요"},
+{"severity":"critical","where":"code-defective.ts:56-58","what":"sign()이 base64url(payload+secret)인 가역 인코딩 — 공유 링크 수신자가 시크릿을 복원해 임의 documentId/exp 토큰을 위조 가능. HMAC-SHA256 + 상수시간 비교로 교체 필요"},
+{"severity":"critical","where":"code-defective.ts:52","what":"exp를 클라이언트 body에서 검증·상한 없이 수용하고, 파일 어디에도 토큰 검증/만료 확인 코드가 없어 만료가 전혀 강제되지 않음"},
+{"severity":"major","where":"code-defective.ts:44-45","what":"S3 객체를 먼저 삭제하고 DB 행을 나중에 삭제 — 비원자적. DB 삭제 실패 시 삭제된 객체를 가리키는 좀비 행이 남음"},
+{"severity":"major","where":"code-defective.ts:44","what":"doc[0].storage_key — 존재하지 않는 ID면 빈 배열 인덱싱으로 TypeError/500. 404 반환 필요. 33줄 owner[0]도 동일하게 undefined 노출"},
+{"severity":"major","where":"code-defective.ts:28-34","what":"문서마다 소유자를 순차 조회하는 N+1 (100건에 101쿼리). IN 절 일괄 조회나 JOIN으로 대체"},
+{"severity":"major","where":"code-defective.ts:30,33","what":"users.email을 조회해 인증 없는 응답에 그대로 포함 — PII 노출"},
+{"severity":"major","where":"code-defective.ts:51","what":"await req.json() 결과를 검증 없이 사용. 잘못된 본문이면 unhandled throw로 500이며 body 타입이 any"},
+{"severity":"major","where":"code-defective.ts:1-58","what":"파일 전체에 try/catch 없음 — DB/S3 장애가 그대로 전파되어 스택 트레이스 노출 위험"},
+{"severity":"minor","where":"code-defective.ts:14","what":"LIKE 와일드카드 미이스케이프. q의 %/_가 와일드카드로 동작하고 q가 빈 문자열이면 전체 행 반환, 선행 %로 인덱스 미사용 풀스캔"},
+{"severity":"minor","where":"code-defective.ts:16,24","what":"LIMIT 50/100 하드코딩에 offset·cursor 부재 — 결과가 조용히 잘리고 이후 페이지 접근 불가"},
+{"severity":"minor","where":"code-defective.ts:53","what":"https://docs.example.com 도메인 하드코딩 — 비프로덕션 환경에서 잘못된 링크 발급"},
+{"severity":"minor","where":"code-defective.ts:22,39","what":"req 파라미터 미사용 — noUnusedParameters 위반이자 인가/페이지네이션 입력을 읽지 않는다는 신호"},
+{"severity":"minor","where":"code-defective.ts:11,23,29,40","what":"db.raw 반환값이 암묵적 any — doc.owner_id, doc[0].storage_key 접근을 타입 검사로 잡지 못함"},
+{"severity":"info","where":"code-defective.ts:44","what":"s3.deleteObject 호출에 Bucket 누락 가능성. ./storage 래퍼가 주입하는지 확인 불가 — 미검증"},
+{"severity":"info","where":"code-defective.ts:57","what":"Web 표준 Request/Response 핸들러에서 Node 전용 Buffer 사용 — Edge 런타임 비호환"},
+{"severity":"info","where":"code-defective.ts:7","what":"인증 없는 검색 엔드포인트에 레이트 리밋 부재 — 풀스캔과 결합 시 저비용 DoS 벡터"}
+]}
+```

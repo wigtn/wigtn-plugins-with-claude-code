@@ -1,0 +1,62 @@
+`wigtn-local:code-reviewer` 서브에이전트가 리뷰 프로토콜대로 `code-defective.ts`를 전면 검토했습니다. 아래는 그 결과 그대로입니다.
+
+---
+
+이 파일은 문서 공유 API 핸들러로, 심각한 보안 결함을 다수 포함합니다.
+
+## Findings
+
+### CRITICAL
+
+**[critical] where=code-defective.ts:14 — SQL 인젝션 (search)**
+`title LIKE '%${q}%'` 로 사용자 입력 `q`(line 9, `url.searchParams.get("q")`)를 쿼리 문자열에 직접 보간한다. `q`에 `' OR '1'='1` 또는 `'; DROP TABLE documents; --` 등을 넣으면 임의 SQL 실행이 가능하다. 같은 파일 line 30/40/45는 파라미터 바인딩(`?`, `[...]`)을 쓰는데 여기만 보간 → 명백한 회귀. 수정: `WHERE title LIKE ?` + `['%' + q + '%']` 파라미터 바인딩, LIKE 와일드카드(`%`,`_`) 이스케이프.
+
+**[critical] where=code-defective.ts:5 — 하드코딩된 프로덕션 시크릿**
+`SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d"` 가 소스에 평문 상수로 박혀 있다. VCS/번들에 노출되며 회전 불가. 수정: 환경변수/시크릿 매니저(`process.env.SHARE_TOKEN_SECRET`)에서 로드하고 부재 시 기동 실패.
+
+**[critical] where=code-defective.ts:56-58 — 위조·유출 가능한 가짜 서명(토큰)**
+`sign()`은 HMAC이 아니라 `base64url(JSON + secret)` 단순 인코딩이다. (1) 토큰을 base64url 디코드하면 시크릿이 그대로 평문 노출되고, (2) 공격자가 임의 payload를 직접 인코딩해 유효 토큰을 위조할 수 있으며, (3) 어디에서도 서명 검증이 없다. 결과적으로 임의 `documentId`/`exp`에 대한 유효 공유 링크를 누구나 생성 가능. 수정: `crypto.createHmac('sha256', secret)`로 payload와 분리된 서명을 만들고(HMAC 결과만 포함, 시크릿 미포함), 검증 경로에서 서명·만료를 상수시간 비교로 검증.
+
+**[critical] where=code-defective.ts:39-48 — 인가(권한) 검사 부재로 임의 문서 삭제**
+`deleteDocument`는 요청자 신원/소유권을 전혀 확인하지 않고 `params.id`만으로 S3 객체와 DB 행을 삭제한다. 인증/인가되지 않은 호출자가 타인 문서를 삭제 가능(권한 우회 + 데이터 손실). `searchDocuments`/`listDocumentsWithOwners`/`createShareLink`도 동일하게 인증 컨텍스트가 없다. 수정: 요청자 인증 후 `owner_id === currentUser.id`(또는 권한 정책) 확인.
+
+### MAJOR
+
+**[major] where=code-defective.ts:44 — 존재하지 않는 문서에서 런타임 크래시**
+line 40 조회 결과가 비면 `doc[0]`가 `undefined`이고 `doc[0].storage_key`에서 `TypeError`. 존재하지 않는/이미 삭제된 id로 호출 시 500. line 33 `owner[0]`도 owner 부재 시 `undefined` 전파. 수정: `if (!doc[0]) return 404` 가드.
+
+**[major] where=code-defective.ts:44-45 — S3/DB 삭제 순서로 인한 데이터 불일치**
+S3 객체를 먼저 삭제(line 44)한 뒤 DB 행을 삭제(line 45)한다. line 45가 실패하면 DB에는 `storage_key`가 남지만 실제 스토리지 객체는 사라진 고아 레코드가 되어 이후 다운로드가 깨진다. 원자성/보상 로직이 없다. 수정: DB 삭제(소프트 삭제/트랜잭션)를 먼저 커밋한 뒤 스토리지 정리를 후속(재시도 가능한) 작업으로 수행.
+
+**[major] where=code-defective.ts:22-37 — N+1 쿼리**
+문서 100건에 대해 루프 내에서 소유자 조회를 건별로 `await`(line 29) → 최대 101회 쿼리, 직렬 실행. 목록 규모에 비례한 지연/DB 부하. 수정: `owner_id` 집합으로 `WHERE id IN (...)` 단일 조회 후 매핑, 또는 JOIN.
+
+**[major] where=code-defective.ts:52 — 사용자 제어 만료값(exp) 무검증**
+`exp`를 요청 본문에서 그대로 서명 payload에 넣는다. 검증/상한이 없어 사실상 무기한 만료(또는 비정상 값) 토큰을 만들 수 있고, `body`가 없거나 형식이 틀리면(`await req.json()` 실패 포함) 처리도 없다. 수정: 서버가 `exp = now + maxTTL`로 강제하고 상한 검증.
+
+### MINOR
+
+**[minor] where=code-defective.ts:7,39,50 — 전반적 에러 처리 부재**
+`db.raw`, `s3.deleteObject`, `req.json()`의 예외를 감싸는 try/catch가 없어 모든 실패가 미가공 500으로 노출된다(스택/내부정보 유출 가능). 일관된 에러 응답 매핑 권장.
+
+**[minor] where=code-defective.ts:39,50 — 미사용 파라미터 `req`**
+`deleteDocument`/`createShareLink`의 `req`가 사용되지 않는다(인증 컨텍스트를 여기서 읽어야 하는데 누락된 정황과 연결됨). 규약상 미사용 인자 정리 또는 인증 파싱에 사용.
+
+**[minor] where=code-defective.ts:33 — 소유자 이메일(PII) 노출**
+목록 응답에 `email`을 포함(line 30/33)한다. 접근 주체에 따라 개인정보 과다 노출 가능. 필요한 필드만 반환 검토.
+
+## 게이트 롤업
+
+- critical: 4 (SQL 인젝션, 하드코딩 시크릿, 위조·유출 가능 토큰, 인가 부재 삭제) — 모두 Security
+- major: 4 (undefined 크래시, S3/DB 순서 불일치, N+1, exp 무검증)
+- minor: 3
+
+판정: **FAIL** — Security critical ≥1 (zero-tolerance). 커밋 차단. line 14 인젝션, line 5 시크릿, line 56-58 토큰, line 39-48 인가는 우회 없이 반드시 수정 필요.
+
+```json
+{"findings":[{"severity":"critical","where":"code-defective.ts:14","what":"searchDocuments가 사용자 입력 q(line 9)를 title LIKE '%${q}%'로 직접 보간해 SQL 인젝션 가능. 파라미터 바인딩(?, [..])으로 수정하고 LIKE 와일드카드 이스케이프."},{"severity":"critical","where":"code-defective.ts:5","what":"SHARE_TOKEN_SECRET 프로덕션 시크릿이 소스에 평문 하드코딩. 환경변수/시크릿 매니저로 이전하고 부재 시 기동 실패 처리."},{"severity":"critical","where":"code-defective.ts:56-58","what":"sign()이 HMAC이 아니라 base64url(JSON+secret) 단순 인코딩이라 디코드 시 시크릿 유출·토큰 위조 가능하고 검증 경로도 없음. crypto HMAC-SHA256으로 시크릿 미포함 서명 생성 및 서명·만료 검증 추가."},{"severity":"critical","where":"code-defective.ts:39-48","what":"deleteDocument가 요청자 인증/소유권 검사 없이 params.id만으로 S3·DB 삭제 → 임의 문서 삭제(권한 우회+데이터 손실). 다른 핸들러도 인증 컨텍스트 없음. 소유권/권한 검증 추가."},{"severity":"major","where":"code-defective.ts:44","what":"조회 결과가 비면 doc[0]가 undefined인데 doc[0].storage_key 접근으로 TypeError/500. line 33 owner[0]도 동일. 존재 여부 가드 및 404 반환."},{"severity":"major","where":"code-defective.ts:44-45","what":"S3 객체를 먼저 삭제 후 DB 행 삭제해 line 45 실패 시 스토리지만 사라진 고아 레코드 발생. DB 커밋을 먼저 하고 스토리지 정리를 재시도 가능한 후속 작업으로 분리."},{"severity":"major","where":"code-defective.ts:22-37","what":"listDocumentsWithOwners가 문서마다 소유자를 직렬로 조회하는 N+1(최대 101 쿼리). owner_id IN(...) 단일 조회 또는 JOIN으로 대체."},{"severity":"major","where":"code-defective.ts:52","what":"createShareLink가 요청 본문의 exp를 무검증으로 토큰에 삽입해 무기한/비정상 만료 토큰 생성 가능하며 req.json() 실패 처리도 없음. 서버가 exp를 now+maxTTL로 강제하고 상한 검증."},{"severity":"minor","where":"code-defective.ts:7","what":"모든 핸들러에 try/catch가 없어 db/s3/req.json 예외가 미가공 500으로 노출되고 내부 정보 유출 가능. 일관된 에러 매핑 추가."},{"severity":"minor","where":"code-defective.ts:39","what":"deleteDocument/createShareLink의 req 파라미터가 미사용(인증 컨텍스트 파싱 누락 정황). 인증에 사용하거나 정리."},{"severity":"minor","where":"code-defective.ts:33","what":"목록 응답에 소유자 email(PII)을 포함(line 30/33). 접근 주체에 따라 과다 노출 가능하므로 필요한 필드만 반환."}]}
+```
+
+---
+
+리뷰 요약: **critical 4건, major 4건, minor 3건** — 게이트 판정 **FAIL**(Security critical 존재). 필요하시면 이 지적들에 대한 수정 패치를 작성해 드리겠습니다.

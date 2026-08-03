@@ -1,0 +1,27 @@
+✅ **PRD 완성 — Quality Gate PASS (Critical 0 / Major 0)**
+
+## 산출물
+- **`PRD.md`** (루트) — 요청대로 저장
+- **`docs/todo_plan/PLAN_leave-management.md`** — 구현 진행 원장(Phase별 체크박스)
+
+## PRD 요약
+| 항목 | 내용 |
+|---|---|
+| 유형 / 규모 | `product-feature` / `Hobby`(사내 팀원, DAU 1,000 미만) |
+| 역할 | `applicant` 신청자 · `manager` 팀장(자기 팀만 승인/반려) · `admin` 관리자(전사 조회·관리) |
+| 핵심 기능 | 휴가 신청·취소, 잔여 연차 자동 계산, 승인/반려 워크플로우, 전사 현황, 감사 이력 |
+| 검증 | Gherkin 9종 — 초과·중복·권한부족·재처리·세션만료 등 실패 경로 포함 |
+| 화면 | 7개 (로그인/신청목록/신청/승인/팀캘린더/전사현황/연차현황) + State Matrix + User Flow |
+
+## 게이트 경과
+- 1차: **BLOCKED** — Critical 2건(동시성 경쟁 조건, 로그인 무차별 대입 방어)
+- 수정: Critical 2 + Major 4(반차 모델 통일, 근무일 일수 산정, 관리자 API, 페이지네이션) 반영
+- 2차: **✅ PASS**
+
+## 다음 단계
+FE 페이지가 **7개**(`Has FE Components: Yes`) 있어 화면 설계 단계를 권장한다:
+
+1. **`/screen-spec Leave-Management`** — IA·User Flow·화면 명세·와이어프레임·개발 핸드오프 5종 생성 (권장)
+2. 이후 **`/implement Leave-Management`** — PLAN 원장 기반 구현
+
+바로 `/screen-spec`으로 진행할까, 아니면 `/implement`로 곧장 넘어갈까?

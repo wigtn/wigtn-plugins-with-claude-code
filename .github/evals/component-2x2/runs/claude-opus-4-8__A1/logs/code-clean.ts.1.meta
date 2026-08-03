@@ -1,0 +1,6 @@
+model=claude-opus-4-8
+arm=A1
+fixture=code-clean.ts
+rep=1
+rc=0
+seconds=114

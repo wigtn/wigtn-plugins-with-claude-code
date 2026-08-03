@@ -1,0 +1,36 @@
+코드를 정독하고 각 함수를 개별적으로 검증했습니다. 결론부터 말하면 **실제 결함은 발견되지 않았습니다.** 근거와 함께 검증 내역을 정리합니다.
+
+## 검증 내역
+
+**`searchDocuments` (14–31행)**
+- LIKE 메타문자 이스케이프 `q.replace(/[\\%_]/g, (c) => \`\\${c}\`)` (19행): 문자클래스 `[\\%_]`는 백슬래시·`%`·`_`를 모두 포함하고, `.replace` 콜백 반환값은 `$` 특수처리 없이 그대로 삽입되므로 `%`→`\%`로 정확히 변환됩니다.
+- SQL의 `ESCAPE '\\'` (24행): JS 문자열에서 `'\\'`는 백슬래시 1개 → SQL은 `ESCAPE '\'`. 이스케이프 문자와 일치. 정상.
+- 파라미터 바인딩(27행)으로 인젝션 없음. `owner_id = ?`로 소유자 스코프 강제. 정상.
+
+**`listDocumentsWithOwners` (33–47행)**
+- `WHERE d.owner_id = ? OR ? = 'admin'` (40행) + 바인딩 `[session.userId, session.role]` (43행): 비관리자는 자기 문서만, 관리자는 전체. `session.role`이 `undefined`여도 `undefined = 'admin'`은 false → 안전. 이메일 노출도 관리자/소유자로 제한됨. 정상.
+
+**`deleteDocument` (49–89행)**
+- 인가 검사(60행): `owner_id !== userId && role !== "admin"` → 소유자 또는 관리자만. 정상.
+- 트랜잭션 순서(68–86행): DB 행 삭제+감사로그를 한 트랜잭션으로 먼저 커밋(69–75행)하고, 되돌릴 수 없는 스토리지 삭제를 뒤에 수행(81–86행). 실패 시 남는 건 고아 객체뿐이며 reaper가 수거. 주석의 근거가 타당하고 구현과 일치. 500 미반환도 의도적. 정상.
+
+**`createShareLink` / `sign` (91–117행)**
+- 소유자 검증 후(100행) `exp = Date.now() + SHARE_TTL_MS`(104행)를 payload에 포함해 서명. HMAC-SHA256로 payload 서명(113–115행). 정상.
+
+**`verifyShareToken` / `sign` (109–133행)**
+- exp가 payload에 포함되어 HMAC로 **인증**됨 → 공격자가 만료 연장 불가.
+- 타이밍 안전 비교(126–128행): 길이 선검사 `a.length !== b.length`로 단락시켜 `timingSafeEqual`이 다른 길이에서 throw하는 것을 방지. 정상적인 사용.
+- **검증 순서**: MAC 검증(128행)을 통과한 뒤에만 `JSON.parse`(130행) 수행 → 미인증 입력을 파싱하지 않음. 정상.
+- 토큰 분리 `split(".")`(120행): base64url에는 `.`이 없으므로 payload/mac 경계 모호성 없음. 빈 payload/mac은 falsy로 걸러짐(121행). 만료 검사 `claims.exp < Date.now()`(131행)도 정확.
+- `SHARE_TOKEN_SECRET`은 모듈 로드 시 미설정이면 throw(7–10행)하므로 `!` 단언(113·123행)이 안전.
+
+## 참고 (결함 아님, 설계 관찰)
+아래는 감점 근거가 아니며 정보성 관찰입니다:
+- 공유 토큰은 7일 TTL 내 사전 철회(revocation) 메커니즘이 없음 — 코드 결함이 아닌 설계 범위상 한계.
+- `createShareLink`는 소유자만 허용(관리자 제외)하여 `deleteDocument`와 인가 정책이 다름 — 의도된 설계로 보이며 버그 아님.
+
+이들은 실제 버그가 아니므로 findings에 포함하지 않았습니다.
+
+```json
+{"findings":[]}
+```

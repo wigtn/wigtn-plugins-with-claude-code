@@ -1,0 +1,30 @@
+PRD와 실행계획을 완성하고 품질 게이트까지 통과했습니다.
+
+## 완료 보고
+
+**생성 파일**
+- 📄 PRD: `PRD.md` (요청하신 대로 루트에 저장)
+- 📋 실행계획 원장: `docs/todo_plan/PLAN_coupon.md` (`/implement`가 사용)
+
+**문서 개요**
+- **Type**: `product-feature` · **Scale Grade**: Startup (DAU 1천~1만 구간)
+- **역할**: `admin`(발행/관리) · `student`(적용) · `guest`(접근 불가)
+- 핵심 안전성 3종을 명세로 못박음:
+  - **중복 사용 방지** — `coupon_redemptions`의 유니크 제약 `(coupon_id, user_id)` + `(order_id)`
+  - **동시성 정합** — `remaining_quantity > 0` 조건부 원자적 UPDATE(음수 방지)
+  - **만료 차단** — 기간/수량소진/비활성 3가지 경로
+
+**품질 게이트 (prd-reviewer)**: ✅ **PASS** (Critical 0)
+- 계약 C-1~C-10 전부 충족
+- 지적된 Major 3건 + Minor 4건을 **모두 반영 완료**:
+  - AC-7 상태코드 정렬(validate=422 / redeem=409)
+  - 가용성 폴백 ↔ 트랜잭션 경계 모순 해소(단계별 폴백 명시)
+  - perUserLimit=1 고정 명문화(스키마-요구사항 정합)
+  - 코드 열거 방지·redeem rate limit·환불 복원 멱등/상한·validate 표현 정리
+
+**다음 단계 권장**
+`§5.4`에 FE 페이지가 4개(`/admin/coupons`, `/admin/coupons/new`, `/checkout`, `/coupons/history`) 있으므로:
+1. `/screen-spec coupon` — 화면정의서 5종(IA/Flow/Spec/Wireframe/Handoff) *(권장)*
+2. 이후 `/implement coupon`
+
+바로 화면정의서로 넘어갈까요, 아니면 구현으로 진행할까요?

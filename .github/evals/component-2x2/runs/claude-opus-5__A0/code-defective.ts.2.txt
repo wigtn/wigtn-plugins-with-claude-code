@@ -1,0 +1,109 @@
+파일 하나만 존재하고(디렉터리에 `code-defective.ts` 뿐) 별도 사양 문서가 없어, 모든 증거는 파일 경로/라인으로 답니다.
+
+---
+
+## Critical
+
+**C1. SQL 인젝션 — `code-defective.ts:11-17`**
+`q`(L9, 쿼리스트링 원문)를 템플릿 리터럴로 SQL에 직접 삽입합니다. `q=%' UNION SELECT id,password_hash,email,1 FROM users--` 같은 입력으로 임의 테이블 덤프·데이터 조작이 가능합니다. 같은 파일 L30, L40, L45는 `?` 바인딩을 쓰고 있어 **이 한 곳만 규칙을 어긴** 것이라 실수 가능성이 높습니다.
+
+**C2. `sign()`은 서명이 아니라 가역 인코딩 — `code-defective.ts:56-58`**
+`Buffer.from(JSON.stringify(payload) + secret).toString("base64url")`는 암호학적 서명이 아니라 단순 base64url 인코딩입니다. 결과:
+- 공유 링크(L53)를 받은 **누구나** 토큰을 디코딩하면 `{"documentId":"...","exp":...}hs256-prod-9f2a4c8e1b7d` 가 그대로 나와 **시크릿이 평문 유출**됩니다.
+- 시크릿을 얻으면 임의 `documentId`/`exp`로 토큰을 위조해 **모든 문서에 접근** 가능합니다. 시크릿 없이도 base64 구조상 payload 부분만 바꿔치기하는 시도가 가능하고, 무결성 검증 로직 자체가 존재하지 않습니다.
+- 상수명 `SHARE_TOKEN_SECRET = "hs256-..."`(L5)은 HS256을 암시하지만 HMAC은 어디에도 없습니다. `crypto.createHmac("sha256", key)` + 상수시간 비교로 대체해야 합니다.
+
+**C3. 시크릿 하드코딩 — `code-defective.ts:5`**
+프로덕션 시크릿으로 보이는 값이 소스에 리터럴로 박혀 있습니다. VCS/번들 산출물에 그대로 남고 로테이션이 불가능합니다. 환경변수/시크릿 매니저로 이동하고, 이미 커밋된 이상 **해당 키는 폐기 대상**입니다.
+
+**C4. 인증·인가 전무 — `code-defective.ts:7, 22, 39, 50`**
+네 핸들러 모두 `req`에서 세션/토큰을 읽지 않고 소유권 검사도 없습니다.
+- `deleteDocument`(L39-48): 인증되지 않은 임의 사용자가 `id`만 알면 **타인 문서와 S3 객체를 영구 삭제**. 파괴적이라 가장 위험합니다.
+- `createShareLink`(L50-54): 소유하지 않은 문서의 공유 링크를 발급 가능.
+- `searchDocuments`/`listDocumentsWithOwners`: 소유자 필터(`WHERE owner_id = :me`) 없이 전 테넌트 문서를 반환.
+
+---
+
+## Major
+
+**M1. N+1 쿼리 — `code-defective.ts:28-34`**
+문서 100건(L24 `LIMIT 100`)마다 `users` 조회를 순차 `await` 하여 최대 101회 왕복합니다. `JOIN` 또는 `WHERE id IN (...)` 단일 조회로 대체해야 합니다. (병렬화는 완화책일 뿐 근본 해결이 아닙니다.)
+
+**M2. 이메일 등 PII 무차별 노출 — `code-defective.ts:29-33`**
+인가 검사 없는 엔드포인트(C4)가 모든 소유자의 `email`을 반환합니다. 목록 API에 이메일이 필요한지 재검토하고, 필요하면 인가된 요청자에게만 노출해야 합니다.
+
+**M3. 존재하지 않는 문서에서 크래시 — `code-defective.ts:40-44`**
+`doc`이 빈 배열이면 `doc[0].storage_key`가 `TypeError: Cannot read properties of undefined`로 터져 404가 아닌 500이 나갑니다. 잘못된 `id` 하나로 재현되는 확정 버그입니다.
+
+**M4. 삭제 순서 역전 + 트랜잭션 없음 — `code-defective.ts:44-45`**
+S3 객체를 **먼저** 지우고 DB 행을 나중에 지웁니다. L45가 실패하면 DB에는 살아있지만 스토리지 객체가 없는 **깨진 레코드**가 남아 이후 다운로드가 전부 실패합니다. 순서를 뒤집어 DB 삭제를 커밋한 뒤 스토리지를 정리(가능하면 비동기 GC/아웃박스)하는 편이 안전합니다.
+
+**M5. `exp`가 검증도 강제도 되지 않음 — `code-defective.ts:52`**
+`body.exp`는 클라이언트가 준 값을 그대로 payload에 넣습니다. 타입/범위 검증이 없어 `exp: 99999999999999`(사실상 영구 링크)나 `undefined`(만료 필드 자체 누락)가 그대로 발급됩니다. 게다가 파일 어디에도 검증(verify) 경로가 없어 만료가 실제로 적용되는지 보장할 수 없습니다. 서버가 최대 TTL을 강제해야 합니다.
+
+**M6. 요청 본문 미검증 / 파싱 예외 미처리 — `code-defective.ts:51`**
+`await req.json()`은 `any`를 반환하고, 본문이 비었거나 JSON이 아니면 예외를 던져 처리되지 않은 500이 됩니다. 스키마 검증(zod 등) + 400 응답이 필요합니다.
+
+**M7. 빈 검색어로 전체 덤프 — `code-defective.ts:9, 14`**
+`q` 미지정 시 `?? ""` → `LIKE '%%'`로 전 문서가 매칭됩니다. C4와 결합하면 인증 없는 데이터 유출 경로입니다. 최소 길이 요구 또는 빈 값 시 빈 결과 반환이 필요합니다.
+
+---
+
+## Minor
+
+**m1. LIKE 와일드카드 인젝션 — `code-defective.ts:14`**
+C1을 바인딩으로 고치더라도 `q` 안의 `%`, `_`는 여전히 패턴 메타문자로 동작합니다. 이스케이프(`ESCAPE` 절)가 필요합니다.
+
+**m2. 선행 와일드카드로 인한 풀스캔 — `code-defective.ts:14`**
+`LIKE '%...'`는 인덱스를 못 타 문서 수 증가 시 성능이 선형 악화됩니다. 전문 검색 인덱스 고려 대상입니다.
+
+**m3. 페이지네이션 부재 — `code-defective.ts:16, 24`**
+`LIMIT 50` / `LIMIT 100` 고정에 오프셋·커서가 없어 51번째 이후 결과에 도달할 방법이 없습니다.
+
+**m4. 런타임 API 혼용 — `code-defective.ts:57` vs `7, 19`**
+Web 표준 `Request`/`Response`를 쓰면서 L57만 Node 전용 `Buffer`에 의존합니다. Edge/Workers 런타임에서 `Buffer is not defined`로 실패합니다.
+
+**m5. 삭제가 항상 200 — `code-defective.ts:47`**
+대상 유무와 무관하게 `{ok:true}`를 반환해 클라이언트가 404를 구분할 수 없습니다(M3에서 크래시하지 않게 고친 뒤에도 남는 문제).
+
+**m6. 사용하지 않는 파라미터 — `code-defective.ts:22`**
+`listDocumentsWithOwners(req)`의 `req`가 미사용입니다. (인가를 추가하면 해소되는 냄새이기도 합니다.)
+
+**m7. 에러 핸들링 부재 — `code-defective.ts:7-54` 전반**
+`try/catch`가 하나도 없어 DB/S3 예외가 그대로 전파되며, 스택·드라이버 메시지가 응답에 노출될 위험이 있습니다.
+
+---
+
+## Info
+
+**i1. 레이트 리밋 없음 — `code-defective.ts:7`** — 무인증 검색 엔드포인트에 제한이 없어 열거·스크래핑에 취약합니다.
+**i2. 임포트 미해결 — `code-defective.ts:2-3`** — 디렉터리에 `./db`, `./storage` 파일이 없어 현재 상태로는 타입체크/빌드가 불가합니다(픽스처 특성일 수 있음).
+**i3. 쿼리 결과 타입 부재 — `code-defective.ts:11, 23, 29, 40`** — `db.raw` 반환이 사실상 `any`라 `doc[0].storage_key`(L44) 같은 접근이 컴파일 타임에 걸리지 않습니다. 제네릭 반환 타입 도입 권장.
+
+---
+
+```json
+{"findings":[
+{"severity":"critical","where":"code-defective.ts:11-17","what":"검색어 q를 템플릿 리터럴로 SQL에 직접 삽입해 SQL 인젝션 발생. 같은 파일 L30/L40/L45는 ? 바인딩을 사용 중이라 이 지점만 규칙 위반."},
+{"severity":"critical","where":"code-defective.ts:56-58 (사용처 L52-53)","what":"sign()이 HMAC이 아니라 payload+secret의 base64url 인코딩. 공유 링크 수신자 누구나 디코딩해 시크릿을 평문 획득하고 임의 documentId/exp 토큰을 위조 가능. 검증 로직도 부재."},
+{"severity":"critical","where":"code-defective.ts:5","what":"프로덕션 공유 토큰 시크릿이 소스에 하드코딩되어 VCS/번들에 유출, 로테이션 불가. 해당 키 폐기 필요."},
+{"severity":"critical","where":"code-defective.ts:7, 22, 39, 50","what":"네 핸들러 모두 인증·소유권 검사 없음. 특히 deleteDocument는 미인증 사용자가 id만으로 타인 문서와 S3 객체를 영구 삭제 가능."},
+{"severity":"major","where":"code-defective.ts:28-34","what":"문서 100건마다 users를 순차 조회하는 N+1 쿼리(최대 101회 왕복). JOIN 또는 IN 절 단일 조회로 대체 필요."},
+{"severity":"major","where":"code-defective.ts:29-33","what":"인가 검사 없는 엔드포인트가 모든 소유자의 email(PII)을 반환."},
+{"severity":"major","where":"code-defective.ts:40-44","what":"조회 결과가 비었을 때 doc[0].storage_key에서 TypeError 발생, 404가 아닌 500 응답. 잘못된 id 하나로 재현."},
+{"severity":"major","where":"code-defective.ts:44-45","what":"S3 객체를 DB 행보다 먼저 삭제하고 트랜잭션/보상 로직이 없어, DELETE 실패 시 스토리지 없는 깨진 레코드가 잔존."},
+{"severity":"major","where":"code-defective.ts:52","what":"클라이언트가 준 body.exp를 검증 없이 토큰에 삽입. 사실상 영구 링크나 exp 누락 토큰 발급 가능하며 서버 측 최대 TTL 강제 없음."},
+{"severity":"major","where":"code-defective.ts:51","what":"await req.json() 결과를 스키마 검증 없이 사용하고 파싱 예외를 처리하지 않아 잘못된 본문에 400이 아닌 500 반환."},
+{"severity":"major","where":"code-defective.ts:9, 14","what":"q 미지정 시 LIKE '%%'로 전체 문서가 매칭되어, 인가 부재와 결합하면 무인증 전체 데이터 덤프 경로가 됨."},
+{"severity":"minor","where":"code-defective.ts:14","what":"바인딩으로 고치더라도 q 내부의 %, _ 가 LIKE 메타문자로 동작. ESCAPE 처리 필요."},
+{"severity":"minor","where":"code-defective.ts:14","what":"선행 와일드카드 LIKE '%...'는 인덱스를 사용할 수 없어 데이터 증가 시 풀스캔."},
+{"severity":"minor","where":"code-defective.ts:16, 24","what":"LIMIT 고정에 오프셋/커서가 없어 페이지네이션 불가."},
+{"severity":"minor","where":"code-defective.ts:57","what":"Web 표준 Request/Response를 쓰면서 Node 전용 Buffer에 의존, Edge/Workers 런타임에서 실패."},
+{"severity":"minor","where":"code-defective.ts:47","what":"삭제 대상 존재 여부와 무관하게 항상 200 {ok:true} 반환해 클라이언트가 404를 구분 불가."},
+{"severity":"minor","where":"code-defective.ts:22","what":"listDocumentsWithOwners의 req 파라미터가 미사용."},
+{"severity":"minor","where":"code-defective.ts:7-54","what":"try/catch가 전무해 DB/S3 예외가 그대로 전파되고 내부 오류 메시지가 노출될 위험."},
+{"severity":"info","where":"code-defective.ts:7","what":"무인증 검색 엔드포인트에 레이트 리밋이 없어 열거·스크래핑에 취약."},
+{"severity":"info","where":"code-defective.ts:2-3","what":"./db, ./storage 모듈이 디렉터리에 존재하지 않아 현재 상태로 타입체크/빌드 불가."},
+{"severity":"info","where":"code-defective.ts:11, 23, 29, 40","what":"db.raw 반환 타입이 사실상 any라 doc[0].storage_key 같은 접근이 컴파일 타임에 검출되지 않음."}
+]}
+```

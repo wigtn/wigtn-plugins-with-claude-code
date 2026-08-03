@@ -1,0 +1,62 @@
+코드를 검토했다. 아래에 심각도 순으로 정리한다.
+
+## 보안 (Critical)
+
+**1. SQL 인젝션 — `searchDocuments`**
+`code-defective.ts:11-17`. 사용자 입력 `q`(line 9)를 문자열 보간으로 쿼리에 직접 삽입한다(``LIKE '%${q}%'``). `q`에 `' OR 1=1 --` 등을 넣으면 임의 SQL 실행이 가능하다. 다른 함수들이 쓰는 파라미터 바인딩(`?`, line 30/40/45)을 써야 한다.
+
+**2. 하드코딩된 시크릿**
+`code-defective.ts:5`. `SHARE_TOKEN_SECRET`이 소스에 평문 상수로 박혀 있다. 저장소/번들 노출 시 즉시 유출되며 로테이션도 불가능하다. 환경변수/시크릿 매니저로 빼야 한다.
+
+**3. `sign`이 실제 서명이 아니며 시크릿을 유출한다**
+`code-defective.ts:56-58`. 주석은 HS256(HMAC-SHA256)을 암시하지만(line 5) 구현은 `base64url(JSON + secret)`일 뿐이다. base64url은 가역이므로 **토큰을 디코드하면 payload와 secret이 그대로 평문 노출**된다. 즉 발급된 공유 링크를 받은 누구나 시크릿을 복구해 임의 토큰(다른 `documentId`, 원하는 `exp`)을 위조할 수 있다. `crypto.createHmac("sha256", secret)`로 payload와 서명을 분리해야 한다.
+
+**4. 인가(권한) 검사 전무 — IDOR**
+- `deleteDocument` `code-defective.ts:39-48`: 인증/소유권 확인 없이 `params.id`만으로 아무 문서나 삭제. 임의 사용자 문서 파괴 가능.
+- `createShareLink` `code-defective.ts:50-54`: 문서 소유 여부 확인 없이 아무 `id`에 대한 공유 링크 발급 가능.
+- `searchDocuments` / `listDocumentsWithOwners`: 요청자 기준 필터링(`owner_id = ?`)이 없어 전체 문서를 반환.
+
+**5. 민감정보(PII) 노출**
+`code-defective.ts:29-33`. 인가 없이 모든 문서 소유자의 `email`을 응답에 포함시킨다. 이메일 대량 수집 경로가 된다.
+
+## 정확성 / 안정성 (Major)
+
+**6. `exp`를 클라이언트 입력으로 신뢰**
+`code-defective.ts:52`. `body.exp`를 검증 없이 그대로 토큰에 넣는다. 타입/범위 검증이 없어 만료 없는(또는 과도하게 긴) 토큰을 클라이언트가 임의 지정할 수 있고, 애초에 서버 어디에서도 `exp`를 검증하는 로직이 없다.
+
+**7. `doc[0]` 미존재 시 크래시**
+`code-defective.ts:44`. 문서가 없으면 `doc[0]`가 `undefined`가 되어 `doc[0].storage_key`에서 `TypeError`. 존재 확인/404 처리가 필요하다. `createShareLink`도 존재 검사가 없다.
+
+**8. 삭제 순서로 인한 데이터 불일치**
+`code-defective.ts:44-45`. S3 객체를 먼저 지우고(line 44) DB row를 나중에 지운다(line 45). DB 삭제가 실패하면 storage_key만 죽은 orphan row가 남는다. 트랜잭션/보상 처리 또는 DB 먼저 삭제가 안전하다.
+
+## 성능 (Major)
+
+**9. N+1 쿼리**
+`code-defective.ts:28-34`. 문서 100건에 대해 소유자를 루프에서 건별 조회(최대 101쿼리). `JOIN` 또는 `WHERE id IN (...)` 한 번으로 대체해야 한다.
+
+## 부가 (Minor)
+
+**10. LIKE 특수문자 미이스케이프**
+`code-defective.ts:14`. (인젝션을 고쳐 바인딩으로 바꾸더라도) `%`, `_`를 이스케이프하지 않으면 와일드카드로 오작동한다.
+
+**11. 오류 처리 부재**
+전 함수(`code-defective.ts:7-54`)에 try/catch가 없어 DB/S3 예외가 그대로 500으로 새며, 스택/쿼리 정보가 노출될 수 있다.
+
+```json
+{"findings":[
+  {"severity":"critical","where":"code-defective.ts:11-17 (searchDocuments)","what":"사용자 입력 q를 문자열 보간으로 SQL에 삽입 → SQL 인젝션. 파라미터 바인딩 필요"},
+  {"severity":"critical","where":"code-defective.ts:5","what":"SHARE_TOKEN_SECRET 하드코딩. 환경변수/시크릿 매니저로 이전 필요"},
+  {"severity":"critical","where":"code-defective.ts:56-58 (sign)","what":"HMAC이 아닌 base64url(payload+secret) 구현. 가역 인코딩이라 토큰 디코드 시 secret과 payload 평문 유출, 토큰 위조 가능"},
+  {"severity":"critical","where":"code-defective.ts:39-48 (deleteDocument)","what":"인증/소유권 검사 없이 임의 문서 삭제 가능 (IDOR)"},
+  {"severity":"critical","where":"code-defective.ts:50-54 (createShareLink)","what":"소유권 확인 없이 임의 문서 id에 대한 공유 링크 발급 가능 (IDOR)"},
+  {"severity":"critical","where":"code-defective.ts:7-37","what":"searchDocuments/listDocumentsWithOwners에 요청자 기준 접근 제어 없음 → 전체 문서 노출"},
+  {"severity":"critical","where":"code-defective.ts:29-33","what":"인가 없이 모든 소유자 email(PII)을 응답에 포함"},
+  {"severity":"major","where":"code-defective.ts:52 (createShareLink)","what":"클라이언트가 준 body.exp를 검증 없이 신뢰, 만료 강제/검증 로직 부재"},
+  {"severity":"major","where":"code-defective.ts:44 (deleteDocument)","what":"문서 미존재 시 doc[0].storage_key에서 TypeError 크래시, 404 처리 없음"},
+  {"severity":"major","where":"code-defective.ts:44-45","what":"S3 삭제 후 DB 삭제 순서. DB 삭제 실패 시 orphan row 발생, 트랜잭션/보상 없음"},
+  {"severity":"major","where":"code-defective.ts:28-34 (listDocumentsWithOwners)","what":"소유자 조회 N+1 쿼리(최대 101회). JOIN 또는 IN 절로 대체 필요"},
+  {"severity":"minor","where":"code-defective.ts:14","what":"LIKE 절 %,_ 와일드카드 미이스케이프로 검색 오작동 가능"},
+  {"severity":"minor","where":"code-defective.ts:7-54","what":"전 핸들러에 예외 처리 부재 → 내부 오류/쿼리 정보 노출 위험"}
+]}
+```

@@ -1,0 +1,303 @@
+PRD 리뷰어 서브에이전트의 결과를 그대로 전달합니다.
+
+---
+
+# PRD Analysis Report
+
+## 분석 대상
+- **문서**: `/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.z1l3AxEniK/prd-defective.md`
+- **분석일**: 2026-08-03
+- **계약 정본**: `.../wigtn-local/contracts/PRD-CONTRACT.md`
+- **유형 판정**: 헤더(L3) `> **Version**: 1.0 · **Type**: feature`. `feature`는 계약이 정의한 3종(`product-feature`/`internal-backend`/`refactor`) 중 어느 것도 아니다 → 계약 L21 "모호하면 `product-feature`" 규칙에 따라 **strict(product-feature) 모드**로 판정. 따라서 C-1~C-10 전 항목 활성이며, `Has FE Components: Yes`가 3행(L95-97) 존재하므로 C-7·C-8도 발화.
+- **코드베이스 grounding**: 작업 디렉터리에 PRD 1개 파일만 존재(소스 없음). Feasibility/Consistency 렌즈는 PRD 내부 증거 + 명시된 스택(L79)에 한정해 판정.
+
+## 외부 근거 검증
+스킵 (사유: WebSearch 권한 미승인 — `third_party_api`/`library_capability` 주장 검증 불가). 아래 B-계열 지적 중 외부 한도에 의존하는 항목은 **"검증 필요"** 태그를 달았고, `contradicted` 확정 근거가 없으므로 Critical 씨앗으로 쓰지 않았다.
+
+## 요약
+
+| 카테고리 | 발견 | Critical | Major | Minor |
+|----------|------|----------|-------|-------|
+| 완전성 (Completeness) | 12 | 5 | 5 | 2 |
+| 실현가능성 (Feasibility) | 5 | 0 | 4 | 1 |
+| 보안 (Security) | 7 | 4 | 3 | 0 |
+| 일관성 (Consistency) | 8 | 2 | 3 | 3 |
+| **총계** | **32** | **11** | **15** | **6** |
+
+**Quality Gate 판정: ❌ BLOCKED** — Critical 11건. 계약 검증 항목 C-2·C-3·C-4·C-5·C-6·C-7·C-8·C-10 위반.
+
+---
+
+## 계약 대조표 (C-1 ~ C-10)
+
+| ID | 항목 | 상태 | 증거 |
+|----|------|------|------|
+| C-1 | §2.3 User Roles | ✅ PASS | L44-50, Role Key 영문 소문자 3종 선언 |
+| C-2 | §2.2 Gherkin 수용 기준 | ❌ FAIL | L32-42, 정상 경로 2건뿐 — 실패·만료·권한부족 시나리오 0건 |
+| C-3 | §3 FR 무모순 | ❌ FAIL | L58 FR-003 ↔ L62 FR-007 정면 충돌 |
+| C-4 | §4.1 정량 NFR | ❌ FAIL | L68 "기다릴 만한 수준" |
+| C-5 | §4.5 인가 규칙 | ❌ FAIL | §4.5 섹션 부재 (§4는 4.1/4.2뿐, L66-73) |
+| C-6 | §5.4 Pages 테이블 | ⚠️ PARTIAL | L93 헤더에 Audience/Auth/Linked FRs/Primary State/Responsive 5개 열 누락 |
+| C-7 | §5.4.1 Page State Matrix | ❌ FAIL | 섹션 자체 부재 (L98 → L99로 §6 점프) |
+| C-8 | §5.5 User Flow (Mermaid) | ❌ FAIL | 섹션 자체 부재 |
+| C-9 | §1.3 Non-Goals | ✅ PASS | L18-21 |
+| C-10 | §6 Implementation Phases | ⚠️ PARTIAL | L99-103, Deliverable 없음 + P0(FR-003)가 Phase 2 배치 |
+
+---
+
+## A. 완전성 (Completeness)
+
+> 적대적 질문: "이 PRD로 구현하면 무엇이 **빠져서** 실패하는가?"
+
+### A-1. [Critical] §1.2 핵심 목표에 대응하는 FR이 통째로 없다 — 버전 관리 부재
+§1.1(L9) `"최신본이 어느 것인지 알 수 없다"`가 이 제품의 **문제 정의 그 자체**이고, §1.2(L15)가 `"최신본이 무엇인지 항상 명확"`을 목표로 선언한다. 그런데 §3 FR 테이블(L56-62) 7개 중 버전·리비전·업데이트를 다루는 FR은 **0개**다. FR-001은 "업로드", FR-004는 "삭제"뿐이며 "같은 문서의 새 버전 올리기"가 정의되지 않았다.
+- **영향**: 구현팀은 단순 파일 저장소를 만들고, 사용자는 `계약서_최종_final_v2.pdf`를 그대로 여러 개 업로드한다. PRD가 해결하겠다고 선언한 문제가 출시 후에도 그대로 남는다.
+- **개선안**: `FR-008 동일 문서에 새 버전을 업로드하면 이전 버전이 히스토리로 보존되고 목록에는 최신 버전만 노출된다 (P0)` + DB 스키마에 `document_versions` 테이블 + §5.4.1에 상세 페이지 버전 히스토리 상태 정의.
+
+### A-2. [Critical] §2.2 수용 기준에 실패 경로가 0건 (C-2 위반)
+L32-42의 Gherkin 2개는 모두 해피패스다(`Then 문서 목록에 나타난다`, `Then 링크를 받은 사람이 문서를 볼 수 있다`). 계약 L35는 `"정상 경로뿐 아니라 실패·만료·권한부족 시나리오도 포함"`을 명시적으로 요구한다.
+- **누락 시나리오**: 50MB 초과 업로드, 허용되지 않는 확장자(.exe/.html), 만료된 공유 링크 접근, 존재하지 않는 token, 남의 문서 삭제 시도, 관리자 아닌 사용자의 관리자 API 호출, 업로드 중 네트워크 끊김, 스토리지 장애.
+- **영향**: QA가 검증할 실패 케이스 정의가 없어 권한 우회 버그가 테스트를 통과한다.
+
+### A-3. [Critical] §4.5 Security(인가 규칙) 섹션 부재 (C-5 위반)
+§4는 4.1 Performance(L66-68), 4.2 Security(L70-73) 두 개뿐이다. 계약 L57이 요구하는 `"인가 규칙(어느 역할이 어느 리소스에)"`이 문서 어디에도 없다. §2.3에서 role key 3종(`member`/`admin`/`guest`)을 선언(L48-50)해놓고, §5.2 API 테이블(L83-89)에는 **인가 주체 열이 없다**. 즉 `DELETE /api/documents/{id}`(L88)를 누가 호출할 수 있는지 문서상 미정의다.
+
+### A-4. [Critical] §5.4.1 Page State Matrix 부재 (C-7 위반)
+§5.4(L93-97)에 `Has FE Components: Yes`가 3행(`/documents`, `/documents/[id]`, `/s/[token]`) 있으므로 필수다. 문서는 L98에서 곧장 `## 6. Implementation Phases`(L99)로 넘어간다.
+- **영향**: `/s/[token]`의 만료/무효 토큰 상태, `/documents`의 empty 상태(문서 0건), no-permission 상태가 설계되지 않아 FE가 화면 없이 500을 노출한다.
+
+### A-5. [Critical] §5.5 User Flow (Mermaid) 부재 (C-8 위반)
+FE Yes ≥1 조건 충족인데 flowchart가 없다. 특히 `/s/[token]` 진입 시 "로그인 상태면 어디로, 비로그인이면 어디로, 토큰 만료면 어디로" 분기가 전혀 그려지지 않았다.
+
+### A-6. [Major] §1.4 Scope 섹션 부재
+계약 L31이 요구하는 `1.4 Scope — 포함/제외 경계`가 없다. §1.3 Non-Goals(L20-21)는 2줄뿐이라 "외부 협력사 계정 지원", "모바일 앱", "폴더 구조", "권한 위임"이 범위 안인지 밖인지 판단 불가.
+
+### A-7. [Major] §4.0 Scale Grade 섹션 + 근거 부재
+헤더 L3에 `Scale Grade: Startup`이 있으나, 계약은 `§4.0`에 등급 + **근거 한 줄**(DAU 기준)을 요구한다. "사내"라는 §1.1 정의와 결합하면 Hobby(1,000 미만)일 가능성이 높다. 등급이 틀리면 이후 인프라 선택(§5.1)의 정합성 판정 기준 자체가 무너진다.
+
+### A-8. [Major] §4.2 Availability / §4.4 Recovery 부재
+문서 저장소는 원본이 유일본이 될 수 있는 시스템인데 RTO/RPO, 백업 주기, S3 버전닝 여부가 없다. FR-004(L59) 삭제가 하드/소프트 삭제인지도 미정의라 **실수 삭제 시 복구 경로가 0**이다.
+
+### A-9. [Major] §4.3 Data(보관 기간·개인정보·삭제 정책) 부재
+사내 문서에는 인사·계약·고객 정보가 들어간다. 보관 기간, 퇴사자 문서 승계/파기, 삭제 요청 처리, 로그 보관이 전부 미정의.
+
+### A-10. [Major] §7 Success Metrics 섹션 부재
+§1.2의 "최신본이 항상 명확"을 무엇으로 측정할지 정의가 없어 출시 후 성패 판정이 불가능하다.
+
+### A-11. [Minor] §2.1 Primary User가 계약 서식을 따르지 않음
+L27-28은 `"**사내 구성원**: 문서를 올리고 링크로 공유한다."` 형태다. 계약은 `As a [유형], I want to [행동] so that [이유]`를 요구한다. "so that"(왜)이 빠져 우선순위 판단 근거가 소실됐다.
+
+### A-12. [Minor] 관리자 조회 기능이 FR에 없다
+§2.3(L49)은 admin을 `"전체 문서 조회, 임의 문서 삭제"`로 정의하지만, §3에서 admin 관련 FR은 FR-005(삭제, L60) 하나뿐이다.
+
+---
+
+## B. 실현가능성 (Feasibility)
+
+> 적대적 질문: "이 요구를 명시된 스택으로 **정말 만들 수 있는가?**"
+
+### B-1. [Major] 50MB 업로드를 `POST /api/documents`로 받는 설계는 서버리스 body 한도와 충돌 (검증 필요)
+FR-001(L56) `"최대 50MB"` + §5.2(L85) `POST /api/documents`는 Next.js Route Handler 경유 업로드를 뜻한다. 서버리스 요청 본문 상한(수 MB대)은 잘 알려진 제약이며, 스택은 Next.js + S3 호환 스토리지(L79)다.
+- **영향**: Phase 1 도중 413에 부딪혀 presigned URL 직접 업로드로 아키텍처를 갈아엎어야 한다.
+- **개선안**: `POST /api/documents/presign` → 클라이언트 직접 PUT → `POST /api/documents/complete` 3단계 재설계 + presign TTL·크기·Content-Type 제약 명시.
+- **주의**: 정확한 바이트 한도는 배포 플랫폼 문서로 확인 필요(외부 검증 미수행).
+
+### B-2. [Major] DOCX 미리보기는 브라우저 네이티브로 불가 — 변환 파이프라인이 설계에 없다
+§5.4(L96)가 상세를 `"미리보기 + 공유"`로 정의하고 FR-001(L56)이 `PDF/DOCX`를 허용한다. DOCX는 변환(LibreOffice headless / 외부 API)이 필요한데 §5.1 스택(L79)에 변환 컴포넌트가 없고 §6 Phase(L101-103)에도 태스크가 없다.
+
+### B-3. [Major] `/s/[token]` 페이지를 뒷받침하는 API가 §5.2에 없다
+§5.4(L97)에 공유 열람 페이지가 있고 §5.2(L83-89)에는 생성(`POST /api/documents/{id}/share`)만 있다. **토큰으로 문서를 조회하는 엔드포인트가 없다**. 기존 `GET /api/documents/{id}`(L87)를 재사용하면 FR-007과 충돌하고, 새로 만들면 미명세다.
+
+### B-4. [Major] §5.2 Database Schema / §5.3 Architecture 섹션 부재 + 번호 건너뜀
+실제 문서는 `### 5.1 Stack`(L77) → `### 5.2 API`(L81) → `### 5.4 Pages`(L91)로, **5.3이 비어 있고 5.1/5.2의 의미도 계약과 어긋난다**(계약: 5.1=API Spec, 5.2=DB Schema, 5.3=Architecture).
+
+### B-5. [Minor] FR-006 제목 부분 일치 검색의 구현 방식 미정의
+L61 `"제목 부분 일치"`는 PostgreSQL `LIKE '%q%'`가 되어 B-tree 인덱스를 못 탄다. 검색 범위(자기 문서/전체)와 함께 §5.2에 쿼리 파라미터가 정의돼야 한다(현재 `GET /api/documents`(L86)에 검색 파라미터 없음).
+
+---
+
+## C. 보안 (Security)
+
+> 판정 전제: 외부 노출 REST API(§5.2) + 인증 + 비로그인 공개 링크(FR-003) 존재 → 보안 결함은 Critical 발화 조건 충족.
+
+### C-1. [Critical] 무인증 공유 링크에 만료·폐기·토큰 강도·범위가 전부 미정의
+FR-003(L58)은 `"로그인 없이 문서를 열람"`, §5.2(L89)는 `POST /api/documents/{id}/share`만 정의한다. 다음이 전부 없다: 토큰 엔트로피(추측 가능한 순차 ID면 `/s/[token]` 전수 조사로 전 사내 문서 유출), 만료 시각(TTL), 폐기(revoke) API, 접근 범위(열람 vs 다운로드), 접근 로그, 워터마크.
+- **영향**: §1.2(L16) 목표 `"외부 유출 방지"`와 정면으로 어긋난다. 퇴사자가 만든 링크가 무기한 살아 있고 회수 불가.
+
+### C-2. [Critical] 인가 규칙 부재로 BOLA/IDOR가 설계 단계에서 열려 있다
+`DELETE /api/documents/{id}`(L88)는 FR-004(본인 삭제, L59)와 FR-005(관리자 임의 삭제, L60) **양쪽이 같은 경로를 공유**하는데, role 판정·소유권 검사가 미정의다. `GET /api/documents/{id}`(L87)도 "타인 문서 id를 넣으면?"에 답이 없다.
+- **공격 시나리오**: member가 `DELETE /api/documents/999` 호출 → 사내 문서 임의 삭제. 조회도 id 순회로 전량 열람.
+
+### C-3. [Critical] 파일 검증이 "확장자 검사" 1줄 — 우회 자명 + 저장형 XSS 경로
+§4.2(L73) `"업로드 파일 확장자 검사"`가 유일한 입력 검증이다. 확장자는 클라이언트가 바꾸는 값이라 검증으로 성립하지 않는다.
+- **공격 시나리오**: 악성 HTML/SVG를 `report.pdf`로 위장 업로드 → §5.4(L96) 미리보기가 동일 오리진에서 렌더링 → 저장형 XSS로 세션 탈취.
+- **누락 통제**: 매직바이트 검증, 서버 측 MIME 확정, 백신 스캔, 샌드박스 오리진 미리보기, `Content-Disposition: attachment` + `nosniff`, 파일명 정규화(`../` 차단), 서버 측 크기 상한 강제.
+
+### C-4. [Critical] Rate Limiting이 문서 어디에도 없다
+§4.2(L70-73) 전체가 HTTPS + 확장자 검사 2줄이다. `/s/[token]`(L97) 토큰 브루트포스, `POST /api/documents`(L85) 50MB 반복 업로드 DoS, `POST .../share`(L89) 무제한 링크 생성, 로그인 크리덴셜 스터핑이 전부 무방비.
+
+### C-5. [Major] 인증 방식(authentication)이 전혀 정의되지 않았다
+FR-007(L62)이 인증을 선언하지만 무엇으로 인증하는지가 §4.2에도 §5.1(L79)에도 없다. §2.3의 `member`가 "사내 구성원"임을 무엇으로 판별하는지도 미정의 — **"사내"의 경계를 시스템이 알지 못한다**.
+
+### C-6. [Major] 객체 스토리지 접근 통제 미정의 — 버킷 직접 노출 위험
+§5.1(L79) `S3 호환 스토리지`만 적혀 있고, 버킷 공개 여부, SSE, 앱 경유하지 않는 객체 URL 차단, presigned GET TTL이 없다. 객체 URL이 공개면 인가 로직(C-2)과 링크 폐기(C-1)가 모두 우회된다.
+
+### C-7. [Major] 감사 로그·개인정보 처리 방침 부재
+"외부 유출 방지"(L16)가 목표인데 **누가 언제 무엇을 열람/공유/삭제했는지 남기는 요구가 0건**이다. 유출 발생 시 추적 불가.
+
+---
+
+## D. 일관성 (Consistency)
+
+### D-1. [Critical] FR-003 ↔ FR-007 정면 충돌 (C-3 위반)
+- L58: `FR-003 | 공유 링크를 받은 사람은 **로그인 없이** 문서를 열람할 수 있다 | P0`
+- L62: `FR-007 | **모든 문서 조회 요청은 인증을 거쳐야 한다** | P0`
+
+둘 다 P0이며 동시 충족 불가. 계약 L47이 **글자 그대로 예시로 든 금지 패턴**이다.
+- **영향**: 실무에서는 FR-003이 이겨서 FR-007이 조용히 폐기되고, 인증 우회 경로가 정식 기능으로 남는다.
+- **개선안**: FR-007을 `"공유 토큰을 동반하지 않는 모든 조회 요청은 인증 필수. 토큰 경로는 §4.5의 토큰 검증(만료·폐기·범위)을 통과해야 한다"`로 한정.
+
+### D-2. [Critical] §1.2 목표 "외부 유출 방지" ↔ FR-003 무인증 공개 링크
+L16 목표와 L58 P0 기능이 상충. 만료·폐기·감사(C-1, C-7)가 전부 없으므로 제품의 대표 기능이 대표 목표를 무효화한다.
+
+### D-3. [Major] FR-002 문서 목록의 가시 범위가 §2.3 권한과 모순
+L57 FR-002는 **누구의 문서인지 미기재**, L48 `member`는 `"자기 문서 조회"`, L10 §1.1은 `"사내 문서를 한 곳에 모으고"`. 넓게 구현하면 정보 유출, 좁게 구현하면 §1.1 문제 미해결. 검색(FR-006, L61)도 같은 모호성을 상속.
+
+### D-4. [Major] §5.4 Pages 테이블이 계약 스키마와 불일치 (C-6 부분 위반)
+L93 헤더는 4열이지만 계약은 7열(`Route | Audience | Auth | Linked FRs | Has FE Components | Primary State | Responsive`)을 요구한다. **`Audience`·`Auth` 부재**가 치명적 — `/s/[token]`(L97)이 무인증인지, `/documents`(L95)가 member 전용인지 표에서 읽을 수 없다.
+
+### D-5. [Major] §6 Phase가 FR 우선순위·의존성을 위반 (C-10 부분 위반)
+L101-103: ① **P0 FR-003(L58)이 Phase 2**로 밀림 ② **P0 FR-007(L62)이 어느 Phase에도 없음** — 인증 없는 문서 저장소가 먼저 배포될 수 있다 ③ Deliverable·FR ID 매핑 없어 완료 판정 불가.
+
+### D-6. [Minor] 헤더 `Type: feature`가 계약 정의 3종에 없다
+L3. 유효값은 `product-feature | internal-backend | refactor`. fail-safe로 strict 처리했으나 자동 게이트가 조건부 섹션 필수 여부를 잘못 판정할 수 있다.
+
+### D-7. [Minor] §4 하위 번호가 계약과 어긋나 Security가 두 자리를 점유
+문서 L70은 `### 4.2 Security`인데 계약은 4.2=Availability, 4.5=Security. 번호 충돌 탓에 "§4.2를 채웠다"는 겉보기와 달리 Availability는 비어 있다.
+
+### D-8. [Minor] `guest` role key가 선언만 되고 어디서도 인용되지 않는다
+L50에서 선언했지만 §3 FR(L56-62)·§5.2 API(L83-89)·§5.4 Pages(L93-97) 어디에도 없다. FR-003의 주체가 `guest`임을 명시해야 인가 매트릭스가 성립한다.
+
+---
+
+## Phase 2.5 완전성 자가 점검 (4렌즈 사각지대)
+
+| 점검 질문 | 결과 |
+|---|---|
+| 어느 렌즈도 보지 않은 섹션이 있는가? | 없음 — §1~§6 전 섹션 커버 |
+| 검증 없이 전제로 깔린 가정은? | ① "사내 구성원 판별 가능"(C-5) ② "S3 업로드는 항상 성공"(E-1) ③ "50MB가 서버를 통과"(B-1) |
+| 4렌즈 사각지대 리스크 유형은? | 운영/롤백·비용·접근성 — E-1~E-3 |
+
+### E-1. [Major] 업로드 실패·부분 실패 시 정합성 정책 부재
+`POST /api/documents`(L85)가 DB와 스토리지 2곳을 건드리는데 한쪽만 성공했을 때 처리(고아 객체 정리, 재시도, 멱등성 키)가 없다. FR-004 삭제(L59)도 DB만 지우고 객체가 남으면 C-6과 결합해 "삭제한 줄 알았는데 살아 있는 문서"가 된다.
+
+### E-2. [Minor] 스토리지 비용·쿼터 정책 부재
+FR-001(L56)이 1건당 50MB를 허용하는데 사용자당/조직당 총량 상한이 없다. C-4와 결합하면 비용 기반 DoS가 성립한다.
+
+### E-3. [Minor] 접근성·반응형 요구 부재
+§5.4(L93)에 `Responsive` 열이 없고(D-4), 미리보기의 키보드 접근성·스크린리더 대응 요구가 전무하다.
+
+---
+
+## 누락된 요구사항
+
+| ID | 요구사항 | 권장 우선순위 |
+|----|---------|--------------|
+| FR-008 | 동일 문서의 새 버전 업로드 시 이전 버전 보존, 목록엔 최신본만 노출 | P0 (§1.2 목표 직결) |
+| FR-009 | 공유 링크는 만료 시각(기본 7일)을 갖고 생성자가 언제든 폐기 가능 | P0 |
+| FR-010 | 문서 열람·공유·삭제 이벤트를 감사 로그로 기록 | P0 |
+| FR-011 | 업로드 파일은 매직바이트 타입 검증 + 백신 스캔 통과 후 저장 | P0 |
+| FR-012 | 인증은 사내 SSO(OIDC), 허용 도메인만 계정 생성 | P0 |
+| FR-013 | 소프트 삭제 후 N일 뒤 영구 파기, 그 사이 복구 가능 | P1 |
+| FR-014 | DOCX는 업로드 시 미리보기용 PDF로 변환(또는 Non-Goal로 강등) | P1 |
+| FR-015 | 관리자 전체 문서 조회 (§2.3 admin 권한 대응) | P1 |
+| FR-016 | 엔드포인트별 rate limit + 계정별 스토리지 쿼터 | P1 |
+
+## 리스크 매트릭스
+
+| 리스크 | 발생 확률 | 영향도 | 대응 방안 |
+|---|---|---|---|
+| 공유 토큰 추측/영구 유효로 사내 문서 대량 유출 | 높음 | 치명 | 128bit CSPRNG + TTL + 폐기 API + rate limit (C-1, C-4) |
+| 인가 미구현으로 타인 문서 조회·삭제(BOLA) | 높음 | 치명 | §4.5 인가 매트릭스 + API별 인가 주체 + 403/404 Gherkin (C-2) |
+| FR-003/FR-007 모순을 구현자가 임의 해결 | 매우 높음 | 높음 | FR-007 문구 한정 + Dependencies 명시 (D-1) |
+| 확장자 검사 우회 → 저장형 XSS / 악성코드 유통 | 중간 | 높음 | 매직바이트 + AV + 샌드박스 오리진 (C-3) |
+| 50MB 업로드가 서버리스 한도에 막혀 재작업 | 중간 | 중간 | presigned URL 직접 업로드로 선재설계 (B-1) |
+| 버전 관리 부재로 제품이 원래 문제를 못 푼다 | 높음 | 높음 | FR-008 추가 + 스키마 반영 (A-1) |
+| 하드 삭제·백업 부재로 문서 영구 소실 | 중간 | 높음 | 소프트 삭제 + 버킷 버전닝 + RPO 정의 (A-8, E-1) |
+
+## 권장 조치
+
+### 즉시 조치 (Critical — 11건이 0이 되기 전엔 `/implement` 진입 불가)
+1. **D-1**: FR-003 ↔ FR-007 모순 해소 (FR-007을 토큰 경로 예외로 한정)
+2. **D-2**: §1.2 "외부 유출 방지" 목표와 무인증 링크의 관계 재정의
+3. **A-3 / C-2**: `§4.5 Security` 신설 + role×resource 인가 매트릭스 + §5.2에 `인가 주체` 열 추가
+4. **C-1**: 공유 토큰의 엔트로피·TTL·폐기 API·접근 범위 명시
+5. **C-3**: 파일 검증을 매직바이트 + AV + 샌드박스 미리보기로 승격
+6. **C-4**: 엔드포인트별 rate limit 정량 기재
+7. **A-4 / A-5**: `§5.4.1 Page State Matrix`(3라우트 × 5상태) + `§5.5 User Flow` Mermaid 작성
+8. **A-2**: §2.2에 실패·만료·권한부족 Gherkin 최소 6종 추가
+9. **A-1**: 버전 관리 FR-008을 P0로 신설
+10. **§4.1**: `"기다릴 만한 수준"`(L68)을 `10MB 업로드 p95 < 3s`, `목록 조회 p95 < 300ms`, `동시 업로드 50` 등으로 교체
+
+### 구현 전 조치 (Major)
+- §1.4 Scope, §4.0 Scale Grade(근거 포함), §4.2 Availability, §4.3 Data, §4.4 Recovery, §5.2 DB Schema, §5.3 Architecture, §7 Success Metrics 신설 (A-6~A-10, B-4)
+- §5.4 Pages를 계약 7열 스키마로 재작성 (D-4)
+- §6 Phase를 FR ID + Deliverable 기반으로 재배치, FR-007을 Phase 1로 (D-5)
+- 업로드를 presigned URL 3단계로 (B-1), `/s/[token]` 조회 API 신설 (B-3), DOCX 변환 결정 (B-2)
+- FR-002/FR-006 가시 범위 확정 (D-3), 인증 방식 확정 (C-5), 스토리지 접근 통제·감사 로그 (C-6, C-7), 업로드/삭제 정합성 (E-1)
+
+### 가능하면 조치 (Minor)
+- D-6 Type 값 정정, D-7 §4 번호 정렬, D-8 `guest` 인용, A-11 User Story 서식, A-12 admin 조회 FR, B-5 검색 파라미터, E-2 쿼터, E-3 접근성/반응형
+
+---
+
+## 다음 단계
+1. ❌ **현재 상태**: BLOCKED — Critical 11건 해소 필요
+2. Critical 해소 후 → `/screen-spec 사내-문서-공유`
+3. 그 다음 → `/implement`
+
+```json
+{"findings":[
+{"severity":"critical","where":"prd-defective.md:58,62 (§3 FR-003 ↔ FR-007)","what":"FR-003 '공유 링크를 받은 사람은 로그인 없이 문서를 열람할 수 있다'(P0)와 FR-007 '모든 문서 조회 요청은 인증을 거쳐야 한다'(P0)가 정면 모순. 계약 C-3(FR 간 무모순) 위반이며 계약이 예시로 명시한 금지 패턴 그 자체. 구현자가 임의 판단하면 인증 우회 경로가 정식 기능으로 남는다."},
+{"severity":"critical","where":"prd-defective.md:64-73 (§4 — §4.5 부재)","what":"계약 C-5가 요구하는 인가 규칙(어느 역할이 어느 리소스에)이 문서 어디에도 없다. §2.3에서 member/admin/guest 3종 role key를 선언(L48-50)해놓고 §5.2 API 테이블(L83-89)에 인가 주체 열이 없어, DELETE /api/documents/{id}를 누가 호출 가능한지 미정의."},
+{"severity":"critical","where":"prd-defective.md:59-60,88 (§3 FR-004/FR-005, §5.2)","what":"FR-004(본인 문서 삭제)와 FR-005(관리자 임의 삭제)가 동일 경로 DELETE /api/documents/{id}를 공유하는데 소유권·역할 검사 명세가 없다. member가 타인 id로 DELETE/GET을 호출하는 BOLA/IDOR가 설계 단계에서 열려 있다."},
+{"severity":"critical","where":"prd-defective.md:58,89 (§3 FR-003, §5.2 share)","what":"무인증 공유 링크에 토큰 엔트로피, 만료(TTL), 폐기(revoke) API, 접근 범위(열람 vs 다운로드), 접근 로그가 전부 미정의. 짧은/순차 토큰이면 /s/[token] 전수 조사로 사내 문서 전량 유출되고, 잘못 공유한 링크를 회수할 수단이 없다."},
+{"severity":"critical","where":"prd-defective.md:73 (§4.2 Security)","what":"입력 검증이 '업로드 파일 확장자 검사' 한 줄뿐. 확장자는 클라이언트가 조작 가능해 검증으로 성립하지 않는다. 악성 HTML/SVG를 report.pdf로 위장 업로드 → §5.4 '미리보기'(L96)가 동일 오리진에서 렌더링 → 저장형 XSS로 세션 탈취. 매직바이트 검증·AV 스캔·샌드박스 오리진·nosniff·파일명 정규화 모두 부재."},
+{"severity":"critical","where":"prd-defective.md:70-73 (§4.2 Security)","what":"Rate Limiting이 문서 전체에 0건. /s/[token] 토큰 브루트포스, 50MB 업로드(FR-001) 반복에 의한 스토리지·대역폭 고갈 DoS, 무제한 공유 링크 생성이 모두 무방비. 외부 노출 API + 무인증 공개 경로가 존재하므로 Critical."},
+{"severity":"critical","where":"prd-defective.md:91-98 (§5.4.1 부재)","what":"§5.4에 Has FE Components: Yes가 3행(L95-97) 있어 계약 C-7에 따라 Page State Matrix가 필수인데 섹션 자체가 없다(L98에서 §6로 점프). /s/[token]의 만료·무효 토큰 상태, 문서 0건 empty, no-permission 상태가 설계되지 않는다."},
+{"severity":"critical","where":"prd-defective.md:91-98 (§5.5 부재)","what":"계약 C-8이 요구하는 User Flow Mermaid 다이어그램이 없다. /s/[token] 진입 시 로그인 여부·토큰 만료에 따른 분기가 어디에도 그려지지 않아 FE 라우팅 규칙이 미정의."},
+{"severity":"critical","where":"prd-defective.md:66-68 (§4.1 Performance)","what":"계약 C-4가 금지하는 정성 표현. '업로드는 사용자가 기다릴 만한 수준이어야 한다'가 유일한 성능 요구로, p95 ms·req/s·동시성 목표가 전무해 검증 불가능한 요구사항이다."},
+{"severity":"critical","where":"prd-defective.md:30-42 (§2.2 Acceptance Criteria)","what":"Gherkin 2건이 모두 해피패스('Then 문서 목록에 나타난다', 'Then 링크를 받은 사람이 문서를 볼 수 있다'). 계약 §2.2가 명시 요구하는 실패·만료·권한부족 시나리오가 0건 — 50MB 초과, 금지 확장자, 만료 토큰, 타인 문서 삭제 시도 등 검증 기준이 없다."},
+{"severity":"critical","where":"prd-defective.md:9,15,52-62 (§1.1/§1.2 vs §3)","what":"핵심 기능 누락. §1.1 문제 정의 '최신본이 어느 것인지 알 수 없다'와 §1.2 목표 '최신본이 무엇인지 항상 명확'에 대응하는 버전 관리 FR이 §3의 7개 FR 중 0개. 이 PRD대로 구현하면 단순 파일 저장소가 되고 원래 문제가 그대로 남는다."},
+{"severity":"major","where":"prd-defective.md:16,58 (§1.2 vs FR-003)","what":"목표 '외부 유출 방지'와 P0 기능 '로그인 없이 열람 가능한 공유 링크'가 상충. 만료·폐기·감사 통제가 없는 상태라 대표 기능이 대표 목표를 무효화한다."},
+{"severity":"major","where":"prd-defective.md:56,85 (§3 FR-001, §5.2)","what":"최대 50MB 파일을 POST /api/documents(Next.js Route Handler) 경유로 받는 설계는 서버리스 요청 본문 상한과 충돌할 가능성이 높다(플랫폼 문서 확인 필요 — 외부 검증 미수행). Phase 1 도중 413에 막혀 presigned URL 직접 업로드로 아키텍처 재작업 위험."},
+{"severity":"major","where":"prd-defective.md:56,96 (§3 FR-001, §5.4)","what":"FR-001이 DOCX를 허용하고 §5.4 문서 상세가 '미리보기'를 제공하지만, DOCX는 브라우저 네이티브 렌더링이 불가하다. §5.1 스택(L79)에 변환 컴포넌트가 없고 §6 Phase에도 변환 태스크가 없어 미리보기 요구가 구현 불가."},
+{"severity":"major","where":"prd-defective.md:83-89,97 (§5.2 vs §5.4)","what":"페이지 /s/[token]은 존재하는데 토큰으로 문서를 조회하는 API가 §5.2 테이블에 없다(생성 POST .../share만 존재). 구현자가 GET /api/documents/{id}의 인증을 조건부로 끄는 방식으로 때우면 인증 우회 구멍이 생긴다."},
+{"severity":"major","where":"prd-defective.md:75-91 (§5.2/§5.3 부재, 번호 건너뜀)","what":"계약이 요구하는 Database Schema와 Architecture 섹션이 없다. 실제 문서는 5.1 Stack → 5.2 API → 5.4 Pages로 5.3이 비어 있고, 스키마 없이 버전 관리·공유 토큰 저장·인덱스 설계를 구현하게 된다."},
+{"severity":"major","where":"prd-defective.md:57,48,10 (§3 FR-002 vs §2.3 vs §1.1)","what":"FR-002 '업로드된 문서는 목록에 최신순으로 표시된다'가 누구의 문서인지 미기재. §2.3 member 권한은 '자기 문서 조회'인데 §1.1은 '사내 문서를 한 곳에 모으고'라 전사 공유를 시사 — 넓게 구현하면 정보 유출, 좁게 구현하면 문제 미해결. FR-006 검색 범위도 같은 모호성을 상속."},
+{"severity":"major","where":"prd-defective.md:62,70-79 (§3 FR-007, §4.2/§5.1)","what":"FR-007이 인증을 요구하지만 인증 방식(SSO/OIDC/SAML/자체 세션)이 §4.2에도 §5.1 스택에도 정의되지 않았다. §2.3 member가 '사내 구성원'임을 무엇으로 판별하는지 미정의 — 시스템이 '사내'의 경계를 알지 못한다."},
+{"severity":"major","where":"prd-defective.md:79 (§5.1 Stack)","what":"'S3 호환 스토리지'만 적혀 있고 버킷 공개 여부, 저장 시 암호화, 객체 URL 직접 접근 차단, presigned GET TTL이 미정의. 객체가 공개 상태면 앱의 모든 인가 로직과 링크 폐기가 우회된다."},
+{"severity":"major","where":"prd-defective.md:16,52-62 (§1.2 vs §3)","what":"감사 로그 요구가 0건. '외부 유출 방지'가 목표인데 누가 언제 무엇을 열람·공유·삭제했는지 기록하는 FR이 없어 유출 발생 시 추적이 불가능하다."},
+{"severity":"major","where":"prd-defective.md:64-73 (§4.3 Data 부재)","what":"계약이 요구하는 보관 기간·개인정보·삭제 정책 섹션이 없다. 사내 문서에 포함되는 인사·계약·고객 정보의 보관 기간, 퇴사자 문서 승계/파기, 로그 보관 정책이 전부 미정의."},
+{"severity":"major","where":"prd-defective.md:64-73 (§4.2 Availability/§4.4 Recovery 부재)","what":"가용성 목표와 RTO/RPO가 없다. FR-004 삭제가 하드/소프트 삭제인지도 미정의라 실수 삭제 시 복구 경로가 0이며, 문서 원본이 유일본인 시스템에서 데이터 무결성 위험."},
+{"severity":"major","where":"prd-defective.md:85,88 (§5.2)","what":"업로드/삭제가 DB와 객체 스토리지 두 곳을 건드리는데 부분 실패 시 정합성 정책(고아 객체 정리, 재시도, 멱등성 키)이 없다. DB만 삭제되고 객체가 남으면 '삭제한 줄 알았으나 직접 URL로 접근 가능한 문서'가 발생."},
+{"severity":"major","where":"prd-defective.md:91-97 (§5.4 Pages 테이블)","what":"계약 C-6이 요구하는 7열(Route/Audience/Auth/Linked FRs/Has FE Components/Primary State/Responsive) 중 Audience·Auth·Linked FRs·Primary State·Responsive 5열이 누락. /s/[token]이 무인증인지 표에서 읽을 수 없어 인가 모호성이 그대로 전파된다."},
+{"severity":"major","where":"prd-defective.md:99-103 (§6 Implementation Phases)","what":"계약 C-10 위반. P0인 FR-003(공유 링크)이 Phase 2로 밀렸고, P0인 FR-007(인증)은 어느 Phase에도 없다 — 인증 없는 문서 저장소가 먼저 배포될 수 있다. Phase별 Deliverable과 FR ID 매핑도 없어 완료 판정 불가."},
+{"severity":"major","where":"prd-defective.md:5-21 (§1.4 Scope 부재)","what":"계약이 요구하는 포함/제외 경계 섹션이 없다. §1.3 Non-Goals는 2줄뿐이라 외부 협력사 계정, 모바일 앱, 폴더 구조, 권한 위임 등이 범위 안인지 밖인지 판단 불가."},
+{"severity":"major","where":"prd-defective.md:3,64 (§4.0 Scale Grade 부재)","what":"헤더에 'Scale Grade: Startup'만 있고 계약이 요구하는 §4.0 섹션과 DAU 근거 한 줄이 없다. '사내' 도구라는 §1.1 정의를 감안하면 Hobby(DAU 1,000 미만)일 가능성이 높아 등급 자체가 근거 없이 부풀려졌을 수 있다."},
+{"severity":"major","where":"prd-defective.md:99-103 (§7 Success Metrics 부재)","what":"계약이 요구하는 성공 지표 테이블이 없다. §1.2의 '최신본이 항상 명확'을 무엇으로 측정할지 정의가 없어 출시 후 성패 판정이 불가능하다."},
+{"severity":"minor","where":"prd-defective.md:3 (헤더 Type)","what":"'Type: feature'는 계약이 정의한 유효값(product-feature/internal-backend/refactor)에 없다. 리뷰어는 fail-safe로 strict(product-feature) 처리했으나, 값이 틀리면 자동 게이트가 조건부 섹션의 필수 여부를 잘못 판정할 수 있다."},
+{"severity":"minor","where":"prd-defective.md:66-73 (§4 하위 번호)","what":"문서의 4.2가 Security인데 계약은 4.2=Availability, 4.5=Security로 배정한다. 번호 충돌 탓에 Availability가 비어 있는 사실이 겉으로 드러나지 않고, 자동 채점과 후속 /screen-spec 참조가 어긋난다."},
+{"severity":"minor","where":"prd-defective.md:50 (§2.3 guest)","what":"role key 'guest'를 선언만 하고 §3 FR·§5.2 API·§5.4 Pages 어디에서도 인용하지 않는다. 계약은 role key가 이후 페이지 권한·API 인가·screen-spec Audience에서 그대로 인용되도록 규정한다."},
+{"severity":"minor","where":"prd-defective.md:25-28 (§2.1 Primary User)","what":"'사내 구성원: 문서를 올리고 링크로 공유한다' 형태로, 계약이 요구하는 'As a [유형], I want to [행동] so that [이유]' 서식을 따르지 않는다. '왜(so that)'가 빠져 우선순위 판단 근거가 소실됐다."},
+{"severity":"minor","where":"prd-defective.md:49,52-62 (§2.3 admin vs §3)","what":"§2.3이 admin 권한을 '전체 문서 조회, 임의 문서 삭제'로 정의했지만 §3에는 삭제(FR-005)만 있고 '전체 문서 조회'에 대응하는 FR·API·페이지가 없다."},
+{"severity":"minor","where":"prd-defective.md:61,86 (§3 FR-006, §5.2)","what":"FR-006 '제목 부분 일치' 검색은 PostgreSQL LIKE '%q%'로 인덱스를 못 타며, GET /api/documents에 검색 쿼리 파라미터가 정의돼 있지 않고 검색 대상 범위(자기 문서/전체)도 미정의."},
+{"severity":"minor","where":"prd-defective.md:56 (§3 FR-001)","what":"1건당 50MB를 허용하면서 사용자당·조직당 총 스토리지 쿼터가 없다. rate limit 부재와 결합하면 비용 기반 DoS가 성립하고, 비용 추정 근거도 없다."},
+{"severity":"minor","where":"prd-defective.md:91-97 (§5.4)","what":"계약이 요구하는 Responsive 열이 없고 문서 미리보기의 키보드 접근성·스크린리더 대응 요구가 전무하다. 사내 도구는 접근성 준수 의무 대상이 되는 경우가 많다."},
+{"severity":"info","where":"prd-defective.md (Phase 1.5 External Grounding)","what":"외부 근거 검증 스킵 — WebSearch 권한 미승인으로 서버리스 body 한도, DOCX 렌더링 제약 등 외부 의존 주장을 소스로 확정하지 못했다. 해당 항목(B-1)은 '검증 필요' 태그로 Major에 머물렀으며 Critical 씨앗으로 승격하지 않았다."}
+]}
+```
+
+---
+
+**참고 (내가 직접 확인한 것)**: 서브에이전트가 인용한 라인 증거 중 핵심 항목을 원본 파일과 대조했습니다 — FR-003/FR-007 충돌(L58/L62), §4.1 정성 표현(L68), §5.3 누락(L77→L81→L91), §5.4.1/§5.5 부재(L98→L99) 모두 실제 파일과 일치합니다. 다만 리뷰가 근거로 삼은 `PRD-CONTRACT.md`는 이 작업 디렉터리 밖의 플러그인 경로에 있어 제가 직접 검증하지는 않았습니다.

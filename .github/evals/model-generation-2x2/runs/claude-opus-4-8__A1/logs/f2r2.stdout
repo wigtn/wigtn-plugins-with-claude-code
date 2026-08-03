@@ -1,0 +1,27 @@
+PRD 작성 완료, 품질 게이트 통과 후 지적된 정합성 이슈까지 반영했습니다.
+
+## 결과 보고
+
+**PRD**: `PRD.md` (요청대로 루트에 저장)
+**PLAN**: `docs/todo_plan/PLAN_coupon.md` (Phase 1~4 체크박스 원장)
+**품질 게이트 (`prd-reviewer`)**: ✅ **PASS** — Critical 0건 (C-1~C-10 전부 충족)
+
+### PRD 핵심 설계
+- **문서 유형**: `product-feature` / **Scale Grade**: Startup (기본값)
+- **역할**: `admin`(발행·관리) / `student`(적용·이력) / `guest`(차단)
+- **중복 사용 차단**: 총 한도는 원자적 `UPDATE ... WHERE used_count < total_limit`(영향 행 0 → `SOLD_OUT`), 1인당 한도는 `SELECT ... FOR UPDATE` 카운트 검증 → 동시 요청에서도 초과 소진 0건
+- **만료 차단**: 저장 상태가 아닌 조회 시점 `now() vs ends_at` 비교로 판정
+- **결제 연동**: `reserve → PG → commit/release` 사가 패턴, 결제 실패 시 소진 롤백
+
+### 게이트 Major 지적 반영분 (구현 전 권장 → 이미 PRD에 반영)
+- `perUserLimit>1` 침묵 실패 위험 → 카운트 기반 검증을 정본으로 재정의
+- commit/release 이중 호출 시 한도 초과 소진 → `WHERE state='reserved'` 멱등 가드 + no-op 명시
+- rate limit 인스턴스 간 누수 → 중앙 저장소(Redis) 공유 카운터 명시
+- commit/release 인가를 **system 전용**으로 축소
+
+### 다음 단계
+`Has FE Components: Yes` 페이지가 5개(admin 3 + student 2)라 화면정의서 단계를 권장합니다.
+- **`/screen-spec coupon`** — IA/User Flow/Screen Spec/Wireframe/Dev Handoff 생성
+- 이후 **`/implement coupon`** — 구현 (PLAN 원장 기반)
+
+남은 Minor 4건(이력 페이지네이션 등)은 구현 중 반영해도 무방합니다.

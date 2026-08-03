@@ -1,0 +1,6 @@
+model=claude-opus-4-8
+arm=A0
+fixture=code-defective.ts
+rep=3
+rc=0
+seconds=57

@@ -146,7 +146,11 @@ one_call() {
   # E-02: 조용한 폴백 금지. 산출물 없음과 계측 실패를 절대 섞지 않는다.
   local produced
   produced="$(find "$wd" -maxdepth 3 -iname '*PRD*.md' -print -quit 2>/dev/null)"
-  if [ "$rc" -ne 0 ]; then
+  if grep -q '^sleep_suspect=true' "$cell/logs/${key}.meta" 2>/dev/null; then
+    # E-10: 슬립을 거친 콜은 rc=0 이어도 채택하지 않는다. 네트워크가 끊겨
+    # 응답이 잘렸을 수 있고 소요시간도 실제 계산 시간이 아니다.
+    say "  SLEPT  $arm $key — 슬립 오염, 채점 제외"
+  elif [ "$rc" -ne 0 ]; then
     say "  FAIL   $arm $key — 계측 실패, 채점 제외 ($(grep -m1 '^exit_reason=' "$cell/logs/${key}.meta"))"
   elif [ -n "$produced" ] && [ -s "$produced" ]; then
     cp "$produced" "$out"

@@ -1,0 +1,120 @@
+서브에이전트(`wigtn-local:code-reviewer`) 리뷰 결과를 그대로 전달합니다.
+
+---
+
+파일이 단독 fixture라 `./db`, `./storage`(L2-3)의 실제 계약은 확인할 수 없었습니다. 아래 findings는 파일 내부 코드만으로 재현 가능한 것들이며, `db.raw(sql, params?)`가 파라미터 바인딩을 지원한다는 사실은 L30/L40/L45가 스스로 입증합니다(같은 파일에서 `?` 바인딩을 쓰고 있음). 즉 L14의 문자열 보간은 "드라이버 한계"가 아니라 명백한 회귀입니다.
+
+---
+
+## Critical
+
+### C1. SQL Injection — 사용자 입력 직접 보간
+- **위치**: `code-defective.ts:11-17` (핵심 L14)
+- **confidence**: high
+- **trigger**: `GET /search?q=%25' UNION SELECT id, password_hash, id, created_at FROM users -- `
+- **impact**: 임의 SQL 실행. 타 테이블(users 등) 전량 유출, 다중 스테이트먼트 허용 드라이버라면 DROP/UPDATE까지 가능.
+- **evidence**: L14 `WHERE title LIKE '%${q}%'` — `q`는 L9에서 `url.searchParams.get("q")`로 받은 무검증 외부 입력. 반면 L30 `WHERE id = ?` + `[doc.owner_id]`, L40, L45는 바인딩을 사용 → 동일 API로 안전하게 작성 가능함이 같은 파일에서 증명됨.
+- **suggestion**: `db.raw("... WHERE title LIKE ?", ['%' + escapeLike(q) + '%'])`. 추가로 `%`, `_`, 이스케이프 문자를 사전 escape.
+
+### C2. 프로덕션 시크릿 하드코딩
+- **위치**: `code-defective.ts:5`
+- **confidence**: high
+- **trigger**: 저장소 read 권한 보유자 누구나 / 소스맵·번들 유출 / git 히스토리.
+- **impact**: 공유 토큰 서명키 전면 노출 → 임의 문서에 대한 공유 링크 위조. 값 이름(`hs256-prod-...`)이 프로덕션 키임을 명시.
+- **evidence**: L5 `const SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d";`, 사용처 L52.
+- **suggestion**: 환경변수/시크릿 매니저로 이동 + **해당 키 즉시 폐기·로테이션**(이미 커밋된 시점에서 유출로 간주).
+
+### C3. `sign()`이 서명이 아니라 가역 인코딩 — 토큰 자체가 시크릿을 노출
+- **위치**: `code-defective.ts:56-58` (사용처 L52-53)
+- **confidence**: high
+- **trigger**: 공유 링크 1개를 받은 사람이 `Buffer.from(token, "base64url").toString()` 실행.
+- **impact**: **C2보다 심각**. base64url은 암호가 아니라 인코딩이므로 디코딩 결과가 `{"documentId":"...","exp":...}hs256-prod-9f2a4c8e1b7d`가 됨. 즉 정상 사용자에게 공유 링크를 한 번만 보내도 시크릿이 평문으로 전달됨. 이후 임의 `documentId`/`exp`로 유효 토큰을 무한 생성 가능 → 전체 문서 무단 열람. 게다가 토큰이 URL 경로(L53)에 들어가 서버 액세스 로그·Referer·브라우저 히스토리에 시크릿이 그대로 적재됨.
+- **evidence**: L57 `Buffer.from(JSON.stringify(payload) + secret).toString("base64url")` — 해시/HMAC 호출 없음. 무결성 검증 불가(검증 함수도 파일 내 부재).
+- **suggestion**: `crypto.createHmac("sha256", secret)`로 payload를 서명하고 `payload.signature` 형태로 결합, 검증 시 `crypto.timingSafeEqual` 사용. 또는 검증된 JWT 라이브러리 사용.
+
+### C4. 인증·인가 부재 (IDOR) — 4개 핸들러 전부
+- **위치**: `code-defective.ts:7-20`, `22-37`, `39-48`, `50-54`
+- **confidence**: high
+- **trigger**: 인증되지 않은 임의 요청 `DELETE /documents/<타인의 id>` 또는 `POST /documents/<타인의 id>/share`.
+- **impact**: 권한 우회 + 데이터 손실. 소유자 확인 없이 타인 문서 영구 삭제(L44-45, S3 객체까지 삭제되어 복구 불가), 타인 문서 공유 링크 무단 발급(L52), 전체 문서 목록·이메일 유출(L29-33의 `SELECT id, name, email`).
+- **evidence**: 파일 전체에 세션/토큰 파싱, `req.headers.get("authorization")`, 소유자 비교 로직이 단 한 줄도 없음. L11-16의 쿼리에 `WHERE owner_id = ?` 같은 테넌시 필터 부재. L40의 SELECT는 `storage_key`만 조회하고 `owner_id`를 가져오지도 않아 검사 자체가 불가능한 구조.
+- **suggestion**: 각 핸들러 진입부에서 호출자 식별 → 목록/검색 쿼리에 `owner_id = ?`(또는 공유 권한 조인) 강제, 삭제/공유는 소유권 확인 후 진행, 미인가 시 404(존재 여부 노출 방지).
+
+---
+
+## Major
+
+*(아래 4건은 게이트 반영 전 반증 1회를 거쳤고, 모두 반증되지 않음)*
+
+### M1. `exp`를 클라이언트가 결정, 검증 없음
+- **위치**: `code-defective.ts:51-52`
+- **confidence**: high
+- **trigger**: `POST /documents/1/share` body `{"exp": 99999999999}` 또는 `{}`(exp 누락 → `undefined`).
+- **impact**: 만료 없는 영구 공유 링크 생성. `exp` 누락 시 payload에서 키가 사라져 만료 검증 자체가 성립하지 않음.
+- **evidence**: L51 `const body = await req.json();`(타입 `any`, 스키마 검증 없음) → L52 `exp: body.exp`를 그대로 서명 payload에 삽입. 상한 clamp·필수 검사 없음.
+- **반증 시도**: 검증 측에서 상한을 걸 가능성 → C3에 의해 토큰이 위조 가능하므로 검증 측 방어가 있어도 무력. 강등 사유 없음.
+- **suggestion**: 서버가 `Date.now() + MAX_TTL`로 계산하거나, 클라이언트 값은 서버 상한으로 clamp. body는 zod 등으로 파싱.
+
+### M2. N+1 쿼리 (순차 await)
+- **위치**: `code-defective.ts:27-34`
+- **confidence**: high
+- **trigger**: 정상 요청 `GET /documents` (문서 100건).
+- **impact**: 요청당 최대 101회 왕복, 모두 직렬. RTT 5ms만 잡아도 ~500ms가 순수 대기. 트래픽 증가 시 커넥션 풀 고갈로 이어짐.
+- **evidence**: L23-25가 최대 100행 반환(`LIMIT 100`) → L28 `for (const doc of docs)` 루프 내부 L29 `await db.raw(...)`가 행마다 1회 실행.
+- **반증 시도**: `Promise.all`도 아니고 배치도 아님. 캐시 레이어 흔적 없음. 강등 사유 없음.
+- **suggestion**: `SELECT ... FROM users WHERE id IN (?)`로 1회 조회 후 Map 조인, 또는 documents↔users JOIN 단일 쿼리.
+
+### M3. 미존재 문서 삭제 시 TypeError → 500
+- **위치**: `code-defective.ts:40-44`
+- **confidence**: high
+- **trigger**: `DELETE /documents/does-not-exist` (또는 이미 삭제된 id로 재시도).
+- **impact**: `doc`가 `[]`이므로 `doc[0]`은 `undefined` → L44 `doc[0].storage_key`에서 `Cannot read properties of undefined` 던짐. 404여야 할 요청이 미처리 예외로 500 반환, 스택 트레이스 유출 가능. 삭제 재시도(멱등성)도 깨짐.
+- **evidence**: L40-42 조회 결과에 대한 길이/존재 검사 없이 L44에서 즉시 인덱싱.
+- **반증 시도**: `db.raw`가 빈 결과에 throw할 가능성 → 그 경우에도 try/catch가 없어 동일하게 500. 어느 쪽이든 결함. 강등 사유 없음.
+- **suggestion**: `if (doc.length === 0) return Response.json({error:"not found"}, {status:404});`
+
+### M4. S3 삭제가 DB 삭제보다 선행 — 트랜잭션/보상 로직 없음
+- **위치**: `code-defective.ts:44-45`
+- **confidence**: high
+- **trigger**: L44 성공 후 L45가 실패(DB 커넥션 끊김, 락 타임아웃, FK 제약).
+- **impact**: 스토리지 객체는 영구 삭제됐는데 documents 행은 남음 → 복구 불가능한 dangling 레코드. 이후 해당 문서 다운로드는 전부 NoSuchKey. 롤백 수단 없음(S3 객체는 되돌릴 수 없음).
+- **evidence**: L44 `await s3.deleteObject(...)`가 L45 `DELETE FROM documents`보다 먼저 실행. 트랜잭션, soft-delete, outbox/정리 잡 어느 것도 없음.
+- **반증 시도**: 버전관리 버킷이면 복구 가능하나 코드상 근거 없음(`storage.ts` 미제공). 보상 로직 부재는 파일 내에서 확정. 강등 사유 없음.
+- **suggestion**: DB 행 삭제(또는 soft-delete) 커밋 후 스토리지 정리를 비동기 잡/outbox로 위임. 최소한 순서를 뒤집어 "DB 먼저, 스토리지 나중".
+
+---
+
+## Minor
+
+| # | 위치 | 내용 |
+|---|------|------|
+| m1 | L9, L14 | `q` 미지정 시 `?? ""` → `LIKE '%%'`로 전체 문서 매칭. 검색 API가 무조건 전체 목록 덤프로 동작(C4와 결합 시 피해 확대). 빈 쿼리는 400 또는 빈 결과로 처리 권장. |
+| m2 | L14 | 선행 와일드카드 `'%...%'`는 인덱스 사용 불가 → documents 풀스캔. 또한 사용자가 입력한 `%`/`_`가 이스케이프되지 않아 의도치 않은 광범위 매칭 발생. 전문검색 인덱스 또는 prefix 검색 검토. |
+| m3 | L16, L24 | 하드코딩 `LIMIT 50` / `LIMIT 100`만 있고 offset·커서 없음 → 51번째 이후 결과에 영구히 도달 불가. 페이지네이션 필요. |
+| m4 | L33 | `owner[0]`이 `undefined`일 수 있음(사용자 삭제/불일치 데이터). 검사 없이 스프레드되어 `owner: undefined`가 조용히 응답에 포함, 클라이언트에서 NPE 유발. |
+| m5 | L19, L36, L47, L53 | 네 핸들러 모두 try/catch 부재. DB·S3 rejection이 그대로 전파되어 500 + 내부 오류 메시지 노출. L51 `req.json()`은 잘못된 JSON body만으로도 throw. |
+| m6 | L11, L23, L29, L40 | `db.raw` 반환값이 전부 암묵적 `any`. `rows`, `docs`, `doc`, `owner` 모두 타입 없음 → L44 `doc[0].storage_key` 같은 오타/미존재 접근을 컴파일러가 못 잡음(M3의 근본 원인). 제네릭 또는 결과 타입 선언 필요. |
+| m7 | L22, L39 | `req` 파라미터가 본문에서 전혀 사용되지 않음(`listDocumentsWithOwners`, `deleteDocument`). `noUnusedParameters` 설정 시 컴파일 실패. |
+| m8 | L53 | 공유 도메인 `https://docs.example.com` 하드코딩 → 스테이징/온프레미스에서 잘못된 링크 생성. 환경 설정으로 분리. |
+
+---
+
+## 롤업 판정
+
+| Severity | 건수 |
+|---|---|
+| critical | 4 (C1 SQLi, C2 시크릿 하드코딩, C3 위조 가능 서명·시크릿 유출, C4 인가 부재/IDOR) |
+| major | 4 (M1 exp 무검증, M2 N+1, M3 미존재 문서 500, M4 삭제 순서/원자성) |
+| minor | 8 |
+| info | 0 |
+
+**판정: FAIL** — critical ≥ 1 (confidence high 4건). 커밋 차단.
+Security critical(C1·C2·C3·C4)이 포함되어 zero-tolerance 규칙상 우회 통과 불가입니다. 포매터로 해소되는 항목이 아니므로 최소 C1-C4 + M1-M4 수동 수정 후 재평가가 필요하며, C2/C3와 관련해 **이미 배포된 SHARE_TOKEN_SECRET은 코드 수정과 별개로 폐기·로테이션하고 기존 발급 토큰을 전량 무효화**해야 합니다.
+
+```json
+{"findings":[{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:11-17 (L14)","what":"SQL Injection: 쿼리 파라미터 q를 raw SQL에 문자열 보간(WHERE title LIKE '%${q}%'). 같은 파일 L30/L40/L45가 ? 바인딩을 쓰므로 드라이버 한계가 아님. 임의 SQL 실행으로 타 테이블 유출 가능."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:56-58","what":"sign()이 HMAC이 아니라 base64url(JSON+secret) 가역 인코딩. 공유 링크 수신자가 토큰을 디코딩하면 SHARE_TOKEN_SECRET이 평문 노출되어 임의 documentId/exp 토큰 위조 가능. 토큰이 URL 경로(L53)에 있어 로그·Referer로도 시크릿 유출."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:7-54 (핸들러 4개 전부)","what":"인증·인가 부재(IDOR). 소유자 확인 없이 타인 문서 삭제(L44-45, S3 객체까지 영구 삭제)·공유 링크 발급(L52)·전체 문서 및 사용자 email 조회(L29-33) 가능. L40 SELECT는 owner_id를 조회조차 하지 않아 검사 불가 구조."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:5","what":"프로덕션 서명 시크릿 하드코딩(SHARE_TOKEN_SECRET = \"hs256-prod-9f2a4c8e1b7d\"). 저장소 접근자 누구나 공유 토큰 위조 가능. 코드 수정과 별개로 키 폐기·로테이션 필요."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:51-52","what":"exp를 클라이언트 body에서 무검증 수용(body는 any, 스키마 검증 없음). 임의 장기 만료 또는 exp 누락(undefined)으로 사실상 영구 공유 링크 생성."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:27-34","what":"N+1 쿼리. LIMIT 100 문서에 대해 루프 내 순차 await로 최대 101회 직렬 DB 왕복. 응답 지연 및 커넥션 풀 고갈 위험. IN 절 배치 조회나 JOIN으로 대체 필요."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:40-44","what":"미존재 id 삭제 시 doc가 빈 배열이라 doc[0].storage_key에서 TypeError. 404여야 할 요청이 미처리 예외로 500, 삭제 재시도 멱등성 파괴."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:44-45","what":"S3 객체 삭제가 DB 행 삭제보다 선행하고 트랜잭션·보상 로직 없음. DB 삭제 실패 시 파일만 영구 소실되고 행은 남아 복구 불가능한 dangling 레코드 발생."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:9,14","what":"q 미지정 시 ?? \"\" 로 LIKE '%%'가 되어 검색 API가 전체 문서를 덤프."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:14","what":"선행 와일드카드 LIKE로 인덱스 사용 불가(풀스캔), 사용자 입력의 %/_ 미이스케이프로 의도치 않은 광범위 매칭."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:16,24","what":"하드코딩 LIMIT 50/100만 있고 offset·커서 없음 → 이후 결과에 도달 불가, 페이지네이션 부재."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:33","what":"owner[0]이 undefined일 수 있으나 검사 없이 응답에 포함되어 클라이언트 NPE 유발."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:19,36,47,53","what":"모든 핸들러에 try/catch 부재. DB·S3 rejection 및 req.json() 파싱 실패가 그대로 500과 내부 오류 노출로 이어짐."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:11,23,29,40","what":"db.raw 반환값이 전부 암묵적 any. 타입 부재로 doc[0].storage_key 같은 접근 오류를 컴파일러가 검출하지 못함(M3의 근본 원인)."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:22,39","what":"req 파라미터가 함수 본문에서 미사용. noUnusedParameters 설정 시 컴파일 실패."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.kBbi570Dbo/code-defective.ts:53","what":"공유 도메인 https://docs.example.com 하드코딩으로 환경별 잘못된 링크 생성."}]}
+```
+
+---
+
+파일은 수정하지 않았습니다(read-only 리뷰). 수정을 원하시면 말씀해 주세요.

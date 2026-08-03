@@ -1,0 +1,44 @@
+서브에이전트의 근거를 실제 코드와 대조 검증했고, 모든 지적 근거가 정확합니다. 아래는 `wigtn-local:code-reviewer` 서브에이전트의 리뷰 리포트 전문입니다.
+
+---
+
+## 리뷰 대상
+`code-clean.ts` — 문서 공유 API 핸들러 (searchDocuments, listDocumentsWithOwners, deleteDocument, createShareLink, sign, verifyShareToken)
+
+## 함수별 검증
+
+**부트스트랩 (7–12)**
+`SHARE_TOKEN_SECRET` 미설정 시 모듈 로드 시점에 throw. 이후 `SECRET!` non-null 단언이 실제로 보장됨. 문제 없음.
+
+**searchDocuments (14–31)**
+- 인가: `requireSession` 후 `owner_id = ?`에 `session.userId` 바인딩 — 세션 소유자로 결과 스코핑 (24, 27). 우회 없음.
+- LIKE 이스케이프 (19): 정규식 `/[\\%_]/g`가 백슬래시·`%`·`_`를 단일 패스로 처리, 각각 앞에 백슬래시 1개만 붙임. 쿼리의 `ESCAPE '\'`(24)와 일치. `q="%"` 전체매칭 문제를 정확히 막고 이중 이스케이프 없음.
+- 파라미터 바인딩 사용 → SQL 인젝션 없음.
+
+**listDocumentsWithOwners (33–47)**
+- `WHERE d.owner_id = ? OR ? = 'admin'`(40)에 `[session.userId, session.role]`(43) 바인딩. `session.role`이 값으로 바인딩되므로 인젝션 없음. admin일 때만 전체 조회 — 의도된 권한이며 우회 아님.
+
+**deleteDocument (49–89)**
+- 인가 (60): `owner_id !== userId && role !== "admin"` → 소유자 또는 admin만 통과. 정확.
+- 삭제 순서 (64–88): DB 행 삭제 + 감사 로그를 한 트랜잭션으로 먼저 커밋(69–75)하고, 되돌릴 수 없는 스토리지 삭제를 뒤에 수행(81–86). 트랜잭션 실패 시 아무것도 삭제 안 되고 500 반환(좀비 행 없음). 스토리지 실패 시 고아 객체만 남고 reaper가 수거. 주석 근거가 실제 제어 흐름과 일치.
+
+**createShareLink (91–107)**
+- 소유자 확인 (100) 후에만 토큰 발급. TTL 적용. 문제 없음.
+
+**sign (109–117)**
+- base64url 페이로드에 HMAC-SHA256. 표준적. 문제 없음.
+
+**verifyShareToken (119–133)**
+- MAC를 먼저 검증(123–128)한 뒤 페이로드를 파싱(130)하는 올바른 순서.
+- 타이밍 안전 비교 (128): 길이 선검사 후 `timingSafeEqual` — 길이 불일치 throw를 회피하면서 안전 비교 유지.
+- 만료 검사 (131): MAC 검증 통과 페이로드만 도달하므로 `claims.exp`는 항상 우리 서명값. 위조 불가.
+- `JSON.parse`(130)가 try/catch로 감싸이지 않았으나, MAC 검증 통과 = 우리가 서명한 유효 JSON. 실제 발생 가능한 throw 아님.
+
+## 결론
+변경 코드에서 권한 우회, 데이터 손실/불일치, SQL 인젝션, 타이밍 공격, 잘못된 결과를 유발하는 실증 가능한 결함을 발견하지 못했습니다. 인가 스코핑, 파라미터 바인딩, HMAC 상수시간 비교, 삭제 순서 트랜잭션 처리 모두 올바릅니다. 추측성·스타일성 지적은 보고하지 않습니다.
+
+**롤업 판정: critical 0 / major 0 / minor 0 → PASS**
+
+```json
+{"findings":[]}
+```

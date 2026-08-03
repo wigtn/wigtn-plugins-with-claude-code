@@ -57,7 +57,11 @@ def kill_group(proc, sig):
 def run(a):
     out_f = open(a.stdout, "wb")
     err_f = open(a.stderr, "wb")
-    started = time.time()
+    # E-10: macOS 의 time.monotonic() 은 시스템 슬립 중 멈춘다. proc.wait(timeout=)
+    # 는 그 시계를 쓰므로 맥이 자면 워치독이 뜨지 않는다. 벽시계만 흘러가
+    # seconds=9448 인데 timeout=1800 이 안 터지는 상황이 실제로 발생했다.
+    # 두 시계를 모두 재서 어긋난 만큼을 슬립으로 기록한다 — 조용히 넘어가지 않는다.
+    started, started_mono = time.time(), time.monotonic()
     proc = subprocess.Popen(
         a.cmd, cwd=a.cwd, stdout=out_f, stderr=err_f,
         stdin=subprocess.DEVNULL, start_new_session=True,
@@ -77,7 +81,9 @@ def run(a):
     finally:
         out_f.close()
         err_f.close()
-    return rc, exit_reason, time.time() - started
+    wall = time.time() - started
+    mono = time.monotonic() - started_mono
+    return rc, exit_reason, wall, mono
 
 
 def extract_usage(stdout_path):
@@ -130,10 +136,18 @@ def extract_usage(stdout_path):
 def main():
     a = parse_args()
     os.makedirs(os.path.dirname(os.path.abspath(a.meta)) or ".", exist_ok=True)
-    rc, exit_reason, seconds = run(a)
+    rc, exit_reason, wall, mono = run(a)
 
-    # verdict distinguishes the three outcomes E-02 required us to keep apart.
-    if rc == 0:
+    # E-10: 벽시계와 monotonic 이 어긋난 만큼이 시스템 슬립이다. 30초를 넘으면
+    # 이 콜은 슬립을 거쳤다는 뜻이고, 그동안 네트워크가 끊겨 API 오류가 났을 수
+    # 있다. 소요시간도 실제 계산 시간이 아니다. 채점에서 제외할 수 있게 표시한다.
+    slept = max(0.0, wall - mono)
+    sleep_suspect = slept > 30
+
+    # verdict distinguishes the outcomes E-02 required us to keep apart.
+    if sleep_suspect:
+        verdict = "sleep_contaminated"
+    elif rc == 0:
         verdict = "ok"
     elif exit_reason.startswith("watchdog"):
         verdict = "timeout"
@@ -144,7 +158,10 @@ def main():
         "status": rc,
         "exit_reason": exit_reason,
         "verdict": verdict,
-        "seconds": int(seconds),
+        "seconds": int(mono),          # 실제 경과(슬립 제외)
+        "wall_seconds": int(wall),
+        "slept_seconds": int(slept),
+        "sleep_suspect": str(sleep_suspect).lower(),
         "timeout_limit": a.timeout,
         "cmd": " ".join(a.cmd),
     }
@@ -157,7 +174,8 @@ def main():
         for k, v in meta.items():
             f.write(f"{k}={v}\n")
 
-    print(f"[{verdict}] rc={rc} reason={exit_reason} {int(seconds)}s "
+    note = f" SLEPT{int(slept)}s" if sleep_suspect else ""
+    print(f"[{verdict}] rc={rc} reason={exit_reason} {int(mono)}s{note} "
           f"tokens={meta.get('billed_tokens')}", file=sys.stderr)
     return 0 if verdict == "ok" else 1
 

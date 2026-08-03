@@ -1,0 +1,71 @@
+`wigtn-local:code-reviewer` 서브에이전트가 리뷰 프로토콜(심각도 분류 / 보안 zero-tolerance / 결정론적 게이트 롤업)에 따라 수행한 결과를 그대로 전달합니다.
+
+---
+
+# 코드 리뷰: code-defective.ts
+
+## Critical
+
+### C1. SQL 인젝션 — 검색 쿼리 (`code-defective.ts:11-17`, `searchDocuments`)
+- **severity**: critical (security, zero-tolerance)
+- 사용자 입력 `q`(line 9)가 문자열 보간으로 raw SQL에 직접 삽입됨 — line 14 `title LIKE '%${q}%'`.
+- **impact**: 임의 SQL 실행 → 전체 테이블 덤프, 데이터 변조/삭제, 인증 우회. 예: `q = "'; DROP TABLE documents; --"`.
+- **증거**: line 11-17. 같은 파일 line 30/40/45는 `?` 바인딩을 쓰는데 이 경로만 보간을 사용 — 파라미터 바인딩 계약이 있음에도 위반.
+
+### C2. 서명 함수가 실제 서명이 아님 + 시크릿 평문 노출 (`code-defective.ts:56-58`, `sign`)
+- **severity**: critical (security)
+- `sign`은 HMAC이 아니라 `base64url(JSON(payload) + secret)`. 토큰을 디코드하면 뒤에 붙은 `SHARE_TOKEN_SECRET`이 평문으로 드러남 → 시크릿 유출. 시크릿을 알면 임의 `documentId`/`exp`로 토큰 위조 가능.
+- **증거**: line 57 `Buffer.from(JSON.stringify(payload) + secret).toString("base64url")`. 함수명이 암시하는 hs256(HMAC-SHA256)과 계약 불일치(line 5).
+
+### C3. 하드코딩된 프로덕션 시크릿 (`code-defective.ts:5`)
+- **severity**: critical (security)
+- `SHARE_TOKEN_SECRET`이 소스에 상수(`hs256-prod-...`)로 박혀 있음. VCS 이력/빌드 아티팩트에 영구 노출 → C2와 결합 시 즉시 토큰 위조 악용.
+- **증거**: line 5(정의), line 52(사용).
+
+### C4. 인가 검사 부재 → 권한 우회 (`code-defective.ts:39-48` `deleteDocument`, `50-54` `createShareLink`)
+- **severity**: critical (permission bypass)
+- 소유권/권한 확인이 전혀 없음. 임의 사용자가 아무 `params.id`로 타인 문서를 삭제(S3 객체 + DB 행)하거나 임의 문서의 공유 링크를 발급 가능. 수평 권한 상승.
+- **증거**: line 39-48, 50-54 — 호출자 신원을 `owner_id`(line 12, 24)와 대조하는 로직 부재.
+
+## Major
+
+### M1. N+1 쿼리 (`code-defective.ts:28-34`, `listDocumentsWithOwners`)
+- **severity**: major (performance)
+- 문서당 owner 개별 조회 → 최대 101회 왕복(LIMIT 100).
+- **증거**: line 28-34 루프 내 `await db.raw(... WHERE id = ?)`. → JOIN/`IN` 배치로 단일화.
+
+### M2. 삭제 시 문서 미존재 처리 누락 → 크래시 (`code-defective.ts:40-44`, `deleteDocument`)
+- **severity**: major
+- `doc`가 빈 배열이면 `doc[0]`은 `undefined` → line 44 `doc[0].storage_key`에서 `TypeError` → 500.
+- **증거**: line 40-44. → `if (!doc[0]) return 404` 가드 필요.
+
+### M3. S3 삭제와 DB 삭제 간 원자성 부재 (`code-defective.ts:44-45`, `deleteDocument`)
+- **severity**: major (데이터 불일치)
+- line 44 S3 삭제 성공 후 line 45 DB 삭제 실패 시 dangling 레코드 발생.
+- **증거**: line 44-45 순서. → DB 우선/트랜잭션 또는 아웃박스·재시도.
+
+### M4. 만료(`exp`) 미검증 → 무기한 토큰 (`code-defective.ts:51-52`, `createShareLink`)
+- **severity**: major
+- `body.exp`를 검증 없이 payload에 삽입. `undefined`면 영구 토큰, 클라이언트가 임의 값 지정 가능. 만료 검증 로직도 부재.
+- **증거**: line 51-52. → 서버가 `exp` 산정/상한 강제.
+
+## Minor
+
+### m1. 검색어 이스케이프/한도 부재 (`code-defective.ts:14`)
+- **severity**: minor
+- C1을 바인딩으로 고쳐도 LIKE 와일드카드(`%`, `_`) 미이스케이프 → 광범위 매칭·성능 저하. 입력 길이 제한 필요.
+
+### m2. 사용되지 않는 `req` 파라미터 (`code-defective.ts:39`, `deleteDocument`)
+- **severity**: minor
+- `req`를 받지만 미사용 — 인증 정보를 여기서 읽어야 하므로 C4의 징후이기도 함.
+
+## 게이트 롤업 (결정론적)
+- **critical: 4** (C1·C2·C3·C4) — C1·C2·C3는 security critical(zero-tolerance)
+- **major: 4** (M1·M2·M3·M4)
+- **minor: 2** (m1·m2)
+
+**판정: FAIL** (critical ≥ 1 → 커밋 차단)
+
+```json
+{"findings":[{"severity":"critical","where":"code-defective.ts:11-17 searchDocuments","what":"사용자 입력 q를 raw SQL에 문자열 보간하여 SQL 인젝션 가능. 파라미터 바인딩 필요"},{"severity":"critical","where":"code-defective.ts:56-58 sign","what":"HMAC 서명이 아니라 base64url(JSON+secret)이라 토큰 디코드 시 시크릿 평문 노출 및 토큰 위조 가능"},{"severity":"critical","where":"code-defective.ts:5","what":"프로덕션 공유 토큰 시크릿이 소스에 하드코딩되어 노출됨. 시크릿 매니저로 이전 및 로테이션 필요"},{"severity":"critical","where":"code-defective.ts:39-54 deleteDocument/createShareLink","what":"소유권/인가 검사 부재로 임의 사용자가 타인 문서를 삭제하거나 공유링크 발급 가능(수평 권한 상승)"},{"severity":"major","where":"code-defective.ts:28-34 listDocumentsWithOwners","what":"루프 내 owner 개별 조회로 N+1 쿼리(최대 101회 왕복). JOIN/IN 배치로 단일화 필요"},{"severity":"major","where":"code-defective.ts:40-44 deleteDocument","what":"문서 미존재 시 doc[0]가 undefined라 storage_key 접근에서 TypeError 크래시. 404 가드 필요"},{"severity":"major","where":"code-defective.ts:44-45 deleteDocument","what":"S3 삭제 후 DB 삭제 실패 시 dangling 레코드 발생. 순서/트랜잭션/아웃박스로 원자성 보장 필요"},{"severity":"major","where":"code-defective.ts:51-52 createShareLink","what":"body.exp 미검증으로 무기한 또는 클라이언트 조작 만료 토큰 생성 가능. 서버측 exp 강제 필요"},{"severity":"minor","where":"code-defective.ts:14","what":"LIKE 와일드카드(%,_) 미이스케이프 및 입력 길이 제한 부재"},{"severity":"minor","where":"code-defective.ts:39","what":"deleteDocument의 req 파라미터 미사용 — 인가 로직에서 호출자 신원을 읽는 데 사용해야 함"}]}
+```

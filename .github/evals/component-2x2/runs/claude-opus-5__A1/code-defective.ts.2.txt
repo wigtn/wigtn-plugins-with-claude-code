@@ -1,0 +1,112 @@
+`wigtn-local:code-reviewer` 서브에이전트 리뷰 결과입니다 (라인 번호는 제가 읽은 실제 파일 내용과 대조해 일치함을 확인했습니다).
+
+---
+
+파일 전체(58줄)를 읽고 리뷰했습니다. 참조 모듈 `./db`, `./storage`는 디렉터리에 존재하지 않아(`/var/folders/.../tmp.IJhWLVT2Rd/`에 `code-defective.ts` 단일 파일) 계약은 파일 내부 사용 패턴에서만 추론했습니다 — `db.raw(sql, params)`의 2-인자 바인딩 형태가 40, 45, 30행에서 실제로 쓰이고 있으므로, 파라미터 바인딩은 이 코드베이스에서 **이미 사용 가능한 API**라는 점이 SQL 인젝션 findings의 근거입니다.
+
+## Critical
+
+**C1. 하드코딩된 프로덕션 시크릿 (line 5)**
+`const SHARE_TOKEN_SECRET = "hs256-prod-9f2a4c8e1b7d";`
+- trigger: 저장소 읽기 권한이 있는 누구나, 또는 번들에 포함되는 순간.
+- impact: 공유 토큰 서명 키 전면 유출 → 모든 문서에 대한 임의 공유 링크 위조. 키 로테이션 시 재배포 필요.
+- evidence: 변수명과 값 자체가 `prod`를 명시. 환경변수 주입 흔적 없음.
+- suggestion: `process.env.SHARE_TOKEN_SECRET` + 부팅 시 존재 검증, 해당 키는 이미 노출된 것으로 간주하고 즉시 폐기/로테이션.
+
+**C2. SQL 인젝션 — 사용자 입력 문자열 보간 (line 11–17, 특히 14)**
+```
+WHERE title LIKE '%${q}%'
+```
+- trigger: `GET /search?q=' OR 1=1 --` 또는 `'; DROP TABLE documents; --`. `q`는 9행에서 검증·이스케이프 없이 URL 쿼리에서 직접 취득.
+- impact: 임의 SQL 실행 → 전체 테이블 덤프, 데이터 파괴, 권한 상승.
+- evidence: 같은 파일 30, 40, 45행이 `db.raw(sql, [param])` 바인딩을 사용 중 — 안전한 경로가 존재하는데 이 지점만 보간.
+- suggestion: `WHERE title LIKE ?` + `['%' + escapeLike(q) + '%']`. `%`, `_` 와일드카드도 이스케이프.
+
+**C3. `sign()`이 서명이 아님 — 시크릿 평문 유출 + 토큰 위조 (line 56–58)**
+```ts
+return Buffer.from(JSON.stringify(payload) + secret).toString("base64url");
+```
+- trigger: 공유 링크를 받은 임의의 사용자가 URL의 토큰을 base64url 디코드.
+- impact: (a) 디코드 결과에 `SHARE_TOKEN_SECRET`이 평문으로 그대로 들어있음 → 링크 1개만 받으면 시크릿 획득. (b) MAC이 아니므로 시크릿을 안 채도 `{"documentId":"<임의 id>","exp":...}+secret`를 인코딩해 임의 문서의 유효 토큰 생성 가능. 이름은 `hs256`이지만 HMAC 연산이 전혀 없음.
+- evidence: 57행에 `crypto`/`createHmac` 호출 부재, 단순 문자열 연결 후 인코딩(가역).
+- suggestion: `crypto.createHmac("sha256", secret).update(payloadJson).digest("base64url")`를 payload와 분리해 결합하거나, 검증된 JWT 라이브러리 사용. 자체 구현 금지.
+
+**C4. 공유 링크 생성에 인가 검사 없음 — 권한 상승 (line 50–54)**
+- trigger: 인증되지 않은/타 사용자가 `POST /documents/<피해자 문서 id>/share` 호출.
+- impact: 소유하지 않은 임의 문서에 대해 유효한 공개 공유 URL 발급 → 접근제어 완전 우회.
+- evidence: 50–53행에 세션/토큰 파싱, 소유자 대조, `documents.owner_id` 확인이 전무. `params.id`를 그대로 payload에 삽입.
+- suggestion: 호출자 신원 확인 후 `SELECT 1 FROM documents WHERE id=? AND owner_id=?`로 소유권 검증, 실패 시 404.
+
+**C5. 문서 삭제에 인가 검사 없음 — 데이터 손실 (line 39–48)**
+- trigger: 임의 호출자가 `DELETE /documents/<타인 문서 id>`.
+- impact: 타인 문서의 S3 객체(44행)와 DB 행(45행)이 영구 삭제. 복구 불가.
+- evidence: 40–45행 어디에도 호출자 확인/소유권 조건 없음. `DELETE ... WHERE id = ?`에 `owner_id` 조건 부재.
+- suggestion: 인가 검사 추가 + `DELETE ... WHERE id=? AND owner_id=?` 이중 방어.
+
+**C6. 조회 핸들러의 테넌트 격리 부재 (line 7–19, 22–36)**
+- trigger: 임의 호출자가 `/search?q=` 또는 목록 API 호출.
+- impact: 전체 사용자 문서 제목·소유자 열람. 22–36행은 나아가 `users.email`까지 응답에 포함(30행)해 개인정보 대량 유출.
+- evidence: 12–16행, 24행 쿼리에 `owner_id = <caller>` 또는 공유 권한 조인 조건 없음. 30행이 `email`을 select.
+- suggestion: 모든 쿼리에 호출자 기준 권한 필터 적용, 응답에서 `email` 제거(필요 시 마스킹).
+
+## Major
+
+**M1. 존재하지 않는 문서 삭제 시 TypeError (line 44)**
+`doc[0].storage_key` — 40행 쿼리가 빈 배열을 반환하면(잘못된/이미 삭제된 id) `Cannot read properties of undefined`. 404가 아니라 500. 재시도·멱등성 파괴.
+- suggestion: `if (!doc[0]) return new Response(null, { status: 404 })`.
+
+**M2. 삭제 순서로 인한 데이터 불일치 (line 44–45)**
+S3 객체를 먼저 지우고 DB 행을 나중에 삭제. 45행이 실패하면 DB에는 문서가 살아있지만 스토리지 객체는 이미 소멸 → 이후 모든 다운로드가 영구 실패하고 복구 경로가 없음. 보상 트랜잭션/아웃박스 없음.
+- suggestion: DB 행 삭제(또는 soft-delete) 먼저, 스토리지 삭제는 비동기 정리 잡/아웃박스로. 최소한 44행 실패와 45행 실패를 구분해 처리.
+
+**M3. N+1 쿼리 (line 28–34)**
+문서 100건마다 루프 안에서 `await db.raw(...)` 순차 실행 → 요청당 최대 101 라운드트립, 지연이 선형 증가. 29행의 await가 루프 내부라 병렬화도 안 됨.
+- suggestion: `SELECT ... FROM users WHERE id IN (?)`로 1회 조회 후 맵 조인, 또는 단일 JOIN 쿼리.
+
+**M4. 클라이언트가 만료 시각을 통제 (line 52)**
+`exp: body.exp` — 51행에서 받은 요청 본문 값을 검증 없이 그대로 토큰에 삽입. 호출자가 `exp`를 100년 뒤로 두거나 아예 생략(`undefined` → JSON 직렬화 시 필드 소멸)하면 사실상 무기한 유효한 링크. 게다가 이 파일에는 검증 측 코드가 없어 `exp`가 실제로 강제되는지도 보장되지 않음.
+- suggestion: 서버가 `exp = now + min(requested, MAX_TTL)`로 산정, 상한 강제, 필수 필드로 취급.
+
+**M5. `req.json()` 예외 미처리 (line 51)**
+본문이 비었거나 JSON이 아니면 `await req.json()`이 throw → 400이 아닌 미처리 예외/500. 4개 핸들러 어디에도 try/catch나 에러 경계가 없어(7, 22, 39, 50행) DB 오류 메시지·스택이 그대로 노출될 위험도 동반.
+- suggestion: 파싱을 try/catch로 감싸 400 반환, 핸들러 공통 에러 래퍼 도입.
+
+## Minor
+
+**m1. (line 27)** `const items = []`는 타입 주석 없이 evolving-any. `noImplicitAny`/`strict` 환경에서 취약하고 응답 스키마가 타입으로 보장되지 않음. 명시적 타입 선언 권장.
+
+**m2. (line 31, 33)** `db.raw` 반환값이 사실상 `any` — `doc.owner_id`, `owner[0]` 접근이 타입 검사를 받지 않음. 33행은 사용자가 삭제된 경우 `owner: undefined`를 조용히 응답에 실어 보냄(클라이언트 크래시 유발). 제네릭 반환 타입 + null 처리 필요.
+
+**m3. (line 14)** 선행 와일드카드 `LIKE '%...%'`는 `title` 인덱스를 사용할 수 없어 매번 풀스캔. 데이터 증가 시 검색 API가 먼저 무너짐. 전문 검색 인덱스(FTS/trigram) 검토.
+
+**m4. (line 16, 24)** `LIMIT 50`/`LIMIT 100` 하드코딩에 커서·오프셋 없음 → 51번째 이후 문서는 API로 도달 불가. 페이지네이션 부재.
+
+**m5. (line 22, 39)** `req` 파라미터가 본문에서 전혀 사용되지 않음(22행 핸들러). 인가 검사가 빠졌다는 C5/C6의 방증이기도 함.
+
+**m6. (line 57)** `Buffer`는 Node 전용 API인데 핸들러 시그니처는 Web 표준 `Request`/`Response.json`을 사용 — Edge/Workers 런타임에 배포되면 런타임 에러. 런타임 명시가 없어 확정은 못 하지만 이식성 위험. `TextEncoder`/WebCrypto 사용 권장.
+
+**m7. (line 53)** 시크릿 토큰을 URL 경로에 그대로 노출 — 브라우저 히스토리, Referer 헤더, 프록시/액세스 로그에 평문 적재. 프래그먼트(`#`) 사용 또는 단기 교환 토큰 패턴 고려.
+
+**m8. (line 52)** 토큰에 `jti`/발급 시각이 없어 개별 링크 폐기(revoke) 불가. 유출 시 시크릿 로테이션 외 대응 수단 없음.
+
+**m9. (line 39, 50)** 핸들러가 `req.method`를 확인하지 않음 — 라우터가 보장하지 않으면 `GET`으로 삭제가 트리거될 수 있음(CSRF 표면).
+
+**m10. (line 2–3)** `./db`, `./storage` 모듈이 디렉터리에 존재하지 않아 현 상태로는 컴파일 불가. 픽스처 특성일 수 있으나 확인 필요.
+
+## 반증 검토를 통과한 항목
+
+- M2(삭제 순서): "고아 객체를 남기지 않으려 S3를 먼저 지운다"는 의도로 볼 수 있으나, 실패 시 남는 것이 **고아 행 + 소실된 원본**이라 손해가 비대칭적으로 크므로 유지.
+- M1: `db.raw`가 미존재 행에서 throw할 가능성을 검토했으나, 33행에서 `owner[0]`로 인덱싱하는 것으로 보아 배열 반환 계약이 확실 → 유지.
+- m6(Buffer/Edge): 런타임 설정 파일이 없어 확정 불가 → critical/major로 올리지 않고 minor 유지.
+
+## 롤업 판정
+
+- critical: 6 (C1–C6, 전원 confidence high)
+- major: 5 (M1–M5)
+- minor: 10 (m1–m10)
+
+**판정: FAIL** — critical 6건(그중 5건이 security zero-tolerance 범주: 시크릿 유출, SQL 인젝션, 위조 가능한 서명, 인가 부재 3종). 커밋 차단. 포매터로 해결 불가하며 C1–C6 및 M1–M5는 수동 수정이 필요합니다. 우선순위: C2 → C3 → C1 → C4/C5/C6 → M1/M2 → M3/M4/M5.
+
+```json
+{"findings":[{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:11","what":"searchDocuments가 사용자 입력 q를 SQL 문자열에 직접 보간(14행 LIKE '%${q}%')하여 임의 SQL 실행이 가능한 SQL 인젝션. 같은 파일 30/40/45행은 파라미터 바인딩을 사용 중이므로 안전한 API가 이미 존재함."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:56","what":"sign()이 HMAC이 아니라 JSON+secret의 base64url 인코딩(가역). 공유 링크 수신자가 디코드만으로 SHARE_TOKEN_SECRET을 평문 획득하고, 임의 documentId에 대한 유효 토큰을 위조할 수 있음."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:5","what":"프로덕션 공유 토큰 시크릿이 소스에 하드코딩됨. 저장소 접근자 전원에게 유출되며 번들 포함 위험. 환경변수 주입 및 즉시 키 로테이션 필요."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:50","what":"createShareLink에 인증/소유권 검사가 전무. 임의 호출자가 타인 문서 id로 유효한 공개 공유 URL을 발급받아 접근제어를 우회할 수 있음(권한 상승)."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:39","what":"deleteDocument에 인가 검사가 없고 DELETE 쿼리에 owner_id 조건도 없어, 임의 호출자가 타인 문서의 S3 객체(44행)와 DB 행(45행)을 영구 삭제 가능."},{"severity":"critical","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:22","what":"조회 핸들러(7행, 22행) 쿼리에 호출자 기준 권한 필터가 없어 전체 사용자 문서가 노출되고, 30행이 users.email을 select해 응답에 개인정보가 대량 포함됨."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:44","what":"doc[0].storage_key 접근 시 존재하지 않는 id면 doc가 빈 배열이라 TypeError 발생 → 404 대신 500. 이미 삭제된 문서 재요청 시 멱등성 파괴."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:45","what":"S3 객체를 먼저 삭제(44행)하고 DB 행을 뒤에 삭제. 45행 실패 시 DB에는 문서가 남고 스토리지 원본만 소실되어 복구 불가능한 데이터 불일치 발생. 트랜잭션/보상 로직 없음."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:28","what":"N+1 쿼리: 문서 100건에 대해 루프 내부에서 순차 await로 사용자 조회(29행) → 요청당 최대 101회 DB 라운드트립. IN 절 일괄 조회 또는 JOIN으로 대체 필요."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:52","what":"exp를 검증 없이 요청 본문(body.exp)에서 그대로 사용. 클라이언트가 만료를 무한대로 설정하거나 생략(필드 소멸)해 사실상 영구 유효한 공유 링크를 만들 수 있음. 서버 측 상한(MAX_TTL) 강제 필요."},{"severity":"major","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:51","what":"await req.json()이 비어있거나 잘못된 본문에서 throw하지만 try/catch가 없음. 4개 핸들러(7,22,39,50행) 모두 에러 경계가 없어 400 대신 미처리 예외/500 및 내부 오류 노출 위험."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:27","what":"const items = [] 가 타입 주석 없는 evolving-any. strict/noImplicitAny 환경에서 취약하고 응답 스키마가 타입으로 보장되지 않음."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:33","what":"db.raw 반환값이 사실상 any라 doc.owner_id/owner[0] 접근이 타입 검사를 받지 않음. 사용자가 없으면 owner: undefined가 조용히 응답에 실려 클라이언트 크래시를 유발."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:14","what":"선행 와일드카드 LIKE '%...%'는 title 인덱스를 사용할 수 없어 매 검색이 풀스캔. 데이터 증가 시 검색 API가 먼저 병목이 됨."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:16","what":"LIMIT 50(16행)/LIMIT 100(24행)이 하드코딩되고 커서·오프셋이 없어 그 이후 문서는 API로 도달 불가. 페이지네이션 부재."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:57","what":"Buffer는 Node 전용 API인데 핸들러는 Web 표준 Request/Response를 사용. Edge/Workers 런타임 배포 시 런타임 에러 가능. WebCrypto/TextEncoder 사용 권장."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:53","what":"시크릿 토큰을 URL 경로에 노출해 브라우저 히스토리·Referer 헤더·프록시 로그에 평문으로 적재됨."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:52","what":"토큰에 jti/발급시각이 없어 개별 공유 링크를 폐기(revoke)할 수 없음. 유출 시 전역 시크릿 로테이션 외 대응 수단 없음."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:22","what":"listDocumentsWithOwners의 req 파라미터가 전혀 사용되지 않음 — 인증/인가 로직 누락의 방증."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:39","what":"핸들러가 req.method를 검증하지 않음. 라우터가 보장하지 않으면 GET 요청으로 삭제가 트리거될 수 있어 CSRF 표면이 됨."},{"severity":"minor","where":"/var/folders/rs/4twff7tj5hlgdrck7jqsb4fw0000gn/T/tmp.IJhWLVT2Rd/code-defective.ts:2","what":"import 대상 ./db, ./storage 모듈이 디렉터리에 존재하지 않아 현 상태로는 컴파일 불가(해당 디렉터리에 code-defective.ts 단일 파일만 존재)."}]}
+```

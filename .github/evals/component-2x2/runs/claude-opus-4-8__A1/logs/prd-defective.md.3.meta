@@ -1,0 +1,6 @@
+model=claude-opus-4-8
+arm=A1
+fixture=prd-defective.md
+rep=3
+rc=0
+seconds=228

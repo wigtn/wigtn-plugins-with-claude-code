@@ -1,0 +1,30 @@
+재검증 통과했습니다. 최종 결과를 정리합니다.
+
+## ✅ 완료 — 휴가 신청/승인 서비스 PRD
+
+**생성 파일**
+- 📄 `docs/prd/PRD.md` — PRD 본문 (Type: `product-feature` / Scale: `Startup`)
+- 📋 `docs/todo_plan/PLAN_leave-management.md` — `/implement` 진행 원장(Phase→Task 체크리스트)
+
+**품질 게이트 (prd-reviewer)**
+| 라운드 | 결과 |
+|---|---|
+| 1차 | ❌ BLOCKED — Critical 1 (로그인 무차별 대입 방어 누락), Major 5, Minor 2 |
+| 2차(재검증) | ✅ **PASS** — Critical 0, 지적 8건 전부 반영 |
+
+수정 반영 내역: 로그인 Rate Limit·계정 잠금·Refresh 토큰 회전(FR-001a), 병가 사유 민감정보 처리, 팀 캘린더 권한 모순 해소(FR-015), 공휴일 소스 정의(FR-019 + holidays 테이블), 팀장 통계 페이지(FR-018 + `/team/overview`), CSV 인젝션 방지, 반차 표현(half_day_period).
+
+**PRD 핵심 구조**
+- **역할 3종**: `applicant`(신청/취소) · `manager`(자기 팀 승인/반려) · `admin`(전사 현황·정책)
+- **핵심 규칙**: 잔여 연차 초과·기간 중복 신청 거부, 승인 시 트랜잭션으로 연차 자동 차감, 반려 사유 필수, 승인 후 취소 불가
+- **화면 9개**: 로그인, 신청/목록/상세, 팀 대기열·캘린더·통계, 관리자 현황·설정 (모두 상태 매트릭스 + User Flow 정의)
+
+---
+
+### 다음 단계
+FE 페이지가 9개(`Has FE Components: Yes`)이므로 화면 설계 단계를 권장합니다.
+
+- **권장**: `/screen-spec leave-management` — IA / User Flow / Screen Spec / Wireframe / Dev Handoff 5종 생성
+- 이후: `/implement leave-management` — 구현
+
+어느 쪽으로 진행할까요? (참고: Supabase·Vercel MCP는 인증이 필요해 이 세션에서는 연결돼 있지 않습니다 — 실제 DB/배포 연동이 필요해지면 인터랙티브 세션에서 `/mcp`로 인증하시면 됩니다.)
