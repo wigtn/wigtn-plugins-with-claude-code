@@ -1,0 +1,27 @@
+# ~/.config/wigtn/knowledge-wiki.yml  (또는 ~/.wigtn/knowledge-wiki.yml)
+#
+# 전역 설정 — 한 번만 만들면 된다. 이 파일이 없으면 플러그인은 아무것도 하지 않는다.
+# 탐색 순서: $WIGTN_WIKI_CONFIG → $XDG_CONFIG_HOME/wigtn/ → ~/.config/wigtn/ → ~/.wigtn/
+
+wiki:
+  # remote 가 있으면 path 가 없을 때 자동 clone 하고, 게시 후 push 한다.
+  # remote 를 빼면 로컬 축적만 한다 (부트스트랩 기본값).
+  # remote: git@github.com:myteam/team-wiki.git
+  path: ~/Dev/my-team-wiki    # 위키 repo 로컬 경로
+  subdir: per-user/harry      # auto-push 허용 영역
+                              # ⚠️ per-user/ 또는 ouroboros/ 아래만 허용.
+                              #    shared/ 는 사람이 PR 로 승격한다 (contracts/INGEST-POLICY.md §4)
+
+# 지식을 쌓을 경로. **비어 있으면 아무것도 하지 않는다.**
+# "설치했으니 다 쌓는다"가 아니라 "쌓을 곳을 지정해야 쌓는다".
+include:
+  - ~/Dev/my-projects
+  - ~/work/side
+
+# include 안이어도 제외할 경로. **repo 마커보다 강하다** — 민감 디렉터리를 실수로도 못 연다.
+exclude:
+  - ~/work/side/client-nda
+  - ~/Dev/my-projects/experiments
+
+# enabled: false        # 전체 일시 중지
+# project: my-team      # article 분류 라벨 기본값 (생략 시 repo 디렉터리명)

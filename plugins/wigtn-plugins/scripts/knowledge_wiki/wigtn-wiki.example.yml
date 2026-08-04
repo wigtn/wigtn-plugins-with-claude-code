@@ -1,0 +1,18 @@
+# .wigtn-wiki.yml — repo 루트에 두는 **선택적** override.
+#
+# 보통은 필요 없다. 전역 설정(~/.config/wigtn/knowledge-wiki.yml)의
+# include/exclude 로 대부분 해결된다. 아래 경우에만 쓴다:
+#
+#   1. include 밖의 repo 를 개별 opt-in
+#   2. 이 repo 만 다른 위키/디렉터리로 보내기
+#   3. 이 repo 만 끄기  (enabled: false)
+#
+# ⚠️ 전역 exclude 는 이 파일보다 강하다. exclude 된 경로는 마커가 있어도 거부된다.
+
+enabled: true
+project: my-service          # article 분류 라벨
+
+# 전역과 다른 위키로 보낼 때만 지정 (생략하면 전역 설정 사용)
+# wiki:
+#   path: ~/Dev/other-wiki
+#   subdir: per-user/harry
