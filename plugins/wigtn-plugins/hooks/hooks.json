@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$CMD\" | grep -qE \"rm\\s+(-\\w*[rR]\\w*f\\w*|-\\w*f\\w*[rR]\\w*|-[rR]\\s+-f|-f\\s+-[rR]|--recursive\\s+--force|--force\\s+--recursive)\\s+(/|~|[$]HOME|[$][{]HOME[}])(\\s|$|\\*|/\\*)|git\\s+push\\s+.*--force|git\\s+push\\s+.*-f\\s|git\\s+reset\\s+--hard|[Dd][Rr][Oo][Pp]\\s+([Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee]|[Tt][Aa][Bb][Ll][Ee]|[Ss][Cc][Hh][Ee][Mm][Aa])\"; then echo \"BLOCKED: Dangerous command detected. Please confirm before executing: $CMD\" >&2; exit 2; fi'"
+            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); PROBE=$(echo \"$CMD\" | tr -d \"\\42\\47\"); if echo \"$PROBE\" | grep -qE \"rm( +-[A-Za-z-]+){0,3} +(-\\w*[rR]\\w*f\\w*|-\\w*f\\w*[rR]\\w*|-[rR] +-f|-f +-[rR]|--recursive +--force|--force +--recursive) +(/|~|[$]HOME|[$][{]HOME[}])(/?([[:space:]]|$)|/?\\*)|git\\s+push\\s+.*--force|git\\s+push\\s+.*-f\\s|git\\s+reset\\s+--hard|[Dd][Rr][Oo][Pp]\\s+([Dd][Aa][Tt][Aa][Bb][Aa][Ss][Ee]|[Tt][Aa][Bb][Ll][Ee]|[Ss][Cc][Hh][Ee][Mm][Aa])\"; then echo \"BLOCKED: Dangerous command detected. Please confirm before executing: $CMD\" >&2; exit 2; fi'"
           }
         ]
       },
