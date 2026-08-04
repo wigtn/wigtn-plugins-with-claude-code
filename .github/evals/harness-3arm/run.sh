@@ -34,6 +34,12 @@ PAR="${PAR:-3}"
 MODEL="${MODEL:-claude-opus-5}"
 ARMS=(A0 A1 A2)
 
+# E-11: 하네스의 /prd 는 "prd-reviewer 에이전트를 실행한다"고 지시한다. Agent 도구를
+# 주지 않으면 모델이 시도->실패->인라인 우회를 반복해 턴이 폭발한다(84턴, 570만 토큰).
+# 그 부풀림은 지시를 받는 A1/A2 에만 걸려 **처치군만 골라 오염시킨다.**
+# 실제 사용 환경과 같은 목록을 세 arm 에 동일하게 준다.
+TOOLS="${TOOLS:-Agent Read Write Edit Glob Grep WebSearch WebFetch}"
+
 # arm 서명 — PROTOCOL.md 의 표와 일치해야 한다.
 #   A0: wigtn 항목 0개
 #   A1: parallel-digging-coordinator 존재
@@ -140,7 +146,7 @@ one_call() {
     --kv "parallel=$PAR" \
     -- claude -p "$(fixture_text "$f")" --model "$MODEL" \
        "${EXTRA[@]}" \
-       --allowedTools "Read Write Edit Glob Grep" --output-format json
+       --allowedTools "$TOOLS" --output-format json
   local rc=$?
 
   # E-02: 조용한 폴백 금지. 산출물 없음과 계측 실패를 절대 섞지 않는다.
