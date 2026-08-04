@@ -114,6 +114,25 @@ def load() -> tuple[dict[str, Any], Path | None]:
 DEFAULT_HOME = Path.home() / ".wigtn"
 DEFAULT_WIKI = DEFAULT_HOME / "wiki"
 _NOTICE_FLAG = DEFAULT_HOME / ".notice-shown"
+_STATE_DIR = DEFAULT_HOME / "state"
+
+
+def state_dir() -> Path | None:
+    """머신 로컬 상태 디렉터리. **위키 repo 밖이다.**
+
+    커서와 중첩 호출 차단 설정은 위키 *콘텐츠* 가 아니라 이 기계의 상태다.
+    위키 안에 두면 clone 한 팀 repo 워킹카피가 지저분해지고(팀 repo 에 .gitignore 를
+    써 넣는 건 요청하지 않은 공유 저장소 변경이다), 커서가 위키 경로에 묶여
+    프로젝트끼리 섞인다.
+
+    Returns:
+        디렉터리 경로 / 만들 수 없으면 None (호출부가 fail-closed 처리)
+    """
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return _STATE_DIR
 
 _DEFAULT_TEMPLATE = """# wigtn knowledge-wiki — 자동 생성됨
 #
@@ -128,7 +147,8 @@ wiki:
   # remote: git@github.com:myteam/team-wiki.git
 
 # 지식을 쌓을 경로. 기본 = 홈 전체 (로컬 전용이라 허용).
-# remote 를 채워 push 를 켤 때는 이 범위를 좁히는 것을 권한다.
+# 범위가 홈/루트 전체인 동안에는 remote 가 있어도 push 하지 않는다 (로컬 축적만).
+# 좁히면 그때 push 가 켜진다 - 예: - {home}/Dev
 include:
   - {home}
 
@@ -276,6 +296,35 @@ def _is_under(child: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def remote_of(conf: dict[str, Any]) -> str:
+    """설정에서 ``wiki.remote`` 추출. 없으면 빈 문자열."""
+    wiki = conf.get("wiki")
+    wiki_conf: dict[str, Any] = wiki if isinstance(wiki, dict) else {}
+    return str(wiki_conf.get("remote") or "").strip()
+
+
+def broad_scope_reason(conf: dict[str, Any]) -> str:
+    """``include`` 가 push 를 켜기엔 너무 넓으면 사유를, 아니면 빈 문자열.
+
+    로컬 축적과 팀 공유는 위험도가 다르다. ``remote`` 한 줄을 추가하는 행위의
+    사용자 인지는 "팀 공유를 켰다"인데, ``include`` 가 홈 전체면 실제로 일어나는 일은
+    "이 기계의 **모든** repo 지식이 원격으로 나가기 시작했다"이다. 한 기계에서 여러
+    조직 일을 하면 그게 곧 유출 경로다.
+
+    막는 방식은 **push 보류**지 축적 중단이 아니다. 축적까지 끄면 remote 를 추가한
+    사용자가 "아무 일도 안 일어나는" 상태를 만나게 된다 - 이 파이프라인이 피하려는
+    실패 모드와 같은 모양이다.
+    """
+    try:
+        home = Path.home().resolve()
+    except (OSError, RuntimeError):
+        return ""
+    for included in _as_paths(conf.get("include")):
+        if included == home or included == Path(included.anchor):
+            return f"include 범위가 홈/루트 전체 ({included}) - 좁히면 push 가 켜진다"
+    return ""
 
 
 def scope_verdict(conf: dict[str, Any], repo_root: Path) -> tuple[bool, str]:

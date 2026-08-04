@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -39,6 +40,43 @@ def _log(wiki_path: Path | None, message: str) -> None:
             f.write(f"[{stamp}] {message}\n")
     except OSError:
         pass
+
+
+def _cursor_for(transcript_path: str) -> Path | None:
+    """transcript 단위 커서 경로. 없으면 None (전체를 다시 읽는다).
+
+    커서는 "몇 번째 줄까지 읽었나"인데 *어느* transcript 의 줄인지가 같이 기록돼야 한다.
+    위키 subdir 에 하나만 두면 기본 설정(모든 repo → 같은 per-user/)에서 전 프로젝트가
+    커서를 공유해 재읽기(중복 article)와 구간 누락이 난다.
+    """
+    from knowledge_wiki import config as kw_config
+
+    state = kw_config.state_dir()
+    if state is None or not transcript_path:
+        return None
+    cursors = state / "cursors"
+    try:
+        cursors.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return cursors / hashlib.sha1(transcript_path.encode("utf-8")).hexdigest()[:16]
+
+
+def _no_hooks_settings() -> Path | None:
+    """중첩 ``claude`` 호출에서 훅을 끄는 설정 파일. 확보 실패 시 None."""
+    from knowledge_wiki import config as kw_config
+
+    state = kw_config.state_dir()
+    if state is None:
+        return None
+    path = state / "no-hooks.json"
+    if path.is_file():
+        return path
+    try:
+        path.write_text('{"disableAllHooks": true}\n', encoding="utf-8")
+    except OSError:
+        return None
+    return path
 
 
 def _read_transcript(path: str, cursor: Path | None) -> str:
@@ -124,28 +162,25 @@ def main() -> int:
     wiki = tenant.wiki_path
 
     # ── transcript 확보 ───────────────────────────────────────
-    cursor = wiki / tenant.subdir / ".transcript_cursor"
-    try:
-        cursor.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        cursor = None  # type: ignore[assignment]
-
-    conversation = _read_transcript(hook_input.get("transcript_path") or "", cursor)
+    transcript_path = hook_input.get("transcript_path") or ""
+    conversation = _read_transcript(transcript_path, _cursor_for(transcript_path))
     if not conversation.strip():
         return 0
 
     # ── G1 결정론 차단 (원문) ─────────────────────────────────
-    hits = gates.scan(conversation)
+    # 입력 계층만 본다. D2/D4/D6 은 원문에 있어도 반출되지 않는다 - 반출되는 건
+    # G2 가 새로 쓴 article 이고 그건 G4 가 전체 패턴으로 검사한다.
+    hits = gates.scan_input(conversation)
     if hits:
         _log(wiki, f"G1 폐기 [{tenant.project}]: {', '.join(hits)}")
         return 0
 
-    no_hooks = wiki / tenant.subdir / ".no-hooks.json"
-    if not no_hooks.exists():
-        try:
-            no_hooks.write_text('{"disableAllHooks": true}\n', encoding="utf-8")
-        except OSError:
-            no_hooks = None  # type: ignore[assignment]
+    # 중첩 claude 호출이 이 훅을 다시 밟지 않게 하는 설정. 확보 못 하면 폐기한다 -
+    # 여기서 fail-open 하면 자식 세션이 같은 Stop 훅을 물고 재귀한다.
+    no_hooks = _no_hooks_settings()
+    if no_hooks is None:
+        _log(wiki, f"폐기 [{tenant.project}]: 중첩 호출 차단 설정 확보 실패 (fail-closed)")
+        return 0
 
     # ── G2 LLM 컴파일 ─────────────────────────────────────────
     article, reason = kw_compile.compile_article(conversation, no_hooks)
@@ -167,12 +202,16 @@ def main() -> int:
         return 0
 
     # ── 게시 ──────────────────────────────────────────────────
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    slug = kw_compile.slugify(article) or "note"
-    filename = f"{stamp}-{slug}.md"
+    # 초까지 넣는다. 분 단위면 같은 분에 끝난 두 세션이 같은 이름을 노린다.
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    filename = f"{stamp}-{kw_compile.slugify(article)}.md"
     footer = f"\n\n<!-- project: {tenant.project} · generated: {stamp} UTC -->\n"
 
-    ok, detail = publish.write_and_push(wiki, tenant.subdir, filename, article + footer)
+    ok, detail = publish.write_and_push(
+        wiki, tenant.subdir, filename, article + footer, push=tenant.push
+    )
+    if not tenant.push and tenant.push_hold:
+        detail = f"{detail} — push 보류: {tenant.push_hold}"
     _log(wiki, ("게시" if ok else "게시 실패") + f" [{tenant.project}]: {detail}")
     return 0
 

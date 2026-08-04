@@ -11,6 +11,7 @@ contracts/INGEST-POLICY.md §3 의 LLM 단계를 집행한다.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -175,11 +176,23 @@ def audit_article(article: str, no_hooks: Path | None) -> tuple[bool, str]:
 
 
 def slugify(article: str) -> str:
-    """제목에서 파일명 slug 추출. ASCII 가 없으면 호출부가 타임스탬프로 대체."""
+    """제목에서 파일명 slug 추출. **항상 비어 있지 않은 값을 반환한다.**
+
+    컴파일 프롬프트가 한국어라 한글 전용 제목이 흔하다. ASCII 만 남기면 빈 문자열이
+    되어 파일명이 전부 같은 값으로 수렴하고, 분 단위 타임스탬프와 겹치면 서로 덮어쓴다.
+    비ASCII 제목은 제목 해시로 대체한다 - 결정론이라 같은 제목이면 같은 이름이다.
+    """
+    title = ""
     for line in article.splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
-            slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", stripped[2:].lower()).strip("-")
-            slug = re.sub(r"-{2,}", "-", slug)
-            return slug[:60]
-    return ""
+            title = stripped[2:].strip()
+            break
+    if not title:
+        return "note"
+
+    slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", title.lower())
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")[:60].strip("-")
+    if slug:
+        return slug
+    return "note-" + hashlib.sha1(title.encode("utf-8")).hexdigest()[:8]
