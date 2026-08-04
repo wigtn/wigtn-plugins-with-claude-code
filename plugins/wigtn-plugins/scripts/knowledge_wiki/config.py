@@ -66,9 +66,14 @@ def parse_yaml(text: str) -> dict[str, Any]:
             item = stripped[2:].strip().strip("'\"")
             if section_key is None:
                 continue
-            bucket = result.setdefault(section_key, [])
-            if isinstance(bucket, list):
-                bucket.append(item)
+            # 최상위 키는 값 없이 나오면 {} 로 선점된다 (다음 줄이 리스트인지 dict 인지
+            # 아직 모르므로). 리스트로 판명되면 여기서 교체한다 - setdefault 로는
+            # 선점된 {} 가 그대로 돌아와 항목이 조용히 버려진다.
+            bucket = result.get(section_key)
+            if not isinstance(bucket, list):
+                bucket = []
+                result[section_key] = bucket
+            bucket.append(item)
             continue
 
         key, _, val = stripped.partition(":")

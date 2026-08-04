@@ -130,6 +130,7 @@ def resolve_tenant(cwd: str) -> tuple[Tenant | None, str]:
     판정 순서 — **전역 설정이 정본, 마커는 override**:
 
     1. deny 경로면 거부 (마커·설정과 무관한 하드 게이트)
+    1.5. 전역 ``enabled: false`` 면 거부 (**마커로 우회 불가** — 문서화된 kill-switch)
     2. repo 마커가 있으면 그게 최우선
        - ``enabled: false`` → 거부 (이 repo 만 끄기)
        - 자체 ``wiki:`` 블록이 있으면 그걸 사용 (다른 위키로 보내기)
@@ -152,6 +153,11 @@ def resolve_tenant(cwd: str) -> tuple[Tenant | None, str]:
     repo_root, marker = _locate(start)
     global_conf, _ = config.load()
 
+    # 전역 kill-switch 는 마커보다 강하다. 마커의 역할은 *범위 opt-in* 이지
+    # *kill-switch 해제* 가 아니다 - 사용자가 통째로 끌 수 있어야 기능을 지울 필요가 없다.
+    if _disabled(global_conf):
+        return None, "전역 설정에서 비활성"
+
     marker_conf: dict[str, Any] = {}
     if marker is not None:
         try:
@@ -160,9 +166,6 @@ def resolve_tenant(cwd: str) -> tuple[Tenant | None, str]:
             return None, f"마커 파싱 실패: {exc}"
         if _disabled(marker_conf):
             return None, "마커에서 비활성"
-
-    if _disabled(global_conf) and not marker_conf:
-        return None, "전역 설정에서 비활성"
 
     raw_path, subdir = _wiki_fields(marker_conf)
     source = "마커"

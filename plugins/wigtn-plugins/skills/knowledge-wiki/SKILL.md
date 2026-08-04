@@ -68,7 +68,9 @@ exclude:            # 고객사·NDA repo. include 와 repo 마커보다 강하�
 | 이 repo만 다른 위키로 | `wiki: {path: ..., subdir: ...}` |
 | 이 repo만 끄기 | `enabled: false` |
 
-⚠️ **전역 `exclude` 는 마커보다 강하다.** exclude 된 경로는 마커가 있어도 거부된다.
+⚠️ **전역 `exclude` 와 전역 `enabled: false` 는 마커보다 강하다.**
+exclude 된 경로, 그리고 전역으로 꺼 둔 상태는 마커가 있어도 거부된다.
+마커는 *범위 opt-in* 이지 *kill-switch 해제* 가 아니다.
 
 ## 어떻게 동작하나
 
