@@ -12,6 +12,7 @@ CI 에서 `python3 .github/scripts/test_knowledge_wiki.py` 로 실행한다.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -102,15 +103,12 @@ def test_scope_gate() -> None:
     os.environ["WIGTN_WIKI_CONFIG"] = str(cfg)
 
     def write_config(*, enabled: str = "true", subdir: str = "per-user/me",
-                     exclude: str = "", wiki_path: Path = wiki) -> None:
-        text = (
-            f"enabled: {enabled}\n"
-            "wiki:\n"
-            f"  path: {wiki_path}\n"
-            f"  subdir: {subdir}\n"
-            "include:\n"
-            f"  - {tmp}\n"
-        )
+                     exclude: str = "", wiki_path: Path = wiki,
+                     include: Path | None = None, remote: str = "") -> None:
+        text = f"enabled: {enabled}\nwiki:\n  path: {wiki_path}\n  subdir: {subdir}\n"
+        if remote:
+            text += f"  remote: {remote}\n"
+        text += f"include:\n  - {include or tmp}\n"
         if exclude:
             text += f"exclude:\n  - {exclude}\n"
         cfg.write_text(text, encoding="utf-8")
@@ -171,6 +169,43 @@ def test_scope_gate() -> None:
     nested.mkdir(parents=True)
     check("node_modules 하위 → 거부", gates.resolve_tenant(str(nested))[0] is None, True)
 
+    # ── push 경계 (#40) — 범위가 넓으면 축적은 하되 push 는 보류 ──
+    def tenant() -> object:
+        return gates.resolve_tenant(str(work))[0]
+
+    write_config(remote="git@example.com:team/wiki.git")
+    t = tenant()
+    check("remote + 좁은 include → push 허용", getattr(t, "push", None), True)
+
+    # 픽스처가 홈 밖(임시 디렉터리)이므로 루트를 넓은 범위의 대표로 쓴다.
+    # 홈 자체에 대한 판정은 아래 broad_scope_reason 단위 검사에서 본다.
+    write_config(remote="git@example.com:team/wiki.git", include=Path("/"))
+    t = tenant()
+    check("remote + 루트 전체 include → push 보류", getattr(t, "push", None), False)
+    check("  보류 사유가 기록된다", bool(getattr(t, "push_hold", "")), True)
+    check("  축적 자체는 계속된다", t is not None, True)
+
+    write_config(include=Path("/"))
+    check("remote 없으면 범위가 넓어도 보류 아님", getattr(tenant(), "push", None), True)
+
+    write_config(remote="git@example.com:team/wiki.git", include=Path("/"))
+    marker("enabled: true\n")
+    check("마커로 명시 opt-in 한 repo 는 보류 대상 아님", getattr(tenant(), "push", None), True)
+    marker(None)
+
+    from knowledge_wiki import config as kw_config
+
+    check(
+        "broad_scope_reason: 홈 전체는 넓다",
+        bool(kw_config.broad_scope_reason({"include": [str(Path.home())]})),
+        True,
+    )
+    check(
+        "broad_scope_reason: 홈 하위는 넓지 않다",
+        kw_config.broad_scope_reason({"include": [str(Path.home() / "Dev")]}),
+        "",
+    )
+
     os.environ.pop("WIGTN_WIKI_CONFIG", None)
 
 
@@ -181,7 +216,8 @@ def test_deny_patterns() -> None:
     section("G1/G4 결정론 패턴")
     from knowledge_wiki import gates
 
-    must_catch = [
+    # 입력·출력 양쪽에서 반드시 잡아야 하는 것 (모델에 넣는 것 자체가 위험)
+    hard = [
         ("AWS 키", "AKIAIOSFODNN7EXAMPLE 를 썼다"),
         ("provider 키", "sk-abcdefghijklmnopqrstuvwxyz012345"),
         ("GitHub 토큰", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"),
@@ -190,15 +226,33 @@ def test_deny_patterns() -> None:
         ("주민번호", "901231-1234567"),
         ("Bearer", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"),
     ]
-    for name, text in must_catch:
-        check(f"탐지: {name}", bool(gates.scan(text)), True)
+    for name, text in hard:
+        check(f"G1 탐지: {name}", bool(gates.scan_input(text)), True)
+        check(f"G4 탐지: {name}", bool(gates.scan(text)), True)
 
-    must_pass = [
+    # 반출물에서만 막는다. 원문에 있다고 세션을 버리지 않는다 (#35).
+    output_only = [
+        ("홈 절대경로", "프로젝트 파일 /Users/someone/proj/a.ts 를 수정"),
+        ("개인 이메일", "문의는 person.name@example.com 으로"),
+        ("사설 IP", "게이트웨이는 192.168.0.1 이다"),
+        ("내부 호스트", "build.internal 에서 받는다"),
+    ]
+    for name, text in output_only:
+        check(f"G1 통과(원문 허용): {name}", gates.scan_input(text), [])
+        check(f"G4 탐지(반출 차단): {name}", bool(gates.scan(text)), True)
+
+    # 오탐 — 어느 계층에서도 잡히면 안 된다
+    clean = [
         ("일반 기술 서술", "이 라이브러리는 재시도 시 지수 백오프를 쓴다."),
         ("의사코드", "if retries > 3: raise TimeoutError"),
+        ("SSH remote", "remote 는 git@github.com:team/wiki.git 이다"),
+        ("noreply 주소", "커밋 트레일러의 noreply@users.example.com"),
+        ("macOS 버전", "macOS 10.15.7 에서 재현됨"),
+        ("Kafka 버전", "Kafka 10.2.1 클러스터에서 측정"),
+        ("의존성 버전", "라이브러리 172.20.1 릴리스 노트"),
     ]
-    for name, text in must_pass:
-        check(f"통과: {name}", gates.scan(text), [])
+    for name, text in clean:
+        check(f"오탐 없음: {name}", gates.scan(text), [])
 
 
 # ═════════════════════════════════════════════════════════════
@@ -219,12 +273,102 @@ def test_publish_boundary() -> None:
         True,
     )
 
+    # 덮어쓰기 금지 (#39) — 같은 이름이 또 오면 접미사를 붙인다
+    publish.write_and_push(tmp, "per-user/me", "dup.md", "first", push=False)
+    ok, rel = publish.write_and_push(tmp, "per-user/me", "dup.md", "second", push=False)
+    check("같은 파일명 재게시 성공", ok, True)
+    check("  덮어쓰지 않고 새 이름을 쓴다", "dup-2.md" in rel, True)
+    check(
+        "  먼저 쓴 내용이 남아 있다",
+        (tmp / "per-user/me/dup.md").read_text(encoding="utf-8"),
+        "first",
+    )
+
+
+def test_slug() -> None:
+    """#39 — 파일명 slug 는 절대 비지 않는다."""
+    section("파일명 slug")
+    from knowledge_wiki.compile import slugify
+
+    check("ASCII 제목", slugify("# Debouncing async writes"), "debouncing-async-writes")
+    check(
+        "혼합 제목은 ASCII 부분을 남긴다",
+        slugify("# LangGraph interrupt 패턴의 재개 조건"),
+        "langgraph-interrupt",
+    )
+    korean = slugify("# 캐시 무효화 타이밍 문제")
+    check("한글 전용 제목도 빈 값이 아니다", bool(korean), True)
+    check("  note 로 수렴하지 않는다", korean != "note", True)
+    check(
+        "  결정론 — 같은 제목이면 같은 slug",
+        slugify("# 캐시 무효화 타이밍 문제"),
+        korean,
+    )
+    check(
+        "  다른 제목이면 다른 slug",
+        slugify("# 재시도 백오프 설계") != korean,
+        True,
+    )
+
+
+_STATE_PROBE = r"""
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from knowledge_wiki import accumulate, config
+
+cursor = accumulate._cursor_for("/somewhere/session-abc.jsonl")
+other = accumulate._cursor_for("/somewhere/session-xyz.jsonl")
+print(json.dumps({
+    "cursor": str(cursor) if cursor else "",
+    "distinct": bool(cursor and other and cursor != other),
+    "stable": str(accumulate._cursor_for("/somewhere/session-abc.jsonl")) == str(cursor),
+    "no_hooks": str(accumulate._no_hooks_settings() or ""),
+    "state": str(config.state_dir() or ""),
+}))
+"""
+
+
+def test_state_isolation() -> None:
+    """#36 — 커서·중첩 설정은 위키 repo 밖(머신 로컬 상태)에 있어야 한다."""
+    section("상태 격리 (위키 repo 오염 방지)")
+
+    home = Path(tempfile.mkdtemp())
+    env = {**os.environ, "HOME": str(home), "USERPROFILE": str(home)}
+    env.pop("WIGTN_WIKI_CONFIG", None)
+    scripts = str(REPO_ROOT / "plugins" / "wigtn-plugins" / "scripts")
+
+    result = subprocess.run(
+        [sys.executable, "-c", _STATE_PROBE, scripts],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    if result.returncode != 0:
+        FAILURES.append(f"상태 격리 프로브 실행 실패\n    {result.stderr.strip()[:300]}")
+        return
+
+    data = json.loads(result.stdout.strip().splitlines()[-1])
+    state = home / ".wigtn" / "state"
+    check("state_dir 이 홈 아래 .wigtn/state", data["state"], str(state))
+    check("커서가 state 아래", data["cursor"].startswith(str(state / "cursors")), True)
+    check("transcript 마다 커서가 다르다", data["distinct"], True)
+    check("같은 transcript 는 같은 커서", data["stable"], True)
+    check("no-hooks 설정도 state 아래", data["no_hooks"], str(state / "no-hooks.json"))
+
+    # 위키 repo 에는 article 말고 아무것도 생기지 않는다
+    wiki = home / ".wigtn" / "wiki"
+    strays = (
+        sorted(p.name for p in wiki.rglob(".transcript_cursor")) if wiki.exists() else []
+    ) + (sorted(p.name for p in wiki.rglob(".no-hooks.json")) if wiki.exists() else [])
+    check("위키 repo 에 상태 파일이 생기지 않는다", strays, [])
+
 
 def main() -> int:
     test_fallback_parser()
     test_scope_gate()
     test_deny_patterns()
     test_publish_boundary()
+    test_slug()
+    test_state_isolation()
 
     print()
     if FAILURES:

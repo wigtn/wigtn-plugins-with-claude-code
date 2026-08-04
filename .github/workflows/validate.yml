@@ -34,6 +34,9 @@ jobs:
       - name: Knowledge-wiki boundary tests (scope gate, deny patterns, publish limits)
         run: python3 .github/scripts/test_knowledge_wiki.py
 
+      - name: Dangerous-command hook tests (real JSON -> shell -> grep chain)
+        run: bash .github/scripts/test_danger_hook.sh
+
       - name: Prompt surface measurement (reported, non-blocking)
         run: |
           bash .github/scripts/measure.sh HEAD >> "$GITHUB_STEP_SUMMARY" || true

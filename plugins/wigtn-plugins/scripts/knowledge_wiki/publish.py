@@ -31,6 +31,21 @@ def _git(args: list[str], cwd: Path) -> tuple[int, str]:
     return result.returncode, (result.stdout + result.stderr).strip()
 
 
+def _free_path(target: Path) -> Path | None:
+    """이미 있으면 접미사를 붙여 비어 있는 경로를 찾는다.
+
+    덮어쓰기는 하지 않는다 - 잃어버린 쪽은 로그에도 "게시 성공"으로 남아서
+    사라진 걸 알 방법이 없다.
+    """
+    if not target.exists():
+        return target
+    for n in range(2, 100):
+        candidate = target.with_name(f"{target.stem}-{n}{target.suffix}")
+        if not candidate.exists():
+            return candidate
+    return None
+
+
 def write_and_push(
     wiki_path: Path,
     subdir: str,
@@ -52,12 +67,14 @@ def write_and_push(
     target_dir = wiki_path / normalized
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / filename
+        target = _free_path(target_dir / filename)
+        if target is None:
+            return False, f"파일명 충돌 회피 실패: {filename}"
         target.write_text(content, encoding="utf-8")
     except OSError as exc:
         return False, f"파일 쓰기 실패: {exc}"
 
-    rel = f"{normalized}/{filename}"
+    rel = f"{normalized}/{target.name}"
 
     code, out = _git(["rev-parse", "--git-dir"], wiki_path)
     if code != 0:
@@ -74,7 +91,7 @@ def write_and_push(
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     code, out = _git(
-        ["commit", "-m", f"docs(wiki): {filename[:-3]} ({stamp})", "--", rel],
+        ["commit", "-m", f"docs(wiki): {target.stem} ({stamp})", "--", rel],
         wiki_path,
     )
     if code != 0:
