@@ -33,6 +33,7 @@ description: Analyze changes, run quality gate, and auto-commit with PR-based wo
 - `--message`: 커밋 메시지 직접 지정
 - `--branch`: 피처 브랜치명 직접 지정 (기본: 자동 생성)
 - `--no-parallel-review`: 병렬 리뷰 비활성화, 순차 리뷰 강제
+- `--parallel-review`: 병렬 리뷰 강제 활성 (자동 조건 미충족 시에도)
 - `--draft`: Draft PR로 생성 (리뷰 준비 전)
 
 ## Workflow Mode
@@ -171,7 +172,9 @@ gh pr list --head "$current_branch" --state all --json number,state,title --limi
 gh pr list --state open --json number,title,headRefName
 
 # PRD/PLAN 파일 확인 (feature name 추출)
-ls PLAN_*.md PRD.md 2>/dev/null
+# 정본 경로는 `/prd`가 쓰는 docs/todo_plan/ 이다. 루트 fallback은 구버전 산출물용.
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo .)
+ls "$ROOT"/docs/todo_plan/PLAN_*.md "$ROOT"/PLAN_*.md "$ROOT"/PRD.md 2>/dev/null
 ```
 
 **브랜치 판단:**
@@ -186,17 +189,16 @@ ls PLAN_*.md PRD.md 2>/dev/null
 ### Step 2: 품질 검사 (Quality Gate)
 
 > **연동**: `code-reviewer` 에이전트로 변경된 코드를 평가합니다.
-> **리뷰 규모 조정 (fan-out은 변경 규모에 비례)**: 리뷰어 수를 파일 개수가 아니라 **실제 변경 규모**에 맞춘다. 3줄 diff에 3-way 리뷰어는 순수 낭비다.
-> - **단일 리뷰** (기본): 변경이 작을 때 — 파일 ≤5개 **그리고** blast radius LOW(공개 API/시그니처 변경 없음). `code-reviewer` 1개로 처리.
-> - **병렬 리뷰** (`parallel-review-coordinator`): 변경이 클 때 — 파일 6개+ **또는** blast radius MEDIUM/HIGH(공개 API·시그니처 변경, caller 다수, 다중 모듈). `--no-parallel-review`로 순차 강제, `--parallel-review`로 강제 활성.
+> **fan-out은 변경 규모에 비례한다.** 3줄 diff에 다중 리뷰어는 순수 낭비다. 기본은 `code-reviewer` **1개**로 처리한다.
+> - 변경이 클 때만(파일 6개+ **또는** blast radius MEDIUM/HIGH — 공개 API·시그니처 변경, caller 다수, 다중 모듈) 리뷰를 **변경 영역별로 나눠 병렬 실행**한다(모듈/디렉토리 단위 분할). 렌즈를 쪼개는 게 아니라 **일감을 쪼갠다** — 렌즈 분할은 검출 이득이 확인되지 않았다.
+> - 각 리뷰어는 findings를 `severity`+`confidence`로 보고하고, 병합 후 **findings 롤업**으로 판정한다(점수 합산이 아니다).
+> - `--no-parallel-review`로 순차 강제, `--parallel-review`로 강제 활성.
 
-**병렬 구성**: 3개 에이전트가 분담 — Agent A(Readability+Maintainability), Agent B(Performance+Testability), Agent C(Best Practices+Security). 각자 findings를 severity+confidence로 보고하고, Merge 단계에서 findings를 통합해 롤업으로 판정한다.
-
-**평가 항목**: Readability, Maintainability, Performance, Testability, Best Practices (5축 findings 수집)
+**평가 항목**: `code-reviewer` 에이전트의 severity 정의를 따른다 — 별도 축을 여기서 재정의하지 않는다.
 
 #### 품질 기준 (병렬/순차 공통) — findings 롤업으로 결정
 
-> 게이트는 **findings 롤업(결정론적)**으로 정한다. 합산 100점은 참고 표시값이며 커밋 여부를 좌우하지 않는다 (같은 코드가 78/85로 튀어 통과/차단이 갈리는 노이즈 제거).
+> 게이트는 **findings 롤업(결정론적)**으로만 정한다. 합산 점수는 폐기했다 — 같은 코드가 78/85로 튀어 통과/차단이 갈리는 노이즈였고, 게이트가 쓰지도 않았다.
 
 | 롤업 조건 | 상태 | 액션 |
 |----------|------|------|
@@ -204,15 +206,15 @@ ls PLAN_*.md PRD.md 2>/dev/null
 | critical 0 AND (major ≥1 OR minor ≥5) | **WARN** | ⚠️ Step 3 (code-formatter 개선 후 재평가) |
 | critical 0 AND major 0 AND minor <5 | **PASS** | ✅ Step 4로 진행 (바로 커밋) |
 
-- **Security 차단 규칙**: Security Critical은 critical의 부분집합 → 항상 FAIL(점수 무관 차단). zero-tolerance 유지.
+- **Security 차단 규칙**: Security Critical은 critical의 부분집합 → 항상 FAIL. zero-tolerance 유지.
 - **confidence 반영**: confidence low인 critical은 major로 강등하되 "사람 확인 필요" 플래그를 붙인다(오탐이 무조건 차단으로 이어지지 않도록).
 - **findings 보고 규칙**: 모든 finding에 파일·라인·이유·severity·confidence를 함께 제시한다. 근거 없는 감점·차단 금지.
 
-결과는 **findings 롤업(critical/major/minor 건수 + 판정)**을 먼저 보고하고, 5축 참고 점수를 뒤에 표로 덧붙인다.
+결과는 **findings 롤업(critical/major/minor 건수 + 판정)**으로 보고한다. 합산 점수는 쓰지 않는다.
 
 ### Step 3: 자동 개선 (조건부)
 
-> **연동**: 품질 미달(60-79점) 시 `code-formatter` 에이전트를 호출합니다.
+> **연동**: 롤업이 **WARN**(critical 0 AND (major ≥1 OR minor ≥5))일 때 `code-formatter` 에이전트를 호출합니다.
 
 - ESLint/Prettier 자동 수정, import 정리, 포맷팅 통일 후 롤업 재계산.
 - 재계산이 PASS(critical 0, major 0, minor <5)면 커밋 진행.
@@ -230,31 +232,20 @@ grep -qxF '.wigtn/' "$ROOT/.git/info/exclude" 2>/dev/null || echo '.wigtn/' >> "
 mkdir -p "$ROOT/.wigtn"
 echo "PASS $(git rev-parse --short HEAD 2>/dev/null || echo INITIAL) $(git rev-parse --abbrev-ref HEAD 2>/dev/null)" > "$ROOT/.wigtn/gate-pass"  # mtime = PASS 시각. hook이 30분 신선도로 검증
 
-# 객관 체크 자동 스캐폴딩 (PASS 날조 방어를 기본-on으로): checks.sh가 없고 빠른 검증 명령이
-# 감지되면 생성한다. hook이 커밋 직전 직접 실행 → 모델이 못 꾸미는 exit code에 게이트를 바인딩.
-# 느린 전체 테스트는 커밋을 지연시키므로 기본 스캐폴드는 typecheck/lint만(빠름). 팀은 파일을 편집/삭제해 opt-out.
-if [ ! -e "$ROOT/.wigtn/checks.sh" ]; then
-  CHK=""
-  if [ -f "$ROOT/package.json" ]; then
-    grep -q '"typecheck"' "$ROOT/package.json" && CHK="${CHK}npm run typecheck\n"
-    grep -q '"lint"' "$ROOT/package.json" && CHK="${CHK}npm run lint\n"
-  elif [ -f "$ROOT/tsconfig.json" ]; then
-    CHK="npx --no-install tsc --noEmit\n"
-  fi
-  if [ -n "$CHK" ]; then
-    printf '#!/usr/bin/env bash\n# WIGTN 객관 게이트 (auto-scaffolded). hook이 커밋 직전 실행, non-zero면 차단.\n# 기본은 빠른 체크만 — 전체 테스트를 강제하려면 아래에 `npm test` 등을 추가.\n# 이 게이트를 끄려면 이 파일을 삭제한다.\nset -e\n%b' "$CHK" > "$ROOT/.wigtn/checks.sh"
-    chmod +x "$ROOT/.wigtn/checks.sh"
-  fi
-fi
+# 객관 체크 스캐폴딩 — 생성기는 번들 스크립트다 (프롬프트가 매번 다시 쓰지 않는다).
+# 멱등이며, 이미 있으면 덮어쓰지 않고, 감지되는 검사기가 없으면 아무것도 하지 않는다.
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scaffold-checks.sh"
 ```
 
 - **아티팩트 의미**: 파일의 **mtime**이 곧 "게이트 PASS 시각"이다. hook은 `find "$ROOT/.wigtn/gate-pass" -mmin -30`으로 **30분 이내 PASS**만 유효 처리한다 — 지난 세션의 오래된 통과나, 게이트를 건너뛴 커밋을 막는다. `$ROOT`는 hook·auto-commit 양쪽 모두 `git rev-parse --show-toplevel`로 해석하므로 하위 디렉토리 cwd에서도 일치한다.
 - **재작성 금지**: 이 파일은 오직 이 단계(PASS 확정)에서만 쓴다. Step 6에서 커밋 직전에 `touch`하거나 미리 생성하지 않는다 — 그러면 하드 게이트가 무의미해진다.
 - **커밋 후 자동 무효화**: 다음 게이트 실행 전까지 mtime이 늙으므로 재사용되지 않는다. 별도 삭제 로직 불필요.
 
-> **객관 체크 게이트 (기본-on, PASS 날조 방어)**: gate-pass는 결국 프롬프트가 쓰는 아티팩트라 모델이 리뷰를 날조하고 써버릴 수 있다("리뷰가 일어났고 PASS했음"만 강제, "리뷰가 좋았음"은 아님). 이를 닫기 위해 위 Step 3.5가 **빠른 검증 명령을 감지하면 `.wigtn/checks.sh`를 자동 생성**한다 — hook이 커밋 직전 이를 **직접 실행**해 non-zero면 차단한다. 테스트/타입체크의 exit code는 모델이 못 꾸미므로, 게이트가 "리뷰가 좋았음"이 아니라 **"객관 검증이 실제로 통과했음"**을 강제한다.
-> - **기본 동작**: `package.json`에 `typecheck`/`lint` 스크립트(또는 `tsconfig.json`)가 있으면 자동 스캐폴딩 → 별도 설정 없이 날조 방어가 켜진다. 감지 실패 시 파일 없음 → 기존 무마찰(false-block 없음).
-> - **opt-out / 커스터마이즈**: `.wigtn/checks.sh`를 편집(전체 테스트 `npm test` 추가 등)하거나 삭제. 한 번 존재하면 auto-commit이 덮어쓰지 않는다.
+> **객관 체크 게이트 (PASS 날조 방어)**: gate-pass는 결국 프롬프트가 쓰는 아티팩트라 모델이 리뷰를 날조하고 써버릴 수 있다("리뷰가 일어났고 PASS했음"만 강제, "리뷰가 좋았음"은 아님). 이를 닫기 위해 `.wigtn/checks.sh`를 hook이 커밋 직전 **직접 실행**해 non-zero면 차단한다. 테스트/타입체크의 exit code는 모델이 못 꾸미므로, 게이트가 "리뷰가 좋았음"이 아니라 **"객관 검증이 실제로 통과했음"**을 강제한다.
+> - **감지 범위**: `package.json`(typecheck/lint) · `tsconfig.json` · `pyproject.toml`(ruff/mypy) · `go.mod`(go vet) · `Cargo.toml`(cargo check) · `Makefile`(lint/check 타겟). **감지는 설정 파일 존재 AND 러너 바이너리가 PATH에 있을 때만** 성립한다 — 툴이 설치되지 않은 환경에서 커밋을 막지 않기 위함이다.
+> - **자가 복구**: 감지되는데 `checks.sh`가 없으면 hook이 **차단하지 않고 그 자리에서 생성한 뒤 실행**한다. 마찰 0으로 게이트가 켜지고, 부수 효과로 **파일 삭제가 opt-out이 되지 않는다**(다음 커밋에서 재생성). opt-out 경로는 가시적 마커 하나뿐이다.
+> - **커스터마이즈**: `.wigtn/checks.sh`를 편집(전체 테스트 `npm test` 추가 등). 한 번 존재하면 auto-commit이 덮어쓰지 않는다.
+> - **opt-out**: 저장소 루트 `.wigtn-optout`에 **사유를 한 줄 적는다**(빈 파일은 무효). **삭제로 끄지 않는다** — 조용히 사라지는 게이트는 꺼진 줄도 모른다. 루트에 두는 이유는 `.wigtn/`가 gitignore라 그 안의 마커는 `git status`에도 안 보이기 때문이다. opt-out이 켜져 있는 동안 hook이 커밋마다 사유를 다시 출력한다.
 > - **주의**: hook에서 **동기 실행**되므로 checks.sh는 빠른 것(타입체크·lint·핵심 테스트)으로 유지한다. 느린 전체 스위트는 커밋을 지연시킨다.
 
 ### Step 4: 변경 분석 및 타입 결정
@@ -281,14 +272,14 @@ fi
 
 <body>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 - **Subject**: 50자 이내, 동사 원형으로 시작(Add/Update/Fix/Remove), 마침표 없음
 - **Body**: 변경된 주요 파일/기능 나열, 72자 줄바꿈
-- **`Quality Score:` 줄은 게이트가 실제로 실행됐을 때만 넣는다.** 하드 게이트 hook은 이 줄을 "게이트를 거친 파이프라인 커밋" 신호로 본다 → `.wigtn/gate-pass` 아티팩트가 없으면 차단한다.
-  - **`--no-review`(게이트 스킵)**: `Quality Score:` 줄을 **넣지 않고** 대신 `Quality Gate: SKIPPED (--no-review)`로 표기한다. 신호가 없으므로 hook을 우회한다(긴급 핫픽스 경로 보존).
+- **`Quality Gate: PASS` 줄은 롤업이 실제로 PASS했을 때만 넣는다.** 하드 게이트 hook은 이 줄을 "게이트를 거친 파이프라인 커밋" 신호로 본다 → `.wigtn/gate-pass` 아티팩트가 없으면 차단한다.
+  - **`--no-review`(리뷰 스킵)**: `Quality Gate: PASS` 줄을 **넣지 않고** 대신 `Quality Gate: SKIPPED (--no-review)`로 표기한다. 신호가 없으므로 리뷰 PASS 게이트(게이트 2)를 우회한다(긴급 핫픽스 경로 보존). **단 객관 체크(게이트 1)는 그대로 실행된다** — `.wigtn/checks.sh`는 커밋 메시지와 무관하다.
 
 ### Step 5.5: Safety Guard (최종 확인)
 
@@ -348,7 +339,7 @@ git add -A
 git commit -m "$(cat <<'EOF'
 <generated message>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
@@ -361,7 +352,7 @@ git add -A
 git commit -m "$(cat <<'EOF'
 <generated message>
 
-Quality Score: XX/100
+Quality Gate: PASS (critical 0, major 0, minor N)
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
@@ -426,7 +417,7 @@ EOF
    - **FAIL** (critical ≥1) → STOP (수동 수정) — 아티팩트 미기록 → 커밋 hook 차단
    - **Security Critical** → critical의 부분집합 → FAIL → STOP
 
-> **하드 게이트 (hook 강제)**: `hooks.json`의 PreToolUse가 `git commit`을 가로채, 메시지에 `Quality Score:`가 있는데 30분 이내 `.wigtn/gate-pass`가 없으면 커밋을 **차단(exit 2)**한다. 게이트가 프롬프트라 스킵돼도 하네스가 커밋을 막는다. 수동 커밋(신호 없음)·`--no-review`(신호 제거)는 영향받지 않는다.
+> **하드 게이트 (hook 강제)**: `hooks.json`의 PreToolUse가 `git commit`을 가로채 번들 스크립트 `hooks/gate.sh`를 실행한다. **두 게이트는 독립이다** — ① `.wigtn/checks.sh` 객관 체크는 **모든 커밋에** 실행되고 커밋 메시지를 보지 않는다, ② `.wigtn/gate-pass` 신선도(30분)는 메시지에 `Quality Gate: PASS`(또는 레거시 `Quality Score:`)가 있는 커밋에만 적용된다. 게이트가 프롬프트라 스킵돼도 하네스가 커밋을 막는다. `--no-review`는 ②만 우회하며 ①은 우회하지 못한다. 머지·리베이스·체리픽·리버트 중에는 ①이 면제된다.
 4. Safety Guard에서 AskUserQuestion("PR 생성?") → 선택에 따라:
    - PR 생성 → BRANCH + COMMIT + PUSH + PR
    - Draft PR → BRANCH + COMMIT + PUSH + Draft PR
@@ -442,8 +433,7 @@ EOF
 | 구성요소 | 역할 | 호출 조건 |
 |----------|------|----------|
 | `code-reviewer` 에이전트 | findings 수집·게이트 | 항상 (--no-review 제외) |
-| `parallel-review-coordinator` | 병렬 리뷰 조율 | 파일 6개+ 또는 blast radius MEDIUM/HIGH (--no-parallel-review 제외) |
-| `code-formatter` 에이전트 | 자동 코드 개선 | 점수 60-79점일 때 |
+| `code-formatter` 에이전트 | 자동 코드 개선 | 롤업 WARN일 때 (critical 0 AND (major ≥1 OR minor ≥5)) |
 
 ### 외부 도구
 
@@ -472,7 +462,7 @@ EOF
 9. **Stale Branch 차단** ⚠️: 현재 피처 브랜치의 PR이 **MERGED 또는 CLOSED**면 stale. 재사용 금지 — origin/main에서 새 브랜치 분기 후 carry-over (Stale Branch Handling 참조)
 10. **기존 PR 확인**: 같은 브랜치에 open PR이 이미 있으면 새 PR 생성하지 않고 커밋만 추가
 11. **Multiple Remote 처리** (Direct 모드): remote가 2개 이상이면 push 전 반드시 사용자 확인, tracking branch가 설정된 remote를 기본값으로 제안
-12. **점수 근거 동반**: 보고하는 모든 Quality Score에는 구체적 findings를 함께 제시한다 (근거 없는 숫자 금지)
+12. **판정 근거 동반**: 롤업 판정에는 그것을 만든 findings(파일·라인·사유)를 함께 제시한다. 근거 없는 판정 금지.
 13. **하드 게이트 아티팩트**: 롤업 PASS 시에만 Step 3.5에서 `.wigtn/gate-pass`를 기록한다. 커밋 hook이 이 아티팩트로 게이트 실행을 강제하므로, 게이트를 우회하려 파일을 미리 만들거나 `touch`하지 않는다.
 
 ## Skip Quality Gate
@@ -483,6 +473,6 @@ EOF
 /auto-commit --no-review --direct --message "hotfix: 긴급 버그 수정"
 ```
 
-- `--no-review`는 게이트를 실행하지 않으므로 커밋 메시지에 `Quality Score:` 줄을 넣지 않는다(대신 `Quality Gate: SKIPPED (--no-review)`). 하드 게이트 hook은 `Quality Score:` 신호가 없는 커밋을 통과시키므로 이 경로가 정상 동작한다.
+- `--no-review`는 리뷰를 실행하지 않으므로 커밋 메시지에 `Quality Gate: PASS` 줄을 넣지 않는다(대신 `Quality Gate: SKIPPED (--no-review)`). hook의 리뷰 PASS 게이트는 신호가 없는 커밋을 통과시키므로 이 경로가 정상 동작한다. **객관 체크는 이 경로에서도 실행된다** — 긴급 핫픽스도 타입체크는 통과해야 한다.
 
 ⚠️ **경고**: 품질 검사 스킵은 권장하지 않습니다. 가능하면 `/review-pr`로 리뷰를 받으세요.

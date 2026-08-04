@@ -77,7 +77,7 @@ gh pr view $PR_NUMBER --json comments,reviews
 | 3 (Deep) | 호출 체인, 에지 케이스, 보안 | `pr-reviewer` + `deep-review` 스킬 |
 | 4 (Architecture) | SOLID, 계층 위반, 확장성 | `pr-reviewer` + `architecture-review` 스킬 |
 
-**병렬 리뷰 (Level 2+, 병렬 처리 이득이 클 때):** 3개 에이전트로 카테고리를 분담 — A(Readability+Maintainability /40), B(Performance+Testability /40), C(Best Practices /20 + Security 🔒) — 후 Score Merge로 병합.
+**병렬 리뷰 (Level 2+, 변경 범위가 넓을 때):** 변경 영역(모듈/디렉토리)별로 리뷰어를 나눠 실행한 뒤 findings를 합쳐 롤업한다. 렌즈 분할은 하지 않는다.
 
 ### Step 3: 리뷰 결과 출력
 
@@ -90,14 +90,9 @@ findings는 severity로 사전 필터링하지 않고 전량 보고하되 각 fi
 
 ### PR #123: Add user authentication API
 
-| 항목 | 점수 | 상태 |
-|------|------|------|
-| Readability | NN/20 | (상태) |
-| Maintainability | NN/20 | (상태) |
-| Performance | NN/20 | (상태) |
-| Testability | NN/20 | (상태) |
-| Best Practices | NN/20 | (상태) |
-| **Total** | **NN/100** | **(등급)** |
+| 판정 | critical | major | minor |
+|------|---------|-------|-------|
+| **PASS / WARN / FAIL** | N | N | N |
 
 ### Findings
 
@@ -139,7 +134,7 @@ options:
 **`--approve` 플래그 사용 시 (findings 롤업 기준 — 노이즈 큰 점수로 자동 승인하지 않음):**
 - **PASS** (critical 0, major 0): 사용자 확인 없이 자동 Approve + 코멘트
 - **WARN/FAIL** (major ≥1 또는 critical ≥1): AskUserQuestion으로 확인 (자동 승인 불가)
-- 점수(NN/100)는 코멘트에 참고로만 표기
+- 코멘트에는 롤업 판정(critical/major/minor 건수)만 쓴다. 합산 점수는 쓰지 않는다.
 
 **GitHub 리뷰 제출:**
 
@@ -148,7 +143,7 @@ options:
 gh pr review $PR_NUMBER --approve --body "$(cat <<'EOF'
 ## Code Review (by Claude)
 
-**Quality Score: NN/100 (등급)**
+**Quality Gate: PASS — critical 0, major 1, minor 1**
 
 ### Summary
 - 전반적으로 양호한 코드 품질
@@ -195,7 +190,7 @@ gh api repos/{owner}/{repo}/pulls/$PR_NUMBER/comments \
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  PR #123: Add user authentication API                       │
-│  Score: NN/100 (등급)                                       │
+│  Gate: PASS/WARN/FAIL (critical N / major N / minor N)      │
 │  Decision: (판단)                                           │
 │                                                             │
 │  📝 GitHub Actions:                                         │
@@ -224,7 +219,6 @@ gh api repos/{owner}/{repo}/pulls/$PR_NUMBER/comments \
 | 구성요소 | 역할 | 호출 조건 |
 |----------|------|----------|
 | `pr-reviewer` 에이전트 | PR diff 기반 코드 리뷰 | 항상 |
-| `parallel-review-coordinator` | 병렬 리뷰 조율 | Level 2+, 병렬 이득이 클 때 |
 
 ### 외부 도구
 
@@ -255,7 +249,7 @@ gh api repos/{owner}/{repo}/pulls/$PR_NUMBER/comments \
 
 결과:
 PR #123: Add user authentication API
-Score: NN/100 (등급) — (판단)
+Gate: PASS — critical 0 / major 1 / minor 2
 - 1 Major issue (인라인 코멘트)
 - 2 Minor suggestions
 GitHub에 리뷰 코멘트를 남겼습니다.
@@ -268,7 +262,7 @@ GitHub에 리뷰 코멘트를 남겼습니다.
 
 결과:
 PR #123: Add user authentication API
-Score: NN/100 (등급) — COMMENT (수정 권장)
+Gate: WARN — critical 0 / major 2 / minor 3 → COMMENT (수정 권장)
 - 호출 체인 분석: AuthService → UserRepo → DB (3단계)
 - 에지 케이스 3건 발견
 - 동시성 이슈 1건
@@ -282,6 +276,6 @@ GitHub에 상세 리뷰 코멘트를 남겼습니다.
 
 결과:
 PR #123: Add user authentication API
-Score: NN/100 (등급)
+Gate: PASS — critical 0 / major 0 / minor 1
 (GitHub에 코멘트를 남기지 않았습니다)
 ```
