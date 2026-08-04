@@ -4,7 +4,7 @@
 
 A unified Claude Code plugin enabling AI-powered Vibe Coding: idea to production with minimal friction.
 
-**Version**: 0.1.15
+**Version**: 0.1.16
 **License**: Apache-2.0
 **Repository**: https://github.com/wigtn/wigtn-plugins
 
@@ -14,11 +14,11 @@ A unified Claude Code plugin enabling AI-powered Vibe Coding: idea to production
 wigtn-plugins/
 ├── .claude-plugin/           # Marketplace metadata
 ├── plugins/
-│   └── wigtn-plugins/         # Unified plugin: 11 agents, 5 commands, 6 skills, 20 design styles
+│   └── wigtn-plugins/         # Unified plugin: 11 agents, 5 commands, 7 skills, 20 design styles
 │       ├── .claude-plugin/   # Plugin metadata
 │       ├── agents/           # 11 agent definitions
 │       ├── commands/         # 5 commands (/prd, /screen-spec, /implement, /auto-commit, /review-pr)
-│       ├── skills/           # 6 skills (code-review-levels, design-system-reference, handdrawn-diagram, screen-spec, team-memory-protocol, wigtn-ppt)
+│       ├── skills/           # 7 skills (code-review-levels, design-system-reference, handdrawn-diagram, screen-spec, team-memory-protocol, wigtn-ppt)
 │       └── hooks/            # Hooks configuration
 ├── CLAUDE.md                 # This file
 ├── README.md                 # English docs
