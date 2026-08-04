@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'D=\"${CLAUDE_PLUGIN_ROOT:-}\"; if [ -f \"$D/hooks/gate.sh\" ]; then exit 0; fi; echo \"WIGTN 경고: 커밋 품질 게이트가 **비활성**입니다 — hooks/gate.sh 경로를 해석하지 못했습니다. 커밋이 객관 체크 없이 통과합니다. (CLAUDE_PLUGIN_ROOT 미확장 또는 플러그인 설치 손상)\" >&2; exit 0'",
+            "async": true
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -15,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r \".tool_input.command // empty\"); if echo \"$CMD\" | grep -qE \"git[[:space:]]+commit\" && echo \"$CMD\" | grep -q \"Quality Score:\"; then ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo .); if [ -z \"$(find \"$ROOT/.wigtn/gate-pass\" -mmin -30 2>/dev/null)\" ]; then echo \"BLOCKED: WIGTN quality gate did not pass for this pipeline commit. Message has a Quality Score: line but no fresh PASS verdict ($ROOT/.wigtn/gate-pass). Run the /auto-commit quality gate, or use --no-review for an emergency hotfix (omits the Quality Score line).\" >&2; exit 2; fi; if [ -x \"$ROOT/.wigtn/checks.sh\" ]; then if ! ( cd \"$ROOT\" && ./.wigtn/checks.sh >/tmp/wigtn-checks.log 2>&1 ); then echo \"BLOCKED: WIGTN objective checks (.wigtn/checks.sh) failed — a fabricated review cannot pass real test/typecheck exit codes. See /tmp/wigtn-checks.log.\" >&2; exit 2; fi; fi; fi'"
+            "command": "bash -c 'D=\"${CLAUDE_PLUGIN_ROOT:-}\"; if [ -f \"$D/hooks/gate.sh\" ]; then exec bash \"$D/hooks/gate.sh\"; fi; exit 0'"
           }
         ]
       }

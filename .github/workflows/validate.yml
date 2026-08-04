@@ -23,3 +23,13 @@ jobs:
 
       - name: Validate JSON, arrays, counts, and version consistency
         run: python3 .github/scripts/validate_plugin.py
+
+      - name: Prompt contract checks (paths, agent names, flags, hooks schema)
+        run: python3 .github/scripts/check_contracts.py
+
+      - name: Commit gate regression tests (deterministic, no model calls)
+        run: bash .github/scripts/test_gate.sh
+
+      - name: Prompt surface measurement (reported, non-blocking)
+        run: |
+          bash .github/scripts/measure.sh HEAD >> "$GITHUB_STEP_SUMMARY" || true

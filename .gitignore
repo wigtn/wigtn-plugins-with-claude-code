@@ -29,3 +29,14 @@ docs/
 
 # WIGTN brand logo binaries bundled for wigtn-ppt (team-only; README stays, *.png ignored)
 plugins/wigtn-plugins/skills/wigtn-ppt/assets/logo/*.png
+
+# Codex port working area (separate repo/target; not part of this plugin)
+.codex-plugin-staging/
+
+# 실험 러너가 만드는 플러그인 스테이징 사본 (처치 동결용, 산출물 아님)
+.github/evals/*/.stage/
+__pycache__/
+
+# eval 원자료 — 실행 로그·산출물은 제품 저장소에 싣지 않는다.
+# 프로토콜/러너/분석기는 별도 브랜치(evals/*)에서 관리한다.
+.github/evals/
