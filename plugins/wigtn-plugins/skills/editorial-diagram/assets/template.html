@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editorial Diagram</title>
+<style>
+  html,body{margin:0;padding:0;background:#F7F6FA;}
+  body{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  /* 페이지 폭만 바꾼다. viewBox(1280×720)는 절대 건드리지 않는다. */
+  .stage{width:min(1280px,96vw);}
+  svg.ed{display:block;width:100%;height:auto;}
+</style>
+</head>
+<body>
+<div class="stage">
+
+<!-- ===== 여기부터: svg 요소만 떼어내면 그대로 독립 SVG가 된다 (토큰이 안에 있으므로) ===== -->
+<svg class="ed" data-theme="light" viewBox="0 0 1280 720"
+     xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-labelledby="ed1-title ed1-desc">
+  <title id="ed1-title">주문 처리 파이프라인</title>
+  <desc id="ed1-desc">API 게이트웨이가 요청을 받아 주문 서비스로 전달하고, 주문 서비스가 주문 DB에 기록한다. 주문 서비스가 현재 병목 지점이다.</desc>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+    /* --- Light (기본) --- */
+    svg.ed{
+      --paper:#FFFFFF; --paper-2:#F4F2F8;
+      --ink:#1E1E28;   --muted:#5A5A6E;
+      --line:#E6E3EE;  --line-strong:#85819B;
+      --accent:#9B51E0; --accent-deep:#6B2EAA;
+    }
+    /* --- Dark --- */
+    svg.ed[data-theme="dark"]{
+      --paper:#15151E; --paper-2:#1E1E28;
+      --ink:#F5F4FA;   --muted:#A8A6B8;
+      --line:#2C2C3A;  --line-strong:#6E6C84;
+      --accent:#A85FEA; --accent-deep:#6B2EAA;
+    }
+
+    /* --- 폰트 역할 3개. 섞지 않는다. --- */
+    .title    { font-family:"Space Grotesk","Pretendard",sans-serif; font-weight:600;
+                font-size:28px; fill:var(--ink); }
+    .subtitle { font-family:"Pretendard",sans-serif; font-weight:400;
+                font-size:15px; fill:var(--muted); }
+    .node-name{ font-family:"Pretendard",sans-serif; font-weight:500;
+                font-size:18px; fill:var(--ink); text-anchor:middle; }
+    .sublabel { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:13px; fill:var(--muted); text-anchor:middle; }
+    .foot     { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:12px; fill:var(--muted); }
+
+    /* 정렬 유틸 — 노드명/서브라벨은 기본 가운데. 레이어·스윔레인처럼 좌우 정렬이
+       필요할 때만 붙인다. (예: class="node-name start") */
+    .start    { text-anchor:start; }
+    .end      { text-anchor:end; }
+
+    .node     { fill:var(--paper-2); stroke:var(--line-strong); stroke-width:1; }
+    .node.focal{ stroke:var(--accent); stroke-width:2; }
+    .dot      { fill:var(--accent); }             /* WIGTN 시그니처 점 = 초점 표시 */
+    .link     { stroke:var(--line-strong); stroke-width:1.5; fill:none; }
+  </style>
+
+  <defs>
+    <!-- id는 다이어그램마다 접두사를 바꾼다 (한 페이지에 여러 개 인라인될 수 있다) -->
+    <marker id="ed1-arrow" viewBox="0 0 8 8" refX="8" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--line-strong)"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="720" fill="var(--paper)"/>
+
+  <!-- 제목 밴드: title baseline 96 / subtitle baseline 124 -->
+  <text x="64" y="96"  class="title">주문 처리 파이프라인</text>
+  <text x="64" y="124" class="subtitle">AS-IS · 임원 보고용 3단계 요약</text>
+
+  <!-- ===== 본문: Row N=3 · 1행 (x 64/464/864, w 352, y 328, h 160) ===== -->
+  <rect class="node" x="64"  y="328" width="352" height="160" rx="8"/>
+  <text class="node-name" x="240"  y="402">API 게이트웨이</text>
+  <text class="sublabel"  x="240"  y="426">envoy · p95 12ms</text>
+
+  <rect class="node" x="464" y="328" width="352" height="160" rx="8"/>
+  <text class="node-name" x="640"  y="402">주문 서비스</text>
+  <text class="sublabel"  x="640"  y="426">order-svc · 3 replicas</text>
+
+  <!-- 초점 노드: 채우지 말고 2px 테두리 + 퍼플 점 -->
+  <rect class="node focal" x="864" y="328" width="352" height="160" rx="8"/>
+  <circle class="dot" cx="1192" cy="352" r="8"/>
+  <text class="node-name" x="1040" y="402">주문 DB</text>
+  <text class="sublabel"  x="1040" y="426">postgres · p95 780ms</text>
+
+  <!-- 커넥터: y = 노드 y + h/2 = 328 + 80 = 408 -->
+  <line class="link" x1="416" y1="408" x2="464" y2="408" marker-end="url(#ed1-arrow)"/>
+  <line class="link" x1="816" y1="408" x2="864" y2="408" marker-end="url(#ed1-arrow)"/>
+
+  <!-- 각주 baseline 692 -->
+  <text x="64" y="692" class="foot">source: 2026-08 APM p95 · 캐시/큐 계층 생략</text>
+</svg>
+<!-- ===== 여기까지 ===== -->
+
+</div>
+</body>
+</html>

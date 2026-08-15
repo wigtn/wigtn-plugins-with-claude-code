@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wigtn-plugins pipeline</title>
+<style>
+  html,body{margin:0;padding:0;background:#F7F6FA;}
+  body{display:flex;flex-direction:column;align-items:center;gap:24px;padding:24px 0;}
+  .stage{width:min(1280px,96vw);}
+  svg.ed{display:block;width:100%;height:auto;}
+</style>
+</head>
+<body>
+
+<!--
+  README 파이프라인 도식 — editorial-diagram 스킬로 생성.
+  유형: Column 5단계 + 척추/여백 주석 · 캔버스 slide-16x9
+  좌표: geometry.md §3 (x=464 w=352 h=72, y=164/268/372/476/580) + 주석 컬럼(440 end / 840 start)
+  강조: 게이트 2개 (digging, auto-commit) — 유일하게 파이프라인을 멈출 수 있는 지점
+
+  재생성:
+    python3 plugins/wigtn-plugins/skills/editorial-diagram/scripts/check.py assets/pipeline.html
+    bash    plugins/wigtn-plugins/skills/editorial-diagram/scripts/export.sh assets/pipeline.html --png-only --scale 2
+    mv assets/pipeline-1.png assets/pipeline-light.png
+    mv assets/pipeline-2.png assets/pipeline-dark.png
+-->
+
+<div class="stage">
+<svg class="ed" data-theme="light" viewBox="0 0 1280 720"
+     xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-labelledby="ed1-title ed1-desc">
+  <title id="ed1-title">wigtn-plugins pipeline</title>
+  <desc id="ed1-desc">Five stages top to bottom. Slash prd produces the PRD and plan. Digging runs prd-reviewer with four adversarial lenses and is a gate: BLOCKED stops the pipeline, PASS continues. Slash screen-spec runs only when the PRD has frontend pages and produces IA, flow, spec and wireframe. Slash implement triages then runs DESIGN and BUILD with up to four teams in parallel. Slash auto-commit is the second gate: the findings rollup plus objective checks must pass before the commit lands.</desc>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+    svg.ed{
+      --paper:#FFFFFF; --paper-2:#F4F2F8;
+      --ink:#1E1E28;   --muted:#5A5A6E;
+      --line:#E6E3EE;  --line-strong:#85819B;
+      --accent:#9B51E0; --accent-deep:#6B2EAA;
+    }
+    svg.ed[data-theme="dark"]{
+      --paper:#15151E; --paper-2:#1E1E28;
+      --ink:#F5F4FA;   --muted:#A8A6B8;
+      --line:#2C2C3A;  --line-strong:#6E6C84;
+      --accent:#A85FEA; --accent-deep:#6B2EAA;
+    }
+
+    .title    { font-family:"Space Grotesk","Pretendard",sans-serif; font-weight:600;
+                font-size:28px; fill:var(--ink); }
+    .subtitle { font-family:"Pretendard",sans-serif; font-weight:400;
+                font-size:15px; fill:var(--muted); }
+    .node-name{ font-family:"Pretendard",sans-serif; font-weight:500;
+                font-size:18px; fill:var(--ink); text-anchor:middle; }
+    .sublabel { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:13px; fill:var(--muted); text-anchor:middle; }
+    .foot     { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:12px; fill:var(--muted); }
+    .start    { text-anchor:start; }
+    .end      { text-anchor:end; }
+
+    .node     { fill:var(--paper-2); stroke:var(--line-strong); stroke-width:1; }
+    .node.focal{ stroke:var(--accent); stroke-width:2; }
+    .dot      { fill:var(--accent); }
+    .link     { stroke:var(--line-strong); stroke-width:1.5; fill:none; }
+  </style>
+
+  <defs>
+    <marker id="ed1-arrow" viewBox="0 0 8 8" refX="8" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--line-strong)"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="720" fill="var(--paper)"/>
+
+  <text x="64" y="96"  class="title">The pipeline</text>
+  <text x="64" y="124" class="subtitle">Left — what runs · Right — what comes out · Purple marks the two gates that can stop you</text>
+
+  <rect class="node" x="464" y="164" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="206">/prd</text>
+  <text class="sublabel end"   x="440" y="206">context scan + AskUserQuestion</text>
+  <text class="sublabel start" x="840" y="206">PRD_*.md · PLAN_*.md</text>
+
+  <rect class="node focal" x="464" y="268" width="352" height="72" rx="8"/>
+  <circle class="dot" cx="792" cy="292" r="8"/>
+  <text class="node-name" x="640" y="310">digging</text>
+  <text class="sublabel end"   x="440" y="310">prd-reviewer · 4 lenses</text>
+  <text class="sublabel start" x="840" y="310">BLOCKED → stop · PASS → go</text>
+
+  <rect class="node" x="464" y="372" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="414">/screen-spec</text>
+  <text class="sublabel end"   x="440" y="414">only when the PRD has FE pages</text>
+  <text class="sublabel start" x="840" y="414">IA · flow · spec · wireframe</text>
+
+  <rect class="node" x="464" y="476" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="518">/implement</text>
+  <text class="sublabel end"   x="440" y="518">triage → DESIGN → BUILD</text>
+  <text class="sublabel start" x="840" y="518">up to 4 teams in parallel</text>
+
+  <rect class="node focal" x="464" y="580" width="352" height="72" rx="8"/>
+  <circle class="dot" cx="792" cy="604" r="8"/>
+  <text class="node-name" x="640" y="622">/auto-commit</text>
+  <text class="sublabel end"   x="440" y="622">code-reviewer findings</text>
+  <text class="sublabel start" x="840" y="622">rollup + checks → commit</text>
+
+  <line class="link" x1="640" y1="236" x2="640" y2="268" marker-end="url(#ed1-arrow)"/>
+  <line class="link" x1="640" y1="340" x2="640" y2="372" marker-end="url(#ed1-arrow)"/>
+  <line class="link" x1="640" y1="444" x2="640" y2="476" marker-end="url(#ed1-arrow)"/>
+  <line class="link" x1="640" y1="548" x2="640" y2="580" marker-end="url(#ed1-arrow)"/>
+
+  <text x="64" y="692" class="foot">generated by the editorial-diagram skill · source: assets/pipeline.html</text>
+</svg>
+</div>
+
+<div class="stage">
+<svg class="ed" data-theme="dark" viewBox="0 0 1280 720"
+     xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-labelledby="ed2-title ed2-desc">
+  <title id="ed2-title">wigtn-plugins pipeline (dark)</title>
+  <desc id="ed2-desc">Five stages top to bottom. Slash prd produces the PRD and plan. Digging runs prd-reviewer with four adversarial lenses and is a gate: BLOCKED stops the pipeline, PASS continues. Slash screen-spec runs only when the PRD has frontend pages and produces IA, flow, spec and wireframe. Slash implement triages then runs DESIGN and BUILD with up to four teams in parallel. Slash auto-commit is the second gate: the findings rollup plus objective checks must pass before the commit lands.</desc>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&amp;family=JetBrains+Mono:wght@400&amp;display=swap');
+    @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+    svg.ed{
+      --paper:#FFFFFF; --paper-2:#F4F2F8;
+      --ink:#1E1E28;   --muted:#5A5A6E;
+      --line:#E6E3EE;  --line-strong:#85819B;
+      --accent:#9B51E0; --accent-deep:#6B2EAA;
+    }
+    svg.ed[data-theme="dark"]{
+      --paper:#15151E; --paper-2:#1E1E28;
+      --ink:#F5F4FA;   --muted:#A8A6B8;
+      --line:#2C2C3A;  --line-strong:#6E6C84;
+      --accent:#A85FEA; --accent-deep:#6B2EAA;
+    }
+
+    .title    { font-family:"Space Grotesk","Pretendard",sans-serif; font-weight:600;
+                font-size:28px; fill:var(--ink); }
+    .subtitle { font-family:"Pretendard",sans-serif; font-weight:400;
+                font-size:15px; fill:var(--muted); }
+    .node-name{ font-family:"Pretendard",sans-serif; font-weight:500;
+                font-size:18px; fill:var(--ink); text-anchor:middle; }
+    .sublabel { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:13px; fill:var(--muted); text-anchor:middle; }
+    .foot     { font-family:"JetBrains Mono",monospace; font-weight:400;
+                font-size:12px; fill:var(--muted); }
+    .start    { text-anchor:start; }
+    .end      { text-anchor:end; }
+
+    .node     { fill:var(--paper-2); stroke:var(--line-strong); stroke-width:1; }
+    .node.focal{ stroke:var(--accent); stroke-width:2; }
+    .dot      { fill:var(--accent); }
+    .link     { stroke:var(--line-strong); stroke-width:1.5; fill:none; }
+  </style>
+
+  <defs>
+    <marker id="ed2-arrow" viewBox="0 0 8 8" refX="8" refY="4"
+            markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L8 4 L0 8 Z" fill="var(--line-strong)"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="720" fill="var(--paper)"/>
+
+  <text x="64" y="96"  class="title">The pipeline</text>
+  <text x="64" y="124" class="subtitle">Left — what runs · Right — what comes out · Purple marks the two gates that can stop you</text>
+
+  <rect class="node" x="464" y="164" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="206">/prd</text>
+  <text class="sublabel end"   x="440" y="206">context scan + AskUserQuestion</text>
+  <text class="sublabel start" x="840" y="206">PRD_*.md · PLAN_*.md</text>
+
+  <rect class="node focal" x="464" y="268" width="352" height="72" rx="8"/>
+  <circle class="dot" cx="792" cy="292" r="8"/>
+  <text class="node-name" x="640" y="310">digging</text>
+  <text class="sublabel end"   x="440" y="310">prd-reviewer · 4 lenses</text>
+  <text class="sublabel start" x="840" y="310">BLOCKED → stop · PASS → go</text>
+
+  <rect class="node" x="464" y="372" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="414">/screen-spec</text>
+  <text class="sublabel end"   x="440" y="414">only when the PRD has FE pages</text>
+  <text class="sublabel start" x="840" y="414">IA · flow · spec · wireframe</text>
+
+  <rect class="node" x="464" y="476" width="352" height="72" rx="8"/>
+  <text class="node-name" x="640" y="518">/implement</text>
+  <text class="sublabel end"   x="440" y="518">triage → DESIGN → BUILD</text>
+  <text class="sublabel start" x="840" y="518">up to 4 teams in parallel</text>
+
+  <rect class="node focal" x="464" y="580" width="352" height="72" rx="8"/>
+  <circle class="dot" cx="792" cy="604" r="8"/>
+  <text class="node-name" x="640" y="622">/auto-commit</text>
+  <text class="sublabel end"   x="440" y="622">code-reviewer findings</text>
+  <text class="sublabel start" x="840" y="622">rollup + checks → commit</text>
+
+  <line class="link" x1="640" y1="236" x2="640" y2="268" marker-end="url(#ed2-arrow)"/>
+  <line class="link" x1="640" y1="340" x2="640" y2="372" marker-end="url(#ed2-arrow)"/>
+  <line class="link" x1="640" y1="444" x2="640" y2="476" marker-end="url(#ed2-arrow)"/>
+  <line class="link" x1="640" y1="548" x2="640" y2="580" marker-end="url(#ed2-arrow)"/>
+
+  <text x="64" y="692" class="foot">generated by the editorial-diagram skill · source: assets/pipeline.html</text>
+</svg>
+</div>
+
+</body>
+</html>
