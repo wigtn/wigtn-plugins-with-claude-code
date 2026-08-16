@@ -6,10 +6,10 @@
 
 **一个插件。11 个智能体。从创意到通过验证的提交。**
 
-![Version](https://img.shields.io/badge/v0.1.16-Unified_Plugin-FF6B6B?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.1.17-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/11-Agents-5A67D8?style=for-the-badge)
 ![Commands](https://img.shields.io/badge/5-Commands-38B2AC?style=for-the-badge)
-![Skills](https://img.shields.io/badge/6-Skills-00D4AA?style=for-the-badge)
+![Skills](https://img.shields.io/badge/8-Skills-00D4AA?style=for-the-badge)
 ![Styles](https://img.shields.io/badge/20-Design_Styles-F59E0B?style=for-the-badge)
 
 [![GitHub Stars](https://img.shields.io/github/stars/wigtn/wigtn-plugins?style=flat-square)](https://github.com/wigtn/wigtn-plugins/stargazers)
@@ -42,6 +42,16 @@ WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需�
 /auto-commit                       →  findings 汇总 + 客观检查 + 提交
 ```
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
+    <img src="assets/architecture-light.png" width="100%"
+         alt="自上而下四层：命令（5 个入口）、智能体（11 个执行单元）、技能（8 个参考资产），以及钩子 — 唯一在提示词之外强制执行的一层，在闸门产物与客观检查通过前拦截 git commit。">
+  </picture>
+</p>
+
+<sub>本图由插件自带的 `editorial-diagram` 技能生成 — 源文件：[`assets/architecture.html`](assets/architecture.html)</sub>
+
 ---
 
 ## 快速开始
@@ -62,6 +72,21 @@ WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需�
 ---
 
 ## 流水线
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/pipeline-dark.png">
+    <img src="assets/pipeline-light.png" width="100%"
+         alt="自上而下五个阶段：/prd 产出 PRD 与计划；digging 由 prd-reviewer 以 4 个对抗视角审查并可拦截；/screen-spec 仅在 PRD 含前端页面时运行；/implement 先分流再执行 DESIGN 与 BUILD，最多 4 个团队并行；/auto-commit 汇总 findings 并运行客观检查后才提交。">
+  </picture>
+</p>
+
+独立步骤可以并行，存在依赖的步骤保持顺序。运行时间取决于任务、模型和已配置的检查。
+
+<sub>源文件：[`assets/pipeline.html`](assets/pipeline.html)</sub>
+
+<details>
+<summary><b>流水线详情</b> — 点击展开</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -165,7 +190,7 @@ WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需�
   Layer 3 — PLAN 台账 ─────────── 任务复选框 + 执行日志
 ```
 
-独立步骤可以并行，存在依赖的步骤保持顺序。运行时间取决于任务、模型和已配置的检查。
+</details>
 
 ---
 
@@ -213,13 +238,15 @@ WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需�
 </details>
 
 <details>
-<summary><b>技能（6 个）</b> — 点击展开</summary>
+<summary><b>技能（8 个）</b> — 点击展开</summary>
 
 | 技能 | 提供内容 |
 |------|---------|
 | `code-review-levels` | 深度审查（Level 3：调用链、边界情况、并发）和架构审查（Level 4：SOLID、层违规、可扩展性） |
 | `design-system-reference` | 20 个风格指南 — 排版、色彩、组件、动效、反模式。与 design-discovery 协同进行上下文感知推荐 |
+| `editorial-diagram` | 以单个 HTML + 内联 SVG 生成规整（editorial）的架构/流程/对比图。12 种类型路由、预先验算的 4px 坐标表、密度预算、WIGTN 或客户品牌令牌、`check.py` 校验（网格/溢出/对比度/无障碍）、SVG + PNG 导出 |
 | `handdrawn-diagram` | 通过 Mermaid `look:handDrawn` 生成手绘（草图）风格的架构/流程图，输出可提交的 SVG + PNG。在 README、GitHub、Devpost、幻灯片上渲染一致 |
+| `knowledge-wiki` | 通过 4 级导出闸门将会话知识沉淀到团队 wiki。仅在 `~/.config/wigtn/knowledge-wiki.yml` 列出的路径下运行；密钥、个人信息、客户标识在导出前被拦截 |
 | `screen-spec` | 从 PRD 生成 5 种 UI 产物 — IA、用户流程、屏幕规格、可点击 Wireframe HTML、Dev Handoff。灰度 + 语义色 lo-fi 线框图（风格在 `/implement` 决定）。由 `/screen-spec` 调用 |
 | `team-memory-protocol` | 并行构建中跨智能体共享上下文（SHARED_CONTEXT）管理 |
 | `wigtn-ppt` | 基于品牌令牌生成 WIGTN 品牌 HTML 演示文稿（Light/Dark 主题，无需模板）。每张幻灯片带签名紫点，缺少 logo 资源时回退到 CSS/SVG 字标 |
@@ -259,15 +286,17 @@ WIGTN Plugins 是一个 Claude Code 插件，由 11 个专业智能体负责需�
 </details>
 
 <details>
-<summary><b>钩子（4 个）</b> — 点击展开</summary>
+<summary><b>钩子（7 个）</b> — 点击展开</summary>
 
 | 钩子 | 触发器 | 功能 |
 |------|--------|------|
-| 危险命令拦截 | `Bash` PreToolUse | 拦截 `rm -rf /`、`git push --force`、`DROP TABLE` |
-| 流水线完成 | Stop | 推送前提醒审查 |
-| 前端格式化 | `Write\|Edit` PostToolUse | 提醒对 `.tsx`、`.jsx`、`.css` 运行 prettier/eslint |
-| 后端模式合规 | `Write\|Edit` PostToolUse | 检查 `.ts`、`.py`、`.go` 的错误处理、验证、日志 |
-
+| 提交质量闸门 | `Bash` PreToolUse | 运行 `hooks/gate.sh` — 每次提交都执行 `.wigtn/checks.sh`（类型检查 / lint），非零退出即拦截；当提交信息带有 `Quality Gate: PASS` 标记时，另需 30 分钟内的 `.wigtn/gate-pass` 产物 |
+| 危险命令拦截 | `Bash` PreToolUse | 拦截对 `/`、`~`、`$HOME` 的递归强制删除，强制推送，硬重置，以及 `DROP DATABASE\|TABLE\|SCHEMA` |
+| 闸门健康告警 | SessionStart | 当 `hooks/gate.sh` 路径无法解析时向 stderr 告警 — 此时提交闸门失效，提交会在没有客观检查的情况下通过 |
+| 前端格式化 | `Write\|Edit` PostToolUse | 提醒对 `.ts`、`.tsx`、`.js`、`.jsx`、`.css`、`.scss` 运行 prettier/eslint（`.ts`/`.js` 同时触发后端提醒） |
+| 后端模式合规 | `Write\|Edit` PostToolUse | 提醒核对 `.ts`、`.js`、`.py`、`.go`、`.java` 的错误处理、输入校验、日志 |
+| 流水线完成 | Stop | 推送前提醒审查变更 |
+| 知识沉淀 | Stop | 运行 `knowledge_wiki/accumulate.py` — 通过 4 级导出闸门沉淀会话知识（未在 `~/.config/wigtn/knowledge-wiki.yml` 配置时不启用） |
 </details>
 
 ---

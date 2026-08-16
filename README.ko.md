@@ -6,10 +6,10 @@
 
 **하나의 플러그인. 11개 에이전트. 아이디어에서 검증된 커밋까지.**
 
-![Version](https://img.shields.io/badge/v0.1.16-Unified_Plugin-FF6B6B?style=for-the-badge)
+![Version](https://img.shields.io/badge/v0.1.17-Unified_Plugin-FF6B6B?style=for-the-badge)
 ![Agents](https://img.shields.io/badge/11-Agents-5A67D8?style=for-the-badge)
 ![Commands](https://img.shields.io/badge/5-Commands-38B2AC?style=for-the-badge)
-![Skills](https://img.shields.io/badge/6-Skills-00D4AA?style=for-the-badge)
+![Skills](https://img.shields.io/badge/8-Skills-00D4AA?style=for-the-badge)
 ![Styles](https://img.shields.io/badge/20-Design_Styles-F59E0B?style=for-the-badge)
 
 [![GitHub Stars](https://img.shields.io/github/stars/wigtn/wigtn-plugins?style=flat-square)](https://github.com/wigtn/wigtn-plugins/stargazers)
@@ -42,6 +42,16 @@ WIGTN Plugins은 요구사항, 아키텍처, 구현, 리뷰를 담당하는 11�
 /auto-commit                     →  findings 롤업 + 객관 검증 + 커밋
 ```
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
+    <img src="assets/architecture-light.png" width="100%"
+         alt="위에서 아래로 4개 계층: 커맨드(진입점 5개), 에이전트(실행 주체 11개), 스킬(참조 자산 8개), 그리고 훅 — 프롬프트 밖에서 강제되는 유일한 계층으로, 게이트 아티팩트와 객관 검증을 통과할 때까지 git commit을 차단한다.">
+  </picture>
+</p>
+
+<sub>이 도식은 플러그인 자체의 `editorial-diagram` 스킬로 생성했습니다 — 소스: [`assets/architecture.html`](assets/architecture.html)</sub>
+
 ---
 
 ## 빠른 시작
@@ -62,6 +72,21 @@ WIGTN Plugins은 요구사항, 아키텍처, 구현, 리뷰를 담당하는 11�
 ---
 
 ## 파이프라인
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/pipeline-dark.png">
+    <img src="assets/pipeline-light.png" width="100%"
+         alt="위에서 아래로 5단계: /prd가 PRD와 계획을 만들고, digging은 prd-reviewer의 4개 적대적 렌즈로 검증해 차단할 수 있으며, /screen-spec은 PRD에 FE 페이지가 있을 때만 실행되고, /implement는 triage 후 DESIGN·BUILD를 최대 4개 팀 병렬로 수행하며, /auto-commit은 findings 롤업과 객관 검증을 통과해야 커밋한다.">
+  </picture>
+</p>
+
+독립적인 단계는 병렬로, 의존성이 있는 단계는 순서대로 실행합니다. 실행 시간은 작업·모델·설정된 검사에 따라 달라집니다.
+
+<sub>소스: [`assets/pipeline.html`](assets/pipeline.html)</sub>
+
+<details>
+<summary><b>파이프라인 상세</b> — 클릭하여 펼치기</summary>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -165,7 +190,7 @@ WIGTN Plugins은 요구사항, 아키텍처, 구현, 리뷰를 담당하는 11�
   Layer 3 — PLAN 원장 ─────────── 태스크 체크박스 + 실행 로그
 ```
 
-독립적인 단계는 병렬로, 의존성이 있는 단계는 순서대로 실행합니다. 실행 시간은 작업·모델·설정된 검사에 따라 달라집니다.
+</details>
 
 ---
 
@@ -213,13 +238,15 @@ WIGTN Plugins은 요구사항, 아키텍처, 구현, 리뷰를 담당하는 11�
 </details>
 
 <details>
-<summary><b>스킬 (6개)</b> — 클릭하여 펼치기</summary>
+<summary><b>스킬 (8개)</b> — 클릭하여 펼치기</summary>
 
 | 스킬 | 제공하는 것 |
 |------|-----------|
 | `code-review-levels` | 심층 리뷰 (Level 3: 호출 체인, 에지 케이스, 동시성) 및 아키텍처 리뷰 (Level 4: SOLID, 계층 위반, 확장성) |
 | `design-system-reference` | 20개 스타일 가이드 — 타이포그래피, 색상, 컴포넌트, 모션, 안티패턴. design-discovery와 연동하여 컨텍스트 기반 추천 |
+| `editorial-diagram` | 정갈한(editorial) 아키텍처/흐름/비교 다이어그램을 단일 HTML + 인라인 SVG로 생성. 12개 유형 라우팅, 미리 검산된 4px 좌표표, 밀도 예산, WIGTN·클라이언트 브랜드 토큰, `check.py` 검증(그리드/오버플로/대비/접근성), SVG + PNG export |
 | `handdrawn-diagram` | Mermaid `look:handDrawn`로 손그림(스케치) 스타일 아키텍처/플로우 다이어그램을 커밋 가능한 SVG + PNG로 생성. README, GitHub, Devpost, 슬라이드에서 동일하게 렌더 |
+| `knowledge-wiki` | 세션 지식을 4단 반출 게이트를 거쳐 팀 위키에 축적. `~/.config/wigtn/knowledge-wiki.yml`에 지정한 경로에서만 동작하며, 시크릿·개인정보·고객 식별 정보는 반출 전에 차단 |
 | `screen-spec` | PRD로부터 5종 UI 산출물 생성 — IA, User Flow, 화면별 명세, 클릭 가능한 Wireframe HTML, Dev Handoff. 흑백 + 의미색 lo-fi 와이어프레임(스타일은 `/implement`에서 결정). `/screen-spec`에서 호출 |
 | `team-memory-protocol` | 병렬 빌드 중 에이전트 간 공유 컨텍스트(SHARED_CONTEXT) 관리 |
 | `wigtn-ppt` | 브랜드 토큰 기반 WIGTN 브랜드 HTML 프레젠테이션 생성(Light/Dark 테마, 템플릿 불필요). 모든 슬라이드에 시그니처 퍼플 점, 로고 에셋이 없으면 CSS/SVG 워드마크 폴백 |
@@ -259,15 +286,17 @@ WIGTN Plugins은 요구사항, 아키텍처, 구현, 리뷰를 담당하는 11�
 </details>
 
 <details>
-<summary><b>훅 (4개)</b> — 클릭하여 펼치기</summary>
+<summary><b>훅 (7개)</b> — 클릭하여 펼치기</summary>
 
-| 훅 | 트리거 | 기능 |
-|----|--------|------|
-| 위험 명령 차단 | `Bash` PreToolUse | `rm -rf /`, `git push --force`, `DROP TABLE` 차단 |
-| 파이프라인 완료 | Stop | 푸시 전 변경사항 검토 알림 |
-| 프론트엔드 포맷팅 | `Write\|Edit` PostToolUse | `.tsx`, `.jsx`, `.css` 파일 prettier/eslint 알림 |
-| 백엔드 패턴 준수 | `Write\|Edit` PostToolUse | `.ts`, `.py`, `.go` 파일 에러 핸들링, 입력 검증, 로깅 확인 |
-
+| 훅 | 트리거 | 하는 일 |
+|----|--------|--------|
+| 커밋 품질 게이트 | `Bash` PreToolUse | `hooks/gate.sh` 실행 — 모든 커밋에서 `.wigtn/checks.sh`(타입체크/lint)를 돌려 non-zero면 차단. 커밋 메시지에 `Quality Gate: PASS` 신호가 있으면 30분 이내의 `.wigtn/gate-pass` 아티팩트도 요구 |
+| 위험 명령 차단 | `Bash` PreToolUse | `/`·`~`·`$HOME`에 대한 재귀 강제 삭제, force push, hard reset, `DROP DATABASE\|TABLE\|SCHEMA` 차단 |
+| 게이트 상태 경고 | SessionStart | `hooks/gate.sh` 경로를 해석하지 못하면 stderr로 경고 — 커밋 게이트가 비활성이라 객관 체크 없이 커밋이 통과함을 알림 |
+| 프론트엔드 포맷팅 | `Write\|Edit` PostToolUse | `.ts`, `.tsx`, `.js`, `.jsx`, `.css`, `.scss`에 prettier/eslint 실행 리마인드 (`.ts`/`.js`는 백엔드 리마인드도 같이 발화) |
+| 백엔드 패턴 준수 | `Write\|Edit` PostToolUse | `.ts`, `.js`, `.py`, `.go`, `.java`의 에러 처리·입력 검증·로깅 확인 리마인드 |
+| 파이프라인 완료 | Stop | 푸시 전 변경사항 검토 리마인드 |
+| 지식 축적 | Stop | `knowledge_wiki/accumulate.py` 실행 — 세션 지식을 4단 반출 게이트로 축적 (`~/.config/wigtn/knowledge-wiki.yml` 설정이 없으면 비활성) |
 </details>
 
 ---

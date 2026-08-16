@@ -60,7 +60,15 @@ WIGTN 브랜드 정체성을 담은 **단일 HTML 프레젠테이션**을 만드
 
 ### Phase 2: 다이어그램 (필요 시)
 
-흐름도·아키텍처가 필요하면 같은 플러그인의 **`handdrawn-diagram` 스킬**을 호출해 committable 다이어그램(SVG+PNG)을 만들고 슬라이드에 삽입한다. 손그림 톤이 부담되면 단순 CSS/SVG 도형으로 직접 그린다.
+흐름도·아키텍처·비교 도식이 필요하면 **`editorial-diagram` 스킬을 호출한다(기본 경로).**
+브랜드 발표물의 톤에 맞는 정갈한 인라인 SVG를 4px 그리드·밀도 예산·WIGTN 토큰으로 만들고,
+`check.py`로 검증한 뒤 슬라이드에 삽입한다. 삽입은 둘 중 하나:
+
+- **인라인 SVG 직접 붙여넣기** (권장) — 슬라이드와 같은 테마 토큰을 쓰므로 Light/Dark가 자동으로 맞는다
+- `export.sh`로 뽑은 PNG를 `<img>`로 (외부 배포·PPTX 변환 대상일 때)
+
+**도식을 직접 손으로 그리지 않는다.** 가이드 없는 CSS/SVG 도형이 "AI가 만든 티"의 주범이다.
+손그림 톤이 어울리는 자리(해커톤·캐주얼 공유)에서만 `handdrawn-diagram`을 쓴다.
 
 ### Phase 3: HTML 생성
 
@@ -106,12 +114,14 @@ WIGTN 로고는 **팀 전용 에셋**이라 공개 플러그인에 커밋하지 
 - **[references/brand.md](references/brand.md)** — WIGTN 브랜드 시스템: Light/Dark 팔레트, 로고 변형·배치, 퍼플 점 규칙, 타이포, CSS 워드마크 폴백
 - **[references/design-guide.md](references/design-guide.md)** — 슬라이드 타입별 레이아웃 원칙(표지/목차/섹션/본문/마무리), viewport 규칙, 애니메이션, anti-pattern
 - **`design-system-reference` 스킬** — 레이아웃 밀도·타이포 위계 아이디어 재활용(Swiss Minimal, Editorial, Minimal Corporate가 WIGTN 톤에 가장 근접). 단, 색·점·로고는 **항상 WIGTN 토큰으로 덮어쓴다**.
-- **`handdrawn-diagram` 스킬** — 다이어그램이 필요한 슬라이드
+- **`editorial-diagram` 스킬** — 다이어그램 슬라이드의 **기본 경로**. 12개 유형 라우팅,
+  4px 좌표표, 밀도 예산, WIGTN 토큰, `check.py` 검증, SVG/PNG export
+- **`handdrawn-diagram` 스킬** — 손그림 톤이 어울리는 자리에서만
 
 ## 체크리스트
 
 - [ ] Phase 0: AskUserQuestion으로 테마(Light/Dark) + 콘텐츠 1회 수집
 - [ ] Phase 1: 슬라이드 맵 + 밀도 제한
-- [ ] Phase 2: 다이어그램 필요 슬라이드 식별 (handdrawn-diagram)
+- [ ] Phase 2: 다이어그램 필요 슬라이드 식별 → editorial-diagram 호출 (손그림 톤일 때만 handdrawn-diagram)
 - [ ] Phase 3: brand.md + design-guide.md Read → 단일 HTML 생성 (viewport, 퍼플 점, 로고)
 - [ ] Phase 4: 스크린샷 검증 → 전달

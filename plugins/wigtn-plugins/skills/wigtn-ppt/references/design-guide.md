@@ -61,7 +61,7 @@
 | Big Number / KPI | 지표 강조 | 초대형 숫자 + 라벨, 숫자 끝 퍼플 점 |
 | Quote | 인용/메시지 | 대형 인용문, 좌측 퍼플 세로바 |
 | Image + Text | 이미지 설명 | 좌 41% 텍스트 / 우 이미지(또는 반대) |
-| Diagram | 흐름/구조 | handdrawn-diagram 또는 CSS/SVG 도형 |
+| Diagram | 흐름/구조 | **editorial-diagram** 스킬로 생성해 인라인 SVG 삽입 (직접 그리지 않는다) |
 | Timeline | 단계/로드맵 | 가로/세로 라인 + 노드(노드를 퍼플 점으로) |
 
 공통: Slide Title 좌상단(`clamp(1.4rem,2.6vw,2rem)` Bold), 우하단 작은 마크 로고 + 페이지 번호.
