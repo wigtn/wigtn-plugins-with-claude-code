@@ -88,7 +88,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/editorial-diagram/scripts/check.py" out.ht
 
 | 규칙 | 벗어나면 |
 |---|---|
-| 색은 **3/6자리 HEX만** (`rgb()`·`color-mix()`·색이름 금지) | FAIL |
+| 색은 **3/6자리 HEX 또는 선언된 `var(--토큰)`만** — 토큰뿐 아니라 **모든 도형의 `fill`/`stroke`**에 적용 (`rgb()`·`color-mix()`·색이름 금지, `none`/`transparent`는 허용) | FAIL |
 | 노드는 `rect`/`polygon`/`circle`/`ellipse` + `class="node"` (`g`·`path` 노드 금지) | FAIL |
 | 폰트 크기는 `px`/`rem`/`em`만 (`pt`·`%`·`calc()` 금지) | FAIL |
 | 색·폰트·정렬은 **클래스 규칙**으로 (`text`/`tspan`/`g`의 표현 속성·인라인 style 금지) | FAIL |

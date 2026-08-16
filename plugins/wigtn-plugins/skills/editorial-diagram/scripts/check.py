@@ -14,7 +14,8 @@ exit 0 = PASS/WARN, exit 1 = FAIL.
 
 정규 형태:
 
-- 색은 **3/6자리 HEX만**. `rgb()`·`color-mix()`·색이름·8자리 HEX는 FAIL.
+- 색은 **3/6자리 HEX 또는 선언된 `var(--토큰)`만**. 토큰뿐 아니라 모든 도형의
+  `fill`/`stroke`(CSS·표현 속성·인라인 style)에 적용한다. `none`/`transparent`는 허용.
 - 노드는 `rect`/`polygon`/`circle`/`ellipse`에 `class="node"`. `g`·`path` 노드는 FAIL.
 - 폰트 크기는 `px`/`rem`/`em`만.
 - 색·폰트·정렬은 **클래스 규칙으로**. `text`/`tspan`/`g`의 표현 속성·인라인 style은 FAIL.
@@ -495,6 +496,47 @@ def check_contract(doc, rules, rep):
         doc.root.set("data-theme", original)
 
 
+COLOR_PROPS = ("fill", "stroke")
+COLOR_KEYWORDS = {"none", "transparent", "inherit", "currentcolor"}
+VAR_RE = re.compile(r"var\(\s*(--[-\w]+)\s*(?:,[^()]*)?\)\Z")
+
+
+def color_ok(value, token_names):
+    """3/6자리 HEX, 선언된 var(--토큰), none/transparent 만 허용한다.
+
+    토큰만 검사하면 `.node{fill:rgb(0 0 0)}` 처럼 도형 색을 직접 쓴 경우가
+    통째로 빠진다 — 계약이 "HEX만"이라고 선언해 놓고 검증은 안 하는 상태가 된다.
+    """
+    v = (value or "").strip()
+    if not v or v.lower() in COLOR_KEYWORDS:
+        return True
+    m = VAR_RE.match(v)
+    if m:
+        return m.group(1) in token_names
+    return hex_rgb(v) is not None
+
+
+def check_colors(doc, rules, rep):
+    names = {k for _, decls, _, _ in rules for k in decls if k.startswith("--")}
+    for sel, decls, _, _ in rules:
+        for prop in COLOR_PROPS:
+            if prop in decls and not color_ok(decls[prop], names):
+                rep.fail("contract", f"셀렉터 '{sel_text(sel)}'의 {prop}: "
+                                     f"{decls[prop].strip()!r} — 3/6자리 HEX 또는 "
+                                     "선언된 var(--토큰)만 지원한다"
+                                     "(rgb()·color-mix()·색이름은 정적으로 검증할 수 없다)")
+    for el in doc.root.iter():
+        for prop in COLOR_PROPS:
+            v = el.get(prop)
+            if v and not color_ok(v, names):
+                rep.fail("contract", f"{describe(doc, el)} {prop}=\"{v}\" — "
+                                     "3/6자리 HEX 또는 선언된 var(--토큰)만 지원한다")
+        inl = inline_prop(el, "fill") or inline_prop(el, "stroke")
+        if inl and not color_ok(inl, names):
+            rep.fail("contract", f"{describe(doc, el)} style의 색 {inl!r} — "
+                                 "3/6자리 HEX 또는 선언된 var(--토큰)만 지원한다")
+
+
 def check_tokens_are_hex(tokens, theme, rep):
     for k, v in sorted(tokens.items()):
         if hex_rgb(v) is None:
@@ -855,6 +897,7 @@ def check_svg(svg_text, theme_override, rep):
                       + ("" if doc.ns else " (xmlns 없는 인라인 SVG)"))
 
     check_contract(doc, rules, rep)
+    check_colors(doc, rules, rep)
     check_viewbox(doc, rep)
     check_grid(doc, rep)
     check_transform(doc, rep)

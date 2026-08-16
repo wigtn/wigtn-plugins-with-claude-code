@@ -155,6 +155,27 @@ CASES = [
          # .foot에는 text-anchor 선언이 없다 → SVG 기본값 start → 오른쪽으로 이탈
          f'<text class="foot" x="240" y="402">{LONG[:20]}</text>')),
 
+    # 색 표현 계약은 토큰뿐 아니라 **모든 도형의 fill/stroke**에 적용된다
+    ("도형fill_rgb는_계약위반", "FAIL", "contract",
+     doc(NODE + LABEL, extra_css=".node{fill:rgb(0 0 0)}")),
+
+    ("도형fill_colormix는_계약위반", "FAIL", "contract",
+     doc(NODE + LABEL, extra_css=".node{fill:color-mix(in srgb,#000 5%,#fff)}")),
+
+    ("도형stroke_색이름은_계약위반", "FAIL", "contract",
+     doc(NODE + LABEL, extra_css=".node{stroke:rebeccapurple}")),
+
+    ("표현속성_색_rgb는_계약위반", "FAIL", "contract",
+     doc('<rect class="node focal" x="64" y="328" width="352" height="160" rx="8"/>'
+         '<circle class="dot" fill="rgb(1 2 3)" cx="392" cy="352" r="8"/>' + LABEL)),
+
+    ("선언안된_토큰참조는_계약위반", "FAIL", "contract",
+     doc(NODE + LABEL, extra_css=".node{fill:var(--nope)}")),
+
+    ("fill_none은_허용", "PASS", None,
+     doc(NODE + LABEL + '<line class="link" x1="416" y1="408" x2="464" y2="408"/>',
+         extra_css=".link{stroke:var(--line-strong);fill:none}")),
+
     ("리터럴HEX로_악센트채우기_금지", "FAIL", "contract",
      doc(NODE + LABEL, extra_css=".focal{fill:#9B51E0}")),
 
@@ -323,6 +344,13 @@ MUTATIONS = [
      "        if False:", ["중첩svg는_계약위반"]),
     ("rx/ry 집합 해제", '            for a in ("rx", "ry"):', "            for a in ():",
      ["rx는_4의배수집합만", "ry도_4의배수집합만"]),
+    ("색 전역 검증 무력화", "def check_colors(doc, rules, rep):\n    names =",
+     "def check_colors(doc, rules, rep):\n    return\n    names =",
+     ["도형fill_rgb는_계약위반", "도형fill_colormix는_계약위반",
+      "도형stroke_색이름은_계약위반", "표현속성_색_rgb는_계약위반",
+      "선언안된_토큰참조는_계약위반"]),
+    ("미선언 토큰 참조 허용", "        return m.group(1) in token_names", "        return True",
+     ["선언안된_토큰참조는_계약위반"]),
     ("리터럴 값 비교 해제", "    rgb = hex_rgb(value)\n    return rgb is not None and rgb in values",
      "    return False", ["리터럴HEX로_악센트채우기_금지", "리터럴HEX_line테두리_금지"]),
     ("stroke 감시 해제",
